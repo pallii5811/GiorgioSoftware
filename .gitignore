@@ -32,6 +32,30 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# logs & audit artifacts
+*.log
+*.jsonl
+strict-audit-report.jsonl
+verify-report.jsonl
+
+# OCR / tesseract cache
+.tesseract-cache/
+ita.traineddata
+
+# reference / local only
+mirax-ref/
+
+# sqlite dev (prod uses PostgreSQL)
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-shm
+prisma/*.db-wal
+
+# agent dev notes (non inclusi nel prodotto)
+AGENTS.md
+CLAUDE.md
 
 # vercel
 .vercel
@@ -39,3 +63,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
