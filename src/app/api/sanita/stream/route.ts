@@ -18,27 +18,22 @@ function sseResponse(message: string, event: "error" | "progress" = "error") {
 }
 
 /** Vercel UI → inoltra la scansione al server Hetzner dove gira Playwright. */
-async function proxyToScanEngine(rawBody: string, baseOverride?: string) {
-  const base = (baseOverride || getScanEngineUrl()).trim();
-  if (!base) return null;
+async function proxyToScanEngine(rawBody: string, base: string): Promise<Response | null> {
+  const url = base.trim();
+  if (!url) return null;
 
   try {
-    const upstream = await fetch(`${base}/api/sanita/stream`, {
+    const upstream = await fetch(`${url}/api/sanita/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: rawBody,
     });
 
-    if (!upstream.ok || !upstream.body) {
-      return sseResponse(
-        `Motore scansione non raggiungibile (${upstream.status}). Verifica che l'app sia avviata su Hetzner.`
-      );
-    }
+    if (!upstream.ok || !upstream.body) return null;
 
     return new Response(upstream.body, { headers: SSE_HEADERS });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return sseResponse(`Motore scansione non raggiungibile: ${msg.slice(0, 120)}`);
+  } catch {
+    return null;
   }
 }
 
@@ -58,17 +53,23 @@ export async function POST(req: Request) {
     });
   }
 
-  let proxied = await proxyToScanEngine(rawBody);
-  if (!proxied && process.env.VERCEL_ENV === "production") {
-    proxied = await proxyToScanEngine(rawBody, HETZNER_SCAN_ENGINE);
-  }
-  if (proxied) return proxied;
-
   if (process.env.VERCEL) {
-    return sseResponse(
-      "La scansione richiede Playwright (Chrome) e non può girare su Vercel. " +
-        "Avvia l'app su Hetzner oppure imposta SCAN_ENGINE_URL nelle variabili Vercel."
+    const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
+      (v, i, a) => v && a.indexOf(v) === i
     );
+    for (const base of bases) {
+      const proxied = await proxyToScanEngine(rawBody, base);
+      if (proxied) return proxied;
+    }
+    return sseResponse(
+      "Motore scansione Hetzner non raggiungibile. Verifica che il server sia online su 168.119.253.47:3000."
+    );
+  }
+
+  const envBase = getScanEngineUrl();
+  if (envBase) {
+    const proxied = await proxyToScanEngine(rawBody, envBase);
+    if (proxied) return proxied;
   }
 
   const { runStreamingScan } = await import("@/lib/sanita/scan-stream");
