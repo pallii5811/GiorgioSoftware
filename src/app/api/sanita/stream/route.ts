@@ -1,5 +1,6 @@
 import type { Region } from "@/lib/sanita/discovery";
 import type { ScanStreamInput } from "@/lib/sanita/scan-stream";
+import { getScanEngineUrl } from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,7 +19,7 @@ function sseResponse(message: string, event: "error" | "progress" = "error") {
 
 /** Vercel UI → inoltra la scansione al server Hetzner dove gira Playwright. */
 async function proxyToScanEngine(rawBody: string) {
-  const base = process.env.SCAN_ENGINE_URL?.replace(/\/$/, "");
+  const base = getScanEngineUrl();
   if (!base) return null;
 
   const upstream = await fetch(`${base}/api/sanita/stream`, {

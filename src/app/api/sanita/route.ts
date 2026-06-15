@@ -8,12 +8,13 @@ import {
   SCAN_DISCOVERY_SHARE,
   SCAN_DISCOVERY_SKIP_BACKLOG,
 } from "@/lib/sanita/scan-config";
+import { getScanEngineUrl } from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 function scanEngineBase() {
-  return process.env.SCAN_ENGINE_URL?.replace(/\/$/, "") ?? "";
+  return getScanEngineUrl();
 }
 
 /** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */
