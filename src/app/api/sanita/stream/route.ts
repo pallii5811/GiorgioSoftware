@@ -1,6 +1,6 @@
 import type { Region } from "@/lib/sanita/discovery";
 import type { ScanStreamInput } from "@/lib/sanita/scan-stream";
-import { getScanEngineUrl } from "@/lib/sanita/scan-engine-url";
+import { getScanEngineUrl, HETZNER_SCAN_ENGINE } from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,8 +18,8 @@ function sseResponse(message: string, event: "error" | "progress" = "error") {
 }
 
 /** Vercel UI → inoltra la scansione al server Hetzner dove gira Playwright. */
-async function proxyToScanEngine(rawBody: string) {
-  const base = getScanEngineUrl();
+async function proxyToScanEngine(rawBody: string, baseOverride?: string) {
+  const base = (baseOverride || getScanEngineUrl()).trim();
   if (!base) return null;
 
   try {
@@ -58,7 +58,10 @@ export async function POST(req: Request) {
     });
   }
 
-  const proxied = await proxyToScanEngine(rawBody);
+  let proxied = await proxyToScanEngine(rawBody);
+  if (!proxied && process.env.VERCEL_ENV === "production") {
+    proxied = await proxyToScanEngine(rawBody, HETZNER_SCAN_ENGINE);
+  }
   if (proxied) return proxied;
 
   if (process.env.VERCEL) {

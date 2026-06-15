@@ -8,26 +8,31 @@ import {
   SCAN_DISCOVERY_SHARE,
   SCAN_DISCOVERY_SKIP_BACKLOG,
 } from "@/lib/sanita/scan-config";
-import { getScanEngineUrl } from "@/lib/sanita/scan-engine-url";
+import { getScanEngineUrl, HETZNER_SCAN_ENGINE } from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function scanEngineBase() {
-  return getScanEngineUrl();
-}
-
 /** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */
 async function proxyGetToEngine(req: Request) {
-  const base = scanEngineBase();
-  if (!base) return null;
+  const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
+    (v, i, a) => v && a.indexOf(v) === i
+  );
   const url = new URL(req.url);
-  const upstream = await fetch(`${base}/api/sanita${url.search}`, { cache: "no-store" });
-  const body = await upstream.text();
-  return new NextResponse(body, {
-    status: upstream.status,
-    headers: { "Content-Type": "application/json" },
-  });
+  for (const base of bases) {
+    try {
+      const upstream = await fetch(`${base}/api/sanita${url.search}`, { cache: "no-store" });
+      if (!upstream.ok) continue;
+      const body = await upstream.text();
+      return new NextResponse(body, {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch {
+      /* prova fallback */
+    }
+  }
+  return null;
 }
 
 async function regionScanMeta() {
