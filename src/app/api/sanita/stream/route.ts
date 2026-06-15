@@ -22,19 +22,24 @@ async function proxyToScanEngine(rawBody: string) {
   const base = getScanEngineUrl();
   if (!base) return null;
 
-  const upstream = await fetch(`${base}/api/sanita/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: rawBody,
-  });
+  try {
+    const upstream = await fetch(`${base}/api/sanita/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: rawBody,
+    });
 
-  if (!upstream.ok || !upstream.body) {
-    return sseResponse(
-      `Motore scansione non raggiungibile (${upstream.status}). Verifica che l'app sia avviata su Hetzner.`
-    );
+    if (!upstream.ok || !upstream.body) {
+      return sseResponse(
+        `Motore scansione non raggiungibile (${upstream.status}). Verifica che l'app sia avviata su Hetzner.`
+      );
+    }
+
+    return new Response(upstream.body, { headers: SSE_HEADERS });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return sseResponse(`Motore scansione non raggiungibile: ${msg.slice(0, 120)}`);
   }
-
-  return new Response(upstream.body, { headers: SSE_HEADERS });
 }
 
 export async function POST(req: Request) {
