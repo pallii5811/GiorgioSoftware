@@ -9,7 +9,7 @@ import { crawlSite } from "@/lib/sanita/crawler";
 import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts } from "@/lib/sanita/contact-enrichment";
-import { mergeContacts } from "@/lib/sanita/contacts";
+import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
 import { packEvidence, type AuditSources } from "@/lib/sanita/audit";
 import { verdictFromSite, verdictFromRegional } from "@/lib/sanita/verdict";
 import type { Verdict } from "@/lib/sanita/verdict";
@@ -148,7 +148,7 @@ export async function analyzeLead(
       }
       const enriched = await enrichContacts(lead.companyName, lead.city, lead.region, { skipMaps: true });
       if (enriched.checked) {
-        const m = mergeContacts({ phone, email, pec, website }, enriched.contacts);
+        const m = mergeContacts({ phone, email, pec, website }, enriched.contacts, lead.region);
         phone = m.phone;
         email = m.email;
         pec = m.pec;
@@ -221,7 +221,7 @@ export async function analyzeLead(
   else counters.review++;
 
   const nonPec = crawl.emails.filter((e) => e !== crawl.pec);
-  let phone = lead.phone || crawl.phones[0] || null;
+  let phone = pickBestPhone([crawl.phones[0], lead.phone], lead.region);
   let email = lead.email || nonPec[0] || crawl.pec || null;
   let pec = crawl.pec || lead.pec || null;
   const piva = crawl.piva || lead.piva || null;
@@ -229,7 +229,7 @@ export async function analyzeLead(
   if ((!phone || !email) && isRegionalCheckAvailable()) {
     const enriched = await enrichContacts(lead.companyName, lead.city, lead.region);
     if (enriched.checked) {
-      const m = mergeContacts({ phone, email, pec, website: lead.website }, enriched.contacts);
+      const m = mergeContacts({ phone, email, pec, website: lead.website }, enriched.contacts, lead.region);
       phone = m.phone;
       email = m.email;
       pec = m.pec;
@@ -311,7 +311,7 @@ export async function analyzeRegional(
   if (!website || !phone || !email) {
     const enriched = await enrichContacts(lead.companyName, lead.city, region, { skipMaps: mapsAlready });
     if (enriched.checked) {
-      const m = mergeContacts({ phone, email, pec, website }, enriched.contacts);
+      const m = mergeContacts({ phone, email, pec, website }, enriched.contacts, region);
       phone = m.phone;
       email = m.email;
       pec = m.pec;
@@ -343,7 +343,7 @@ export async function analyzeRegional(
   counters.regionalChecked++;
   if (result.policyFound) counters.regionalWithPolicy++;
 
-  const portalContacts = mergeContacts({ phone, email, pec, website }, result.contactsFromPortals);
+  const portalContacts = mergeContacts({ phone, email, pec, website }, result.contactsFromPortals, region);
   phone = portalContacts.phone;
   email = portalContacts.email;
   pec = portalContacts.pec;

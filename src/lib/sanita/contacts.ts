@@ -24,6 +24,56 @@ function cleanPhone(raw: string): string {
     .replace(/^\+/, "");
 }
 
+const REGION_AREA_CODES: Record<string, string[]> = {
+  Campania: ["081", "0823", "0824", "0825", "0827", "0828", "089", "0831", "0835", "0836"],
+  Veneto: [
+    "041", "0421", "0422", "0423", "0424", "0425", "0426", "0432", "0434", "0438",
+    "0442", "0444", "0445", "045", "0461", "0464", "0465", "0471", "049",
+  ],
+};
+
+function phoneDigits(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  return d.startsWith("39") && d.length > 10 ? d.slice(2) : d;
+}
+
+/** Preferisce numeri con prefisso coerente con la regione (es. 0825 = Avellino). */
+export function phoneMatchesRegion(phone: string, region: string | null | undefined): boolean {
+  if (!region) return true;
+  const prefixes = REGION_AREA_CODES[region];
+  if (!prefixes) return true;
+  const d = phoneDigits(phone);
+  return prefixes.some((p) => d.startsWith(p));
+}
+
+export function formatItalianPhone(phone: string): string {
+  const d = phoneDigits(phone);
+  if (!d) return phone;
+  if (d.startsWith("0")) {
+    const prefix = REGION_AREA_CODES.Campania.concat(REGION_AREA_CODES.Veneto)
+      .filter((p) => d.startsWith(p))
+      .sort((a, b) => b.length - a.length)[0];
+    if (prefix) return `${prefix} ${d.slice(prefix.length)}`.trim();
+    if (d.length === 10) return `${d.slice(0, 4)} ${d.slice(4)}`;
+  }
+  if (d.length === 10 && d.startsWith("3")) return `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`;
+  return phone;
+}
+
+/** Sito ufficiale > Maps; in Campania/Veneto scarta prefissi fuori regione. */
+export function pickBestPhone(
+  candidates: (string | null | undefined)[],
+  region?: string | null
+): string | null {
+  const list = [...new Set(candidates.filter((c): c is string => Boolean(c?.trim())))];
+  if (!list.length) return null;
+  const ranked = [
+    ...list.filter((p) => phoneMatchesRegion(p, region)),
+    ...list.filter((p) => !phoneMatchesRegion(p, region)),
+  ];
+  return formatItalianPhone(ranked[0]);
+}
+
 export interface ParsedContacts {
   emails: string[];
   pec: string | null;
@@ -107,11 +157,12 @@ export function pickOfficialWebsite(urls: string[], companyName: string): string
 
 export function mergeContacts(
   existing: { phone?: string | null; email?: string | null; pec?: string | null; website?: string | null },
-  found: ParsedContacts
+  found: ParsedContacts,
+  region?: string | null
 ) {
   const nonPec = found.emails.filter((e) => e !== found.pec);
   return {
-    phone: existing.phone || found.phones[0] || null,
+    phone: pickBestPhone([...found.phones, existing.phone], region),
     email: existing.email || nonPec[0] || found.pec || null,
     pec: existing.pec || found.pec || null,
     website: existing.website || found.website || null,
