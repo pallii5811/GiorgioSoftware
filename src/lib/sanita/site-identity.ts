@@ -8,6 +8,16 @@ const PRIVATE_ENTITY = /\b(casa di cura|clinica|rsa|riposo|privat|s\.?p\.?a\.?|s
 const PARENT_ORG_HOST =
   /fondaz|(?:^|\.)fapc\.|caritas|assistenz.*carit|onlus\.|cooperativ.*sociale|ente\s+religios|lilt\./i;
 
+/** Domini tipici hotel/monastero/turismo — Maps li associa erroneamente a RSA. */
+const HOSPITALITY_HOST =
+  /(?:^|[.-])(?:hotel|albergo|resort|monastero|monastery|bb-|bnb|agritur|ostello|motel|hostel|hospitality)/i;
+
+const HOSPITALITY_CORPUS =
+  /\b(hotel|albergo|soggiorno|camera\s+e\s+colazione|suite|colazione|check[\s-]?in|prenotaz|ospiti\s+turist|monastero\s+di|convento)\b/i;
+
+const HEALTH_CORPUS =
+  /\b(sanitar|rsa|riposo|assistenz|infermier|degent|pazient|visita\s+medic|poliambulator|terapia|reparto)\b/i;
+
 function norm(s: string): string {
   return s
     .toLowerCase()
@@ -44,10 +54,8 @@ export function companyNameOnSite(companyName: string, crawlText: string): boole
   const tokens = distinctiveTokens(companyName);
   if (tokens.length === 0) return false;
   const hits = tokens.filter((t) => text.includes(t));
-  if (tokens.length === 1) return hits.length >= 1;
-  if (hits.length >= 2) return true;
-  if (hits.length === 1 && hits[0].length >= 7) return true;
-  return false;
+  if (tokens.length === 1) return hits.length >= 1 && hits[0].length >= 8;
+  return hits.length >= 2;
 }
 
 export type SiteIdentityResult = {
@@ -89,6 +97,14 @@ export function validateSiteIdentity(
 
   const isPublicName = PUBLIC_ENTITY.test(companyName);
   const isPrivateName = PRIVATE_ENTITY.test(companyName);
+
+  if (HOSPITALITY_HOST.test(host) && isPrivateName && !isPublicName) {
+    return {
+      ok: false,
+      reason: "Sito alberghiero/monastero — URL Maps errato per struttura sanitaria",
+    };
+  }
+
   const isAslHost = /^(asl|aulss|ausl)/i.test(host) || /\.asl\./i.test(host) || host.includes("salute.gov");
 
   if (isAslHost && isPrivateName && !isPublicName) {
@@ -104,6 +120,13 @@ export function validateSiteIdentity(
     return {
       ok: false,
       reason: "Nome struttura assente nel sito analizzato — probabile sito errato (omonimia Maps)",
+    };
+  }
+
+  if (HOSPITALITY_CORPUS.test(corpus) && !HEALTH_CORPUS.test(corpus) && isPrivateName && !isPublicName) {
+    return {
+      ok: false,
+      reason: "Contenuti tipici di hotel/turismo — sito non sanitario (URL Maps errato)",
     };
   }
 

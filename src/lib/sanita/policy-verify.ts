@@ -1,5 +1,10 @@
 import type { CrawlResult } from "@/lib/sanita/crawler";
 import { analyzePolicy, type PolicyAnalysis } from "@/lib/sanita/detector";
+import {
+  isAssistentialOnlyStructure,
+  isHighValueHealthcareStructure,
+  isMinSaluteAccredited,
+} from "@/lib/sanita/gelli-scope";
 import { crawlDepthSufficient, validateSiteIdentity } from "@/lib/sanita/site-identity";
 import type { Verdict } from "@/lib/sanita/verdict";
 
@@ -7,6 +12,8 @@ export type ReconcileContext = {
   companyName: string;
   website: string;
   city?: string | null;
+  category?: string | null;
+  osmId?: string | null;
   /** Sito e nome dalla stessa scheda Google Maps — niente controllo omonimia OSM. */
   mapsVerified?: boolean;
 };
@@ -182,6 +189,20 @@ export function reconcilePolicyVerdict(
     else {
       const depth = crawlDepthSufficient(crawl);
       if (!depth.ok) gates.push(depth.reason);
+    }
+
+    if (isMinSaluteAccredited(ctx.osmId)) {
+      gates.push("struttura accreditata Ministero Salute — verifica manuale obbligatoria");
+    } else if (
+      isHighValueHealthcareStructure(ctx.companyName, ctx.category, ctx.osmId)
+    ) {
+      gates.push("struttura ospedaliera di alto livello — non certificabile HOT automatico");
+    }
+
+    if (isAssistentialOnlyStructure(ctx.companyName, ctx.category, ctx.osmId)) {
+      gates.push(
+        "RSA assistenziale — verificare applicabilità art. 10 Gelli prima del contatto commerciale"
+      );
     }
   }
 

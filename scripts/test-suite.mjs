@@ -247,8 +247,8 @@ function testIntegration() {
   });
   assert(score > 40, `Integration: score=${score}`);
 
-  // Caso HOT (nessuna polizza) — solo reconcile dopo crawl esaustivo
-  const crawlHot = `Casa di riposo San Giuseppe. Servizi: RSA, fisioterapia. Tel: 041 9876543.`;
+  // Caso HOT (nessuna polizza) — solo reconcile dopo crawl esaustivo (struttura clinica, non RSA assistenziale)
+  const crawlHot = `Casa di cura San Giuseppe. Servizi ambulatoriali. Tel: 041 9876543.`;
   const aHot = analyzePolicy(crawlHot);
   const mockCrawl = {
     ok: true,
@@ -261,15 +261,17 @@ function testIntegration() {
     policyPdfsQueued: 0,
     policyPdfsRead: 0,
     needsOcrReview: false,
+    policyPdfAnalysis: null,
     emails: [],
     pec: null,
     phones: ["0419876543"],
     piva: null,
   };
   const vHot = reconcilePolicyVerdict(mockCrawl, aHot, "REVIEW", {
-    companyName: "Casa di riposo San Giuseppe",
+    companyName: "Casa di cura San Giuseppe",
     website: "https://example.it",
     city: "Padova",
+    category: "Casa di cura",
   }).verdict;
   assert(vHot === "HOT", "Integration: HOT solo dopo reconcile esaustivo");
   const sHot = scoreLead({ verdict: vHot, phone: "041 9876543" });

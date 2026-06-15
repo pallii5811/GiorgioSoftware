@@ -115,8 +115,29 @@ function collectContactsFromText(text: string, sink: ContactSink) {
   }
 }
 
-// Pattern "forte": una pagina il cui URL/anchor combacia è la sede tipica della polizza
-const STRONG_RELEVANT = /trasparen|polizz|assicuraz|gelli|responsabilit/i;
+// Pattern "forte" per link PDF / ranking — non usare "responsabilit" da solo (falsi positivi privacy GDPR).
+const STRONG_RELEVANT =
+  /trasparen|polizz|assicuraz|gelli|responsabilit[aà]\s*civile|rco\b|rct\b|art\.?\s*10|legge\s*gelli/i;
+
+const PRIVACY_ONLY_URL = /(?:^|\/)(?:privacy|cookie|gdpr|legal-notice|note-legali|informativa-privacy)/i;
+
+/** Pagina conta come Trasparenza/polizza per certificare HOT (no privacy GDPR). */
+export function pageCountsAsPolicyRelevant(url: string, pageText: string): boolean {
+  const u = url.toLowerCase();
+  const t = pageText.slice(0, 8000);
+  const policyInText =
+    /trasparen|polizz|assicuraz|gelli|art\.?\s*10|legge\s*(?:24|gelli)|massimale|rco\b|rct\b|responsabilit[aà]\s*civile/i.test(
+      t
+    );
+  const policyInUrl =
+    /trasparen|polizz|assicuraz|gelli|amministrazione-trasparente|societa-trasparente|responsabilit[aà]-civile|\/documenti/i.test(
+      u
+    );
+  if (PRIVACY_ONLY_URL.test(u) && !policyInUrl) {
+    return policyInText && /responsabilit[aà]\s*civile|polizza\s*rc|massimale|art\.?\s*10/i.test(t);
+  }
+  return policyInUrl || policyInText;
+}
 
 // Parole chiave che indicano pagine rilevanti per la polizza Gelli
 const RELEVANT_LINK_KEYWORDS = [
@@ -466,10 +487,7 @@ async function crawlSiteInner(
       visitedSet.add(url);
       const pageText = extractText(html);
       combined += " \n " + pageText;
-      const pageRelevant =
-        STRONG_RELEVANT.test(url) ||
-        STRONG_RELEVANT.test(pageText) ||
-        /\/documenti|amministrazione-trasparente|societa-trasparente|\/trasparenza/i.test(url);
+      const pageRelevant = pageCountsAsPolicyRelevant(url, pageText);
       if (pageRelevant) {
         foundRelevantPage = true;
         policyText = appendPolicy(policyText, pageText);
@@ -493,10 +511,7 @@ async function crawlSiteInner(
       visitedSet.add(probeUrl);
       const pageText = extractText(html);
       combined += " \n " + pageText;
-      const probeRelevant =
-        STRONG_RELEVANT.test(probeUrl) ||
-        STRONG_RELEVANT.test(pageText) ||
-        /\/documenti|amministrazione-trasparente|societa-trasparente|\/trasparenza/i.test(probeUrl);
+      const probeRelevant = pageCountsAsPolicyRelevant(probeUrl, pageText);
       if (probeRelevant) {
         foundRelevantPage = true;
         policyText = appendPolicy(policyText, pageText);

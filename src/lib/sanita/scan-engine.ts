@@ -71,7 +71,8 @@ export async function runBatch<T>(items: T[], size: number, worker: (item: T) =>
 export async function analyzeLead(
   lead: {
     id: string;
-    osmId?: string;
+    osmId?: string | null;
+    category?: string | null;
     companyName: string;
     city: string | null;
     region: string;
@@ -193,6 +194,8 @@ export async function analyzeLead(
     companyName: lead.companyName,
     website,
     city: lead.city,
+    category: lead.category,
+    osmId: lead.osmId,
     mapsVerified,
   });
   analysis = reconciled.analysis;
@@ -267,6 +270,8 @@ export async function analyzeLead(
 export async function analyzeRegional(
   lead: {
     id: string;
+    osmId?: string | null;
+    category?: string | null;
     companyName: string;
     city: string | null;
     website: string | null;
@@ -393,6 +398,8 @@ export async function analyzeRegional(
         companyName: lead.companyName,
         website,
         city: lead.city,
+        category: lead.category,
+        osmId: lead.osmId,
       });
       siteAnalysis = siteRec.analysis;
       siteVerdict = siteRec.verdict;
@@ -441,7 +448,7 @@ export async function analyzeRegional(
         pec: crawl.pec,
         phones: crawl.phones,
         website,
-      });
+      }, region);
       phone = m.phone;
       email = m.email;
       pec = m.pec;

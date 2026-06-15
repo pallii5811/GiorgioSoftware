@@ -1,9 +1,6 @@
-/**
- * Secondo passaggio con browser reale — siti con Trasparenza in JavaScript/accordion
- * (es. pinetagrande.it/documenti) non espongono il testo a fetch statico.
- */
 import * as cheerio from "cheerio";
 import type { CrawlResult } from "@/lib/sanita/crawler";
+import { pageCountsAsPolicyRelevant } from "@/lib/sanita/crawler";
 import { analyzePolicy } from "@/lib/sanita/detector";
 
 const POLICY_PATH =
@@ -42,14 +39,17 @@ function pdfsFromHtml(html: string, base: string): string[] {
 /** Serve un secondo passaggio Playwright? */
 export function needsPlaywrightPolicyPass(crawl: CrawlResult): boolean {
   if (!crawl.ok) return false;
-  if (crawl.policyExhaustive && crawl.foundRelevantPage) return false;
+  if (crawl.policyPdfAnalysis?.policyFound) return false;
+  const pt = crawl.policyText?.trim() || "";
+  if (pt.length >= 80 && analyzePolicy(pt).policyFound) return false;
+
   const visitedPolicyish = crawl.pagesVisited.some((u) => POLICY_PATH.test(u));
-  return (
-    !crawl.foundRelevantPage ||
-    !crawl.policyExhaustive ||
-    visitedPolicyish ||
-    crawl.pagesVisited.length <= 4
-  );
+  // Sezione documenti/trasparenza visitata ma polizza non estratta → probabile contenuto JS.
+  if (visitedPolicyish) return true;
+  if (!crawl.foundRelevantPage) return true;
+  if (!crawl.policyExhaustive) return true;
+  if (crawl.pagesVisited.length <= 5) return true;
+  return false;
 }
 
 /** Arricchisce il crawl con HTML renderizzato + link PDF da pagine Trasparenza. */
@@ -95,7 +95,8 @@ export async function enrichCrawlWithPlaywright(
         combined = `${combined} \n ${text}`.slice(0, 64_000);
 
         const relevant =
-          POLICY_PATH.test(url) || /trasparen|polizz|assicuraz|gelli|art\.?\s*10/i.test(text);
+          pageCountsAsPolicyRelevant(url, text) ||
+          /trasparen|polizz|assicuraz|gelli|art\.?\s*10/i.test(text);
         if (relevant) {
           foundRelevantPage = true;
           policyText = policyText ? `${policyText} \n ${text}` : text;

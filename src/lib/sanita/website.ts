@@ -1,7 +1,7 @@
 /** Validazione e normalizzazione URL sito istituzionale. */
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\./i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\./i;
 
 export function isBlockedWebsiteHost(host: string): boolean {
   const h = host.replace(/^www\./i, "").toLowerCase();

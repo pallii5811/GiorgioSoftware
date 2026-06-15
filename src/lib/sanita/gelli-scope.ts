@@ -87,3 +87,36 @@ export function isGelliSubjectStructure(
 ): boolean {
   return classifyGelliScope(companyName, category, osmId).ok;
 }
+
+const ASSISTENTIAL_ONLY =
+  /casa\s+di\s+riposo|residenza\s+assistenz|residenza\s+per\s+anziani|casa\s+albergo|casa\s+alloggio|casa\s+protetta|\brsa\b|nursing\s+home|alloggio\s+per\s+anziani/i;
+
+const CLINICAL_SIGNAL =
+  /casa\s+di\s+cura|clinica\b|ospedal|policlinic|day\s+hospital|centro\s+medic|laboratorio|diagnostic|accreditat|riabilit|fisioterap|sanitaria\s+assistenziale|presidio\s+ospedalier/i;
+
+/**
+ * RSA / residenza puramente assistenziale — non certificare HOT automatico:
+ * l'obbligo art. 10 va verificato caso per caso (prestazioni sanitarie vs solo assistenza).
+ */
+export function isAssistentialOnlyStructure(
+  companyName: string,
+  category?: string | null,
+  osmId?: string | null
+): boolean {
+  if (isMinSaluteAccredited(osmId)) return false;
+  const hay = `${companyName} ${category ?? ""}`;
+  return ASSISTENTIAL_ONLY.test(hay) && !CLINICAL_SIGNAL.test(hay);
+}
+
+/**
+ * Ospedale / clinica accreditata di alto livello — mai HOT automatico se polizza non trovata.
+ */
+export function isHighValueHealthcareStructure(
+  companyName: string,
+  category?: string | null,
+  osmId?: string | null
+): boolean {
+  if (isMinSaluteAccredited(osmId)) return true;
+  const hay = `${companyName} ${category ?? ""}`;
+  return /ospedal|hospital|policlinic|irccs|pronto\s+soccorso|casa\s+di\s+cura\s+accreditat/i.test(hay);
+}
