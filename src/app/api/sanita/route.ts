@@ -48,8 +48,11 @@ async function regionScanMeta() {
 }
 
 export async function GET(req: Request) {
-  const proxied = await proxyGetToEngine(req);
-  if (proxied) return proxied;
+  // Solo su Vercel: proxy verso Hetzner. Sul server Hetzner usa il DB locale.
+  if (process.env.VERCEL) {
+    const proxied = await proxyGetToEngine(req);
+    if (proxied) return proxied;
+  }
 
   try {
     const url = new URL(req.url);
