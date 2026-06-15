@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Region } from "@/lib/sanita/discovery";
-import { discoverRegionFromMaps } from "@/lib/sanita/discover-region";
-import { getRegionCities } from "@/lib/sanita/region-cities";
-import { closeMapsBrowserPool } from "@/lib/sanita/playwright-maps";
 import { isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
-import { terminateOcrWorker } from "@/lib/sanita/ocr";
-import {
-  completeLeadAnalysis,
-  markNoWebsiteReview,
-  type ScanCounters,
-} from "@/lib/sanita/scan-engine";
 import {
   SCAN_ANALYSIS_CONCURRENCY,
   SCAN_BUDGET_MS,
@@ -65,6 +56,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const { discoverRegionFromMaps } = await import("@/lib/sanita/discover-region");
+  const { getRegionCities } = await import("@/lib/sanita/region-cities");
+  const { completeLeadAnalysis, markNoWebsiteReview } = await import("@/lib/sanita/scan-engine");
+  const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
+  const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
+
   try {
     const body = (await req.json()) as {
       region: Region;
@@ -128,7 +125,7 @@ export async function POST(req: Request) {
     }
 
     const discoveredCount = await prisma.lead.count({ where: { type: "HEALTHCARE", region, ...cityFilter } });
-    const counters: ScanCounters = {
+    const counters = {
       analyzed: 0,
       withPolicy: 0,
       hot: 0,
