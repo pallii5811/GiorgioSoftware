@@ -3,10 +3,10 @@ import Link from "next/link";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner"
 import { SiteNav } from "@/components/site-nav"
-import { Crosshair } from "lucide-react"
+import { Building2 } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "LeadSniper · Intelligence Lead Assicurativi",
+  title: "giorg.io · Intelligence Lead Assicurativi",
   description:
     "Motore di lead generation per assicurazioni: RC sanitaria (Legge Gelli) e cauzioni su gare pubbliche.",
 };
@@ -24,14 +24,14 @@ export default function RootLayout({
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
               <Link href="/" className="flex items-center gap-2.5">
                 <span className="brand-gradient grid h-9 w-9 place-items-center rounded-xl text-white shadow-sm">
-                  <Crosshair className="h-5 w-5" />
+                  <Building2 className="h-5 w-5" />
                 </span>
                 <div className="flex flex-col leading-none">
                   <span className="text-[15px] font-bold tracking-tight">
-                    Lead<span className="brand-gradient-text">Sniper</span>
+                    giorg<span className="brand-gradient-text">.io</span>
                   </span>
                   <span className="text-[11px] text-muted-foreground">
-                    Insurance Lead Intelligence
+                    Intelligence assicurativa
                   </span>
                 </div>
               </Link>
@@ -47,7 +47,7 @@ export default function RootLayout({
 
           <footer className="border-t border-border/60 py-5">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 text-xs text-muted-foreground">
-              LeadSniper · dati reali da fonti pubbliche (OpenStreetMap, portali di trasparenza).
+              giorg.io · dati reali da fonti pubbliche (OpenStreetMap, portali di trasparenza).
               Nessun dato inventato.
             </div>
           </footer>

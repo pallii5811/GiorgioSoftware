@@ -23,7 +23,7 @@ const insecureAgent = new Agent({
 });
 
 const DEFAULT_UA =
-  "LeadSniperCRM/1.0 (Insurance lead generation tool; contact: admin@leadsniper.local)";
+  "GiorgIO/1.0 (Insurance lead intelligence; +https://giorgio-software.vercel.app)";
 
 export interface ExternalFetchOptions extends RequestInit {
   timeoutMs?: number;

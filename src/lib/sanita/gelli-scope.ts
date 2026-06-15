@@ -1,5 +1,5 @@
 /**
- * Target commerciale LeadSniper sanità: strutture private soggette all'art. 10
+ * Target commerciale giorg.io sanità: strutture private soggette all'art. 10
  * L. 24/2017 (Gelli-Bianco) — obbligo di pubblicare polizza RC sul sito.
  *
  * Fonte unica per discovery Maps, gate consegna e pulizia DB.
