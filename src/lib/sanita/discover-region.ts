@@ -2,6 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { normalizeWebsite, type Region } from "@/lib/sanita/discovery";
 import { discoverFromMaps, mapsOsmId } from "@/lib/sanita/maps-discovery";
 import { fetchAccreditedClinics, titleCase } from "@/lib/sanita/salute";
+import {
+  buildLeadIdentityIndex,
+  findMatchingLead,
+  nameCityKey,
+  type LeadIdentityFields,
+} from "@/lib/sanita/lead-dedup";
 
 export type DiscoverRegionResult = {
   mapsDiscovered: number;
@@ -12,9 +18,7 @@ export type DiscoverRegionResult = {
 };
 
 function normKey(name: string, city: string | null): string {
-  const n = (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const c = (city || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return `${n}|${c}`;
+  return nameCityKey(name, city);
 }
 
 /** Case di cura accreditate Min. Salute — nome/comune senza URL (sito si trova via Maps/Google in analisi). */
@@ -96,9 +100,29 @@ export async function discoverRegionFromMaps(
   if (mapsResult.places.length > 0) {
     const existing = await prisma.lead.findMany({
       where: { type: "HEALTHCARE", region },
-      select: { id: true, companyName: true, city: true, osmId: true, website: true, phone: true },
+      select: {
+        id: true,
+        companyName: true,
+        city: true,
+        osmId: true,
+        website: true,
+        phone: true,
+        piva: true,
+        region: true,
+        lastScannedAt: true,
+        createdAt: true,
+        leadScore: true,
+      },
     });
     const byKey = new Map(existing.map((e) => [normKey(e.companyName, e.city), e]));
+    const identityIndex = buildLeadIdentityIndex(existing as LeadIdentityFields[]);
+
+    const registerLead = (lead: (typeof existing)[number]) => {
+      byKey.set(normKey(lead.companyName, lead.city), lead);
+      for (const key of buildLeadIdentityIndex([lead as LeadIdentityFields]).keys()) {
+        identityIndex.set(key, lead as LeadIdentityFields);
+      }
+    };
 
     const CHUNK = 40;
     for (let i = 0; i < mapsResult.places.length; i += CHUNK) {
@@ -106,14 +130,24 @@ export async function discoverRegionFromMaps(
       await prisma.$transaction(
         slice.map((p) => {
           const key = normKey(p.name, p.city);
-          const dup = byKey.get(key);
           const website = normalizeWebsite(p.website ?? undefined);
+          const candidate: LeadIdentityFields = {
+            id: "",
+            region,
+            companyName: p.name,
+            city: p.city,
+            website,
+            phone: p.phone ?? null,
+          };
+          const dup =
+            byKey.get(key) ??
+            findMatchingLead(identityIndex, candidate);
           if (dup) {
             return prisma.lead.update({
               where: { id: dup.id },
               data: {
-                companyName: p.name,
-                city: p.city,
+                companyName: p.name.length >= dup.companyName.length ? p.name : dup.companyName,
+                city: p.city ?? dup.city,
                 website: website ?? dup.website,
                 phone: p.phone ?? dup.phone,
                 category: p.category,
@@ -121,14 +155,20 @@ export async function discoverRegionFromMaps(
             });
           }
           const osmId = mapsOsmId(p);
-          byKey.set(key, {
+          const created = {
             id: osmId,
             companyName: p.name,
             city: p.city,
             osmId,
             website: website ?? null,
             phone: p.phone ?? null,
-          });
+            region,
+            piva: null,
+            lastScannedAt: null,
+            createdAt: new Date(),
+            leadScore: null,
+          };
+          registerLead(created);
           return prisma.lead.upsert({
             where: { osmId },
             update: {

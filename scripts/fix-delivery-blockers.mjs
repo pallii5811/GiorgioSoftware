@@ -2,6 +2,7 @@
 import { prisma } from "../src/lib/prisma.ts";
 import { encodeEvidence, readVerdictToken } from "../src/lib/sanita/verdict.ts";
 import { isGelliSubjectStructure } from "../src/lib/sanita/gelli-scope.ts";
+import { leadIdentityKeys, pickCanonicalLead } from "../src/lib/sanita/lead-dedup.ts";
 
 // 1) PUBLISHED → confidence 1.0 (fix dati pre-detector)
 const pub = await prisma.lead.updateMany({
@@ -100,32 +101,64 @@ for (const l of scopeAll) {
 }
 console.log("Fuori scope Gelli rimossi:", scopeRemoved);
 
-// 5) Deduplica: tieni record con analisi più recente
+// 5) Deduplica per identità reale (stesso sito+telefono, P.IVA, telefono)
 const all = await prisma.lead.findMany({
   where: { type: "HEALTHCARE" },
-  select: { id: true, companyName: true, region: true, lastScannedAt: true, createdAt: true },
+  select: {
+    id: true,
+    companyName: true,
+    region: true,
+    city: true,
+    website: true,
+    phone: true,
+    piva: true,
+    osmId: true,
+    lastScannedAt: true,
+    createdAt: true,
+    leadScore: true,
+  },
 });
 const groups = new Map();
 for (const l of all) {
-  const k = `${l.region}|${l.companyName.toLowerCase().trim()}`;
-  if (!groups.has(k)) groups.set(k, []);
-  groups.get(k).push(l);
+  for (const key of leadIdentityKeys(l)) {
+    if (!groups.has(key)) groups.set(key, []);
+    const list = groups.get(key);
+    if (!list.some((x) => x.id === l.id)) list.push(l);
+  }
 }
-let deduped = 0;
+const toDelete = new Set();
 for (const [, list] of groups) {
   if (list.length < 2) continue;
-  list.sort((a, b) => {
-    const ta = a.lastScannedAt?.getTime() ?? 0;
-    const tb = b.lastScannedAt?.getTime() ?? 0;
-    if (tb !== ta) return tb - ta;
-    return b.createdAt.getTime() - a.createdAt.getTime();
-  });
-  for (const dup of list.slice(1)) {
-    await prisma.lead.delete({ where: { id: dup.id } });
+  const keep = pickCanonicalLead(list);
+  for (const l of list) {
+    if (l.id !== keep.id) toDelete.add(l.id);
+  }
+}
+let deduped = 0;
+for (const id of toDelete) {
+  await prisma.lead.delete({ where: { id } });
+  deduped++;
+}
+console.log("Duplicati identità eliminati:", deduped);
+
+// 5b) Stesso nome esatto in regione
+const byName = new Map();
+for (const l of all) {
+  if (toDelete.has(l.id)) continue;
+  const k = `${l.region}|${l.companyName.toLowerCase().trim()}`;
+  if (!byName.has(k)) byName.set(k, []);
+  byName.get(k).push(l);
+}
+for (const [, list] of byName) {
+  if (list.length < 2) continue;
+  const keep = pickCanonicalLead(list);
+  for (const l of list) {
+    if (l.id === keep.id || toDelete.has(l.id)) continue;
+    await prisma.lead.delete({ where: { id: l.id } });
     deduped++;
   }
 }
-console.log("Duplicati eliminati:", deduped);
+console.log("Duplicati totali eliminati:", deduped);
 
 // 6) HOT con compagnia spuria (Generali/autoassicurazione nel testo ma verdetto HOT)
 const hotSpurious = await prisma.lead.updateMany({
