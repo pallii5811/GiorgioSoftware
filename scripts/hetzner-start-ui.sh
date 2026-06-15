@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export NODE_ENV=production
+export SCAN_ENGINE_LOCAL=1
 export POLICY_EXHAUSTIVE=1
 export OCR_ENABLED=1
 export PORT="${PORT:-3000}"

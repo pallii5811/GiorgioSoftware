@@ -8,7 +8,11 @@ import {
   SCAN_DISCOVERY_SHARE,
   SCAN_DISCOVERY_SKIP_BACKLOG,
 } from "@/lib/sanita/scan-config";
-import { getScanEngineUrl, HETZNER_SCAN_ENGINE } from "@/lib/sanita/scan-engine-url";
+import {
+  getScanEngineUrl,
+  HETZNER_SCAN_ENGINE,
+  isVercelUiHost,
+} from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -48,8 +52,8 @@ async function regionScanMeta() {
 }
 
 export async function GET(req: Request) {
-  // Solo su Vercel: proxy verso Hetzner. Sul server Hetzner usa il DB locale.
-  if (process.env.VERCEL) {
+  // Solo UI Vercel: proxy verso Hetzner. Sul motore scan usa il DB locale.
+  if (isVercelUiHost()) {
     const proxied = await proxyGetToEngine(req);
     if (proxied) return proxied;
   }

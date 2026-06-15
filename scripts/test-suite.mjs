@@ -277,6 +277,20 @@ function testIntegration() {
   const sHot = scoreLead({ verdict: vHot, phone: "041 9876543" });
   assert(sHot === 80, `Integration: HOT score=${sHot} (atteso 80)`);
 
+  const rsaCrawl = {
+    ...mockCrawl,
+    text: "RSA San Vincenzo. Amministrazione trasparente. Servizi residenziali.",
+    policyText: "RSA San Vincenzo. Amministrazione trasparente.",
+    pagesVisited: ["https://rsa.it/amministrazione-trasparente"],
+  };
+  const vRsa = reconcilePolicyVerdict(rsaCrawl, analyzePolicy(rsaCrawl.text), "REVIEW", {
+    companyName: "RSA San Vincenzo De' Paoli",
+    website: "https://rsa.it",
+    city: "Castel Morrone",
+    category: "RSA",
+  }).verdict;
+  assert(vRsa === "HOT", "Integration: RSA con Trasparenza letta e senza polizza → HOT");
+
   console.log("  INTEGRAZIONE: TUTTI I TEST PASSATI ✓");
 }
 

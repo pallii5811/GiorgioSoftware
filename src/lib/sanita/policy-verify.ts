@@ -1,10 +1,5 @@
 import type { CrawlResult } from "@/lib/sanita/crawler";
 import { analyzePolicy, type PolicyAnalysis } from "@/lib/sanita/detector";
-import {
-  isAssistentialOnlyStructure,
-  isHighValueHealthcareStructure,
-  isMinSaluteAccredited,
-} from "@/lib/sanita/gelli-scope";
 import { crawlDepthSufficient, validateSiteIdentity } from "@/lib/sanita/site-identity";
 import type { Verdict } from "@/lib/sanita/verdict";
 
@@ -191,19 +186,9 @@ export function reconcilePolicyVerdict(
       if (!depth.ok) gates.push(depth.reason);
     }
 
-    if (isMinSaluteAccredited(ctx.osmId)) {
-      gates.push("struttura accreditata Ministero Salute — verifica manuale obbligatoria");
-    } else if (
-      isHighValueHealthcareStructure(ctx.companyName, ctx.category, ctx.osmId)
-    ) {
-      gates.push("struttura ospedaliera di alto livello — non certificabile HOT automatico");
-    }
-
-    if (isAssistentialOnlyStructure(ctx.companyName, ctx.category, ctx.osmId)) {
-      gates.push(
-        "RSA assistenziale — verificare applicabilità art. 10 Gelli prima del contatto commerciale"
-      );
-    }
+    // RSA assistenziale / ospedale accreditato: NON bloccano HOT se crawl esaustivo
+    // e identità sito OK — altrimenti il 60%+ finisce in REVIEW inutilmente.
+    // REVIEW resta per: sito errato, hotel/monastero, crawl incompleto, PDF/OCR.
   }
 
   if (POLICY_HINT.test(crawl.text) && !crawl.foundRelevantPage) {

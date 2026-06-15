@@ -1,6 +1,10 @@
 import type { Region } from "@/lib/sanita/discovery";
 import type { ScanStreamInput } from "@/lib/sanita/scan-stream";
-import { getScanEngineUrl, HETZNER_SCAN_ENGINE } from "@/lib/sanita/scan-engine-url";
+import {
+  getScanEngineUrl,
+  HETZNER_SCAN_ENGINE,
+  isVercelUiHost,
+} from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -53,7 +57,8 @@ export async function POST(req: Request) {
     });
   }
 
-  if (process.env.VERCEL) {
+  // Solo la UI Vercel fa proxy. Hetzner esegue Playwright in locale (SCAN_ENGINE_LOCAL=1).
+  if (isVercelUiHost()) {
     const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
       (v, i, a) => v && a.indexOf(v) === i
     );
@@ -64,12 +69,6 @@ export async function POST(req: Request) {
     return sseResponse(
       "Motore scansione Hetzner non raggiungibile. Verifica che il server sia online su 168.119.253.47:3000."
     );
-  }
-
-  const envBase = getScanEngineUrl();
-  if (envBase) {
-    const proxied = await proxyToScanEngine(rawBody, envBase);
-    if (proxied) return proxied;
   }
 
   const { runStreamingScan } = await import("@/lib/sanita/scan-stream");
