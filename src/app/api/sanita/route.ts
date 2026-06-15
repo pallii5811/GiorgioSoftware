@@ -12,6 +12,23 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+function scanEngineBase() {
+  return process.env.SCAN_ENGINE_URL?.replace(/\/$/, "") ?? "";
+}
+
+/** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */
+async function proxyGetToEngine(req: Request) {
+  const base = scanEngineBase();
+  if (!base) return null;
+  const url = new URL(req.url);
+  const upstream = await fetch(`${base}/api/sanita${url.search}`, { cache: "no-store" });
+  const body = await upstream.text();
+  return new NextResponse(body, {
+    status: upstream.status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 async function regionScanMeta() {
   const regions = {} as Record<string, { total: number; done: number; pending: number }>;
   for (const region of ["Veneto", "Campania"] as const) {
@@ -25,6 +42,9 @@ async function regionScanMeta() {
 }
 
 export async function GET(req: Request) {
+  const proxied = await proxyGetToEngine(req);
+  if (proxied) return proxied;
+
   try {
     const url = new URL(req.url);
     const includePending = url.searchParams.get("includePending") === "1";
