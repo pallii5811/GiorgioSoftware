@@ -14,7 +14,17 @@ export async function consumeSanitaScanStream(
   });
 
   if (!res.ok || !res.body) {
-    onEvent("error", { message: `HTTP ${res.status}` });
+    let detail = `HTTP ${res.status}`;
+    try {
+      const text = await res.text();
+      if (text.includes("event: error")) {
+        const m = text.match(/data: (\{.*\})/);
+        if (m) detail = JSON.parse(m[1]).message ?? detail;
+      }
+    } catch {
+      /* ignore */
+    }
+    onEvent("error", { message: detail });
     return "error";
   }
 

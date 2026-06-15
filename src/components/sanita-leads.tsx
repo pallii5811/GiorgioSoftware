@@ -131,9 +131,9 @@ export function SanitaLeads() {
     }
   }
 
-  /** All'avvio non carica lead già salvati: la tabella si popola con Scansiona o Carica salvati. */
+  /** All'avvio carica i lead già salvati nel database condiviso. */
   useEffect(() => {
-    setIsLoading(false)
+    void fetchLeads({ silent: true })
   }, [])
 
   const upsertLiveLead = (lead: Lead) => {
