@@ -194,10 +194,12 @@ export function SanitaLeads() {
 
       while (round < maxRounds) {
         round++
-        let mapsCityOffset = 0
+        let mapsCityOffset = Number(payload.mapsCityOffset ?? 0)
         let sessionStats: Record<string, unknown> = {}
 
-        const outcome = await consumeSanitaScanStream(payload, (event, data) => {
+        let outcome: "complete" | "paused" | "error"
+        try {
+          outcome = await consumeSanitaScanStream(payload, (event, data) => {
           if (event === "progress") {
             const done = Number(data.done ?? 0)
             const total = Number(data.total ?? 0)
@@ -229,6 +231,23 @@ export function SanitaLeads() {
             toast.error(String(data.message ?? "Errore scansione"), { id: toastId })
           }
         })
+        } catch {
+          outcome = "paused"
+        }
+
+        if (outcome === "paused" && round < maxRounds) {
+          toast.loading(`${label} — riconnessione automatica (round ${round})…`, { id: toastId })
+          payload = {
+            region: body.region,
+            city: body.city,
+            continueAnalysis: true,
+            liveRescan: false,
+            forceDiscovery: false,
+            mapsCityOffset,
+          }
+          await new Promise((r) => setTimeout(r, 1500))
+          continue
+        }
 
         if (outcome === "error") return
 
@@ -265,7 +284,7 @@ export function SanitaLeads() {
 
       toast.warning("Sessione terminata — clicca di nuovo Scansiona per continuare i round automatici.", { id: toastId })
     } catch {
-      toast.error("Errore di connessione durante la scansione live", { id: toastId })
+      toast.error("Errore di connessione — riprova Scansiona", { id: toastId })
     } finally {
       setIsScanning(false)
       setProcessingName(null)
