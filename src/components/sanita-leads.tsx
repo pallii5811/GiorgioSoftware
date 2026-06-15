@@ -197,7 +197,7 @@ export function SanitaLeads() {
         let mapsCityOffset = Number(payload.mapsCityOffset ?? 0)
         let sessionStats: Record<string, unknown> = {}
 
-        let outcome: "complete" | "paused" | "error"
+        let outcome: "complete" | "paused" | "error" = "paused"
         try {
           outcome = await consumeSanitaScanStream(payload, (event, data) => {
           if (event === "progress") {
