@@ -40,6 +40,11 @@ const PIVA_RE =
   /(?:partita\s+iva|p\.?\s*iva|c\.?\s*f\.?\s*(?:e\s*)?p\.?\s*iva|vat(?:\s*number)?)[^\d]{0,12}(\d{11})\b/i;
 const PHONE_RE = /(?:\+39[\s.\-]?)?(?:0\d{1,3}[\s.\-\/]?\d{5,8}|3\d{2}[\s.\-]?\d{6,7})/g;
 
+// Bilanci/XBRL non sono polizze: evitano falsi "massimale" e compagnie da nota integrativa.
+const FINANCIAL_PDF_HINT = /bilanci?|xbrl|nota[\s-]?integrativa|conto\s+economico|stato\s+patrimoniale/i;
+const POLICY_PDF_HINT =
+  /polizz|assicuraz|rc\b|rct\b|rco\b|gelli|art\.?\s*10|responsabilit[aà]\s*civile|sinistr|risarciment/i;
+
 // Una email è PEC se locale/dominio richiamano i provider/keyword tipici italiani.
 function isPec(email: string): boolean {
   const e = email.toLowerCase();
@@ -365,6 +370,10 @@ function collectPdfsFromPage(
     const href = $(el).attr("href") || "";
     if (!/\.pdf(?:$|\?|#)/i.test(href)) return;
     const text = $(el).text() || "";
+    const meta = `${text} ${href}`;
+    // In Trasparenza spesso ci sono bilanci (XBRL) che NON vanno letti come polizza RC.
+    // Permetti solo PDF "bilancio" se nel link appare anche un chiaro riferimento assicurativo.
+    if (FINANCIAL_PDF_HINT.test(meta) && !POLICY_PDF_HINT.test(meta)) return;
     if (!pageIsRelevant && !STRONG_RELEVANT.test(`${text} ${href}`)) return;
     try {
       const u = new URL(href, base);
@@ -381,6 +390,8 @@ function collectPdfsFromPage(
 /** Priorità PDF: la polizza RC deve essere letta anche se il testo HTML ha già riempito il budget. */
 function scorePdfUrl(url: string): number {
   const h = url.toLowerCase();
+  // Bilanci/XBRL: mai prioritari per polizza RC (solo se linkato esplicitamente come assicurazione).
+  if (FINANCIAL_PDF_HINT.test(h) && !POLICY_PDF_HINT.test(h)) return -50;
   if (/risarcimenti-erogat|risarcimenti_erogat/.test(h)) return 110;
   if (/polizz|rcg\d|_rc_|\/rc-/.test(h)) return 100;
   if (/assicuraz/.test(h)) return 90;
