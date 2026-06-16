@@ -5,6 +5,9 @@ export interface AuditSources {
   minSalute?: boolean;
   sitePages?: string[];
   siteRelevant?: boolean;
+  policyPdfsQueued?: number;
+  policyPdfsRead?: number;
+  needsOcrReview?: boolean;
   regionalUrls?: string[];
   regionalQueries?: number;
   contactSearch?: boolean;
@@ -16,6 +19,15 @@ export interface AuditSources {
   anac?: boolean;
   anacYear?: number;
   anacCig?: string;
+}
+
+function buildDocsSection(sources: AuditSources): string | null {
+  const urls = (sources.sitePages || [])
+    .filter((u) => /\.pdf(?:$|\?|#)/i.test(u))
+    .slice(0, 6);
+  if (urls.length === 0) return null;
+  // Evita evidence enormi: solo campione per audit UI
+  return `[DOCS: ${urls.join("; ")}]`;
 }
 
 /** Traccia documentata delle fonti controllate (per report assicuratore). */
@@ -45,6 +57,14 @@ export function buildAuditTrail(sources: AuditSources): string {
       `sito web (${n} pag${n > 1 ? "ine" : "ina"}${sources.siteRelevant ? ", sezione Trasparenza letta" : ""}: ${sample})`
     );
   }
+  if (typeof sources.policyPdfsQueued === "number" || typeof sources.policyPdfsRead === "number") {
+    const q = Math.max(0, Number(sources.policyPdfsQueued ?? 0));
+    const r = Math.max(0, Number(sources.policyPdfsRead ?? 0));
+    parts.push(`PDF polizza letti ${r}/${q}`);
+  }
+  if (sources.needsOcrReview) {
+    parts.push("OCR: alcuni PDF scannerizzati non decodificabili (verifica manuale consigliata)");
+  }
   if (sources.regionalQueries) {
     const urls = (sources.regionalUrls || []).slice(0, 2).join("; ");
     parts.push(`portali regionali/ASL (${sources.regionalQueries} ricerche${urls ? `: ${urls}` : ""})`);
@@ -59,7 +79,10 @@ export function buildAuditTrail(sources: AuditSources): string {
   }
 
   const when = new Date().toISOString().slice(0, 16).replace("T", " ");
-  return `[FONTI: ${parts.join(" · ") || "nessuna"}] [Verifica: ${when}]`;
+  const docs = buildDocsSection(sources);
+  return [docs, `[FONTI: ${parts.join(" · ") || "nessuna"}] [Verifica: ${when}]`]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function packEvidence(verdict: Verdict, body: string | null, audit: AuditSources): string {
@@ -72,11 +95,25 @@ export function packEvidence(verdict: Verdict, body: string | null, audit: Audit
 export function parseEvidenceSections(evidence: string | null | undefined): {
   body: string | null;
   fonti: string | null;
+  docs: string[] | null;
 } {
-  if (!evidence) return { body: null, fonti: null };
+  if (!evidence) return { body: null, fonti: null, docs: null };
   let s = evidence.replace(/^\[V:(PUB|HOT|REV)\]\s*/i, "").trim();
+  const docsMatch = s.match(/\[DOCS:[^\]]+\]/);
+  const docsRaw = docsMatch ? docsMatch[0] : null;
+  const docs =
+    docsRaw
+      ? docsRaw
+          .replace(/^\[DOCS:\s*/i, "")
+          .replace(/\]$/, "")
+          .split(/\s*;\s*/g)
+          .map((v) => v.trim())
+          .filter(Boolean)
+      : null;
+  if (docsRaw) s = s.replace(docsRaw, "").replace(/\s*—\s*$/, "").trim();
+
   const fontiMatch = s.match(/\[FONTI:[^\]]+\]\s*\[Verifica:[^\]]+\]/);
   const fonti = fontiMatch ? fontiMatch[0] : null;
   if (fonti) s = s.replace(fonti, "").replace(/\s*—\s*$/, "").trim();
-  return { body: s || null, fonti };
+  return { body: s || null, fonti, docs };
 }

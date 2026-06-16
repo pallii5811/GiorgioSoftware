@@ -119,11 +119,31 @@ export function LeadDetail({
         </div>
 
         {/* VERIFICA / FONTI */}
-        {(evidenceParts.body || evidenceParts.fonti) && (
+        {(evidenceParts.body || evidenceParts.fonti || (evidenceParts.docs && evidenceParts.docs.length > 0)) && (
           <div className="mb-4 rounded-xl border border-border/60 bg-slate-50/80 p-3">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Verifica automatica</div>
             {evidenceParts.body && (
               <p className="text-sm leading-relaxed text-foreground">{evidenceParts.body}</p>
+            )}
+            {evidenceParts.docs && evidenceParts.docs.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[11px] font-semibold text-slate-600">Documenti/PDF analizzati:</p>
+                <ul className="mt-1 space-y-1 text-[11px]">
+                  {evidenceParts.docs.slice(0, 6).map((u) => (
+                    <li key={u} className="flex items-start gap-2">
+                      <ExternalLink className="mt-0.5 h-3 w-3 text-muted-foreground" />
+                      <a
+                        href={u}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all text-primary hover:underline"
+                      >
+                        {u}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {evidenceParts.fonti && (
               <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">

@@ -183,6 +183,9 @@ export async function analyzeLead(
 
   audit.sitePages = crawl.pagesVisited;
   audit.siteRelevant = crawl.foundRelevantPage;
+  audit.policyPdfsQueued = crawl.policyPdfsQueued;
+  audit.policyPdfsRead = crawl.policyPdfsRead;
+  audit.needsOcrReview = crawl.needsOcrReview;
 
   let analysis = analyzeCrawlPolicy(crawl);
   let verdict: Verdict = verdictFromSite({
