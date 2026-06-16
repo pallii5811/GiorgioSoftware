@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Stethoscope, Building2, LayoutDashboard } from "lucide-react"
+import { Stethoscope, Building2, LayoutDashboard, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/sanita", label: "Sanità · RSA", icon: Stethoscope },
   { href: "/gare", label: "Gare Pubbliche", icon: Building2 },
+  { href: "/crm", label: "CRM", icon: Users },
 ]
 
 export function SiteNav() {
