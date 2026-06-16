@@ -108,7 +108,65 @@ function testDetector() {
   assert(!r7.massimale?.includes("92"), "Caso 7: non confondere con fondo dotazione");
   console.log("  ✓ Caso 7: Villa Fiorita / massimale RC corretto");
 
+  // Caso 8: Villa Maione — PARM con risarcimenti erogati NON è polizza RC art.10
+  const text8 = `
+    LEGGE GELLI — Relazione annuale consuntiva sugli eventi avversi
+    Sinistrosità e risarcimenti erogati nell'ultimo quinquennio.
+    La clinica Maione è titolare di una Polizza Assicurativa RC stipulata con AmTrust Italia.
+    Anno 2018 | N. sinistri liquidati 2 | Risarcimenti erogati 20.889,62€
+    Anno 2019 | Risarcimenti erogati 394.593,00€
+    Dal 2019 è stata stipulata polizza con AM TRUST ITALIA con scadenza triennale (si allega in parte).
+  `;
+  const r8 = analyzePolicy(text8);
+  assert(r8.policyFound === false, `Caso 8 Villa Maione PARM: policyFound deve essere false (era ${r8.policyFound})`);
+  assert(r8.massimale == null || !String(r8.massimale).includes("20.889"), `Caso 8: massimale non deve essere risarcimento (${r8.massimale})`);
+  console.log("  ✓ Caso 8: Villa Maione PARM/risarcimenti → NON policyFound");
+
+  // Caso 9: solo compagnia citata in pagina Trasparenza Gelli (art.2-4) senza estremi polizza
+  const text9 = `
+    LEGGE GELLI: art. 2 e 4 impongono relazione eventi avversi e pubblicazione risarcimenti.
+    PARM 2024 — CONSULTA I DOCUMENTI
+    Compagnia assicurativa: Generali
+    Servizi erogati, carta dei servizi, liste di attesa.
+  `;
+  const r9 = analyzePolicy(text9);
+  assert(r9.policyFound === false, `Caso 9 Villa Cinzia: solo Generali in Trasparenza → policyFound=false (era ${r9.policyFound})`);
+  console.log("  ✓ Caso 9: solo compagnia in Trasparenza → NON policyFound");
+
   console.log("  DETECTOR: TUTTI I TEST PASSATI ✓");
+}
+
+function testFalsePositiveGates() {
+  console.log("\n=== TEST 1b: ANTI FALSI PUBLISHED (reconcile) ===");
+
+  const mockCrawl = {
+    ok: true,
+    text: "LEGGE GELLI PARM 2024. Compagnia: Generali. Risarcimenti erogati 20.889,62€",
+    policyText: "LEGGE GELLI PARM 2024. Compagnia: Generali.",
+    pagesVisited: ["https://clinicavillacinzia.com/amministrazione-trasparente/"],
+    error: null,
+    foundRelevantPage: true,
+    policyExhaustive: true,
+    policyPdfsQueued: 0,
+    policyPdfsRead: 0,
+    needsOcrReview: false,
+    policyPdfAnalysis: null,
+    emails: [],
+    pec: null,
+    phones: [],
+    piva: null,
+  };
+  const analysis = analyzePolicy(mockCrawl.policyText);
+  const rec = reconcilePolicyVerdict(mockCrawl, analysis, "REVIEW", {
+    companyName: "Casa Di Cura Villa Cinzia",
+    website: "https://clinicavillacinzia.com",
+    city: "Napoli",
+    category: "Casa di cura accreditata (Min. Salute)",
+  });
+  assert(rec.verdict !== "PUBLISHED", `reconcile non deve dare PUBLISHED (era ${rec.verdict})`);
+  console.log(`  ✓ reconcile Villa Cinzia-like → ${rec.verdict} (non PUBLISHED)`);
+
+  console.log("  ANTI FALSI PUBLISHED: TUTTI I TEST PASSATI ✓");
 }
 
 // === TEST 2: VERDICT ===
@@ -305,6 +363,7 @@ async function main() {
 
   const tests = [
     testDetector,
+    testFalsePositiveGates,
     testVerdict,
     testScoreLead,
     testPdfDigital,

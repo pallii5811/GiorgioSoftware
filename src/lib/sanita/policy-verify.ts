@@ -101,12 +101,16 @@ export function analyzeCrawlPolicy(crawl: CrawlResult): PolicyAnalysis {
 /** Evidenza sufficiente per PUBLISHED certo (no falsi positivi). Scadenza opzionale. */
 function publicationIsCertain(analysis: PolicyAnalysis, crawl: CrawlResult): boolean {
   if (!analysis.policyFound || analysis.policyObsolete) return false;
-  if (crawl.policyPdfAnalysis?.policyFound) return true;
   if (/autoassicuraz|gestione\s+diretta/i.test(analysis.company ?? "")) return true;
-  const hasInsurer = Boolean(analysis.company);
-  const hasConcrete = Boolean(analysis.massimale || analysis.policyNumber || analysis.expiry);
-  // Anti-falso-positivo: PUBLISHED solo con evidenza concreta (o PDF polizza / autoassicurazione).
-  // "Compagnia trovata" da sola (es. dentro PARM/ANAC) non basta.
+  const pdf = crawl.policyPdfAnalysis;
+  const company = analysis.company ?? pdf?.company ?? null;
+  const massimale = analysis.massimale ?? pdf?.massimale ?? null;
+  const policyNumber = analysis.policyNumber ?? pdf?.policyNumber ?? null;
+  const expiry = analysis.expiry ?? pdf?.expiry ?? null;
+  const hasInsurer = Boolean(company);
+  const hasConcrete = Boolean(massimale || policyNumber || expiry);
+  // PUBLISHED solo con estremi concreti (compagnia + massimale/scadenza/numero).
+  // Mai da sola: menzione compagnia in PARM o PDF report eventi avversi.
   if (hasInsurer && hasConcrete) return true;
   return false;
 }

@@ -131,6 +131,11 @@ function findInsurer(text: string): string | null {
   return null;
 }
 
+function isPayoutTableContext(ctx: string): boolean {
+  // Tabelle PARM / art.4: "risarcimenti erogati", "sinistri liquidati" — NON confondere con polizza RC.
+  return /risarcimenti\s+erogat|sinistr[oi]\s+liquidat|liquidato\s+annuo|quinquennio/i.test(ctx);
+}
+
 function findMassimale(text: string): string | null {
   // RC strutture sanitarie: "Limite dell'Indennizzo ... EUR 5.000.000,00"
   const rcLimit =
@@ -138,7 +143,7 @@ function findMassimale(text: string): string | null {
   const rc = text.match(rcLimit);
   if (rc?.[1]) {
     const ctx = text.slice(Math.max(0, (rc.index ?? 0) - 80), (rc.index ?? 0) + 200);
-    if (/risarciment|sinistr|liquidat/i.test(ctx)) return null;
+    if (isPayoutTableContext(ctx)) return null;
     return rc[1].replace(/\s+/g, " ").trim();
   }
 
@@ -147,7 +152,7 @@ function findMassimale(text: string): string | null {
   const m = text.match(near);
   if (m?.[1]) {
     const ctx = text.slice(Math.max(0, (m.index ?? 0) - 80), (m.index ?? 0) + 200);
-    if (/risarciment|sinistr|liquidat/i.test(ctx)) return null;
+    if (isPayoutTableContext(ctx)) return null;
     return m[1].replace(/\s+/g, " ").trim();
   }
 

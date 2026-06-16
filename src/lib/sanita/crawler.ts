@@ -294,8 +294,17 @@ async function fetchHomepage(base: URL): Promise<{ html: string; url: URL } | nu
   return null;
 }
 
+function isParmOrGelliReportPdf(url: string): boolean {
+  return /parm|risarcimenti[-_]?erogat|eventi[-_]?avvers|griglia[-_]?rilevaz|relazione.*avvers/i.test(
+    url.toLowerCase()
+  );
+}
+
 function isPolicyPdfUrl(url: string): boolean {
-  return /polizz|assicuraz|rcg\d|risarcimenti-erogat|gelli|responsabilit|\/rc[-_]/i.test(url);
+  const h = url.toLowerCase();
+  if (isParmOrGelliReportPdf(h)) return false;
+  // PARM/relazioni art.2-4 NON sono la polizza RC art.10
+  return /polizz|assicuraz|rcg\d|responsabilit[aà]|\/rc[-_]/i.test(h);
 }
 
 /** Legge un PDF con retry — se esiste sul sito, deve essere letto (mai "PDF non letto"). */
@@ -565,7 +574,9 @@ async function crawlSiteInner(
       foundRelevantPage = true;
     }
     const pdfAnalysis = analyzePolicy(text);
-    if (pdfAnalysis.policyFound) {
+    const pdfConcrete = Boolean(pdfAnalysis.massimale || pdfAnalysis.policyNumber || pdfAnalysis.expiry);
+    const parmDoc = isParmOrGelliReportPdf(pdfUrl);
+    if (pdfAnalysis.policyFound && !parmDoc && (pdfConcrete || isPolicyPdfUrl(pdfUrl))) {
       policyFoundInPdf = true;
       // Conserva l'analisi del PDF vincente: scadenza/massimale non vanno persi
       // quando il verdetto viene ricalcolato sul corpus aggregato.
