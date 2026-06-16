@@ -169,7 +169,7 @@ export function SanitaLeads() {
     setIsScanning(true)
     setScanProgress("Connessione al motore live…")
     setProcessingName(null)
-    if (live) {
+    if (live || reset) {
       setLeads((prev) => prev.filter((l) => l.region !== body.region))
       setFreshLeadIds(new Set())
     }
@@ -310,6 +310,10 @@ export function SanitaLeads() {
       setIsScanning(false)
       setProcessingName(null)
       setScanProgress(null)
+      // dopo reset: ricarica dal DB per non mostrare lead “vecchi” rimasti in memoria
+      if (reset) {
+        try { await fetchLeads({ silent: true }) } catch {}
+      }
       setTimeout(() => setActiveScan(null), 8000)
     }
   }
