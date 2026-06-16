@@ -392,7 +392,8 @@ function scorePdfUrl(url: string): number {
   const h = url.toLowerCase();
   // Bilanci/XBRL: mai prioritari per polizza RC (solo se linkato esplicitamente come assicurazione).
   if (FINANCIAL_PDF_HINT.test(h) && !POLICY_PDF_HINT.test(h)) return -50;
-  if (/risarcimenti-erogat|risarcimenti_erogat/.test(h)) return 110;
+  // PARM/risarcimenti erogati: obbligo art.4, NON è la polizza RC art.10 → mai top priority.
+  if (/risarcimenti-erogat|risarcimenti_erogat|parm/.test(h)) return 40;
   if (/polizz|rcg\d|_rc_|\/rc-/.test(h)) return 100;
   if (/assicuraz/.test(h)) return 90;
   if (/trasparen|gelli|responsabilit/.test(h)) return 60;

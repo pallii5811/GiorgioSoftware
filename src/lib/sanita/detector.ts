@@ -136,12 +136,20 @@ function findMassimale(text: string): string | null {
   const rcLimit =
     /limite\s+(?:dell['’]?)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
   const rc = text.match(rcLimit);
-  if (rc?.[1]) return rc[1].replace(/\s+/g, " ").trim();
+  if (rc?.[1]) {
+    const ctx = text.slice(Math.max(0, (rc.index ?? 0) - 80), (rc.index ?? 0) + 200);
+    if (/risarciment|sinistr|liquidat/i.test(ctx)) return null;
+    return rc[1].replace(/\s+/g, " ").trim();
+  }
 
   const near =
     /massimal[ei][^.\n]{0,80}?((?:€|euro|eur)\s*[\d.,]+(?:\s*(?:milion[ei]|mln))?|[\d.,]+\s*(?:milion[ei]|mln)\s*(?:di\s*)?(?:euro|€)?|[\d.,]+\s*(?:euro|€|eur))/i;
   const m = text.match(near);
-  if (m?.[1]) return m[1].replace(/\s+/g, " ").trim();
+  if (m?.[1]) {
+    const ctx = text.slice(Math.max(0, (m.index ?? 0) - 80), (m.index ?? 0) + 200);
+    if (/risarciment|sinistr|liquidat/i.test(ctx)) return null;
+    return m[1].replace(/\s+/g, " ").trim();
+  }
 
   const rco = text.match(
     /RCO\s+(?:per\s+sinistro\s+)?([\d]{1,3}(?:\.\d{3})+(?:,\d{2})?|\d+(?:,\d{2})?)/i
@@ -188,8 +196,8 @@ function policyFocusText(text: string): string {
     /polizza\s+assicurativa|articolo\s+10.{0,60}gelli|art\.?\s*10.{0,60}gelli|compagnia\s+di\s+assicurazione/i
   );
   if (idx >= 0) return text.slice(idx, idx + 5000);
-  const ris = text.search(/risarcimenti\s+erogati/i);
-  if (ris >= 0) return text.slice(ris, ris + 5000);
+  // NON fare focus su "risarcimenti erogati"/PARM: è un obbligo diverso (art.4),
+  // e contiene spesso compagnie/importi che causano falsi PUBLISHED.
   return text;
 }
 
