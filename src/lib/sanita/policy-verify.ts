@@ -105,10 +105,9 @@ function publicationIsCertain(analysis: PolicyAnalysis, crawl: CrawlResult): boo
   if (/autoassicuraz|gestione\s+diretta/i.test(analysis.company ?? "")) return true;
   const hasInsurer = Boolean(analysis.company);
   const hasConcrete = Boolean(analysis.massimale || analysis.policyNumber || analysis.expiry);
+  // Anti-falso-positivo: PUBLISHED solo con evidenza concreta (o PDF polizza / autoassicurazione).
+  // "Compagnia trovata" da sola (es. dentro PARM/ANAC) non basta.
   if (hasInsurer && hasConcrete) return true;
-  if (hasInsurer && crawl.foundRelevantPage) return true;
-  if (analysis.massimale && crawl.foundRelevantPage && /art\.?\s*10|gelli|legge\s*24/i.test(crawl.policyText || ""))
-    return true;
   return false;
 }
 

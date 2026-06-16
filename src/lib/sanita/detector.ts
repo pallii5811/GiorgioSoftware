@@ -305,14 +305,12 @@ export function analyzePolicy(text: string): PolicyAnalysis {
 
   // Soglia ANTI falso-positivo: dichiariamo "polizza pubblicata" solo con evidenza concreta.
   //  - concreteData: nome compagnia + (massimale | scadenza | n. polizza) -> prova diretta
-  //  - strongGelli: riferimento esplicito alla L.24/2017 + contesto assicurativo robusto
-  //    accompagnato da almeno un dato (compagnia o massimale).
   const concreteData = Boolean(insurer && (massimale || expiry || policyNumber));
-  const strongGelli =
-    gelliScore > 0 && insuranceScore >= 2 && (Boolean(insurer) || Boolean(massimale));
 
   // Autoassicurazione = struttura coperta in forma diretta (non lead caldo).
-  let policyFound = concreteData || strongGelli || selfInsured;
+  // Nota: niente "strongGelli" qui: su documenti tipo PARM/ANAC può comparire
+  // il contesto assicurativo senza essere la polizza RC art.10.
+  let policyFound = concreteData || selfInsured;
 
   // Art. 10 Legge Gelli richiede la pubblicazione della polizza AGGIORNATA.
   // Se la data di scadenza è passata da più di 1 anno, la polizza trovata
