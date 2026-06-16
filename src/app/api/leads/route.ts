@@ -3,6 +3,45 @@ import { prisma } from "@/lib/prisma";
 
 const ALLOWED_STATUS = ["NEW", "CONTACTED", "CONVERTED", "LOST"];
 
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const type = url.searchParams.get("type");
+    const region = url.searchParams.get("region");
+    const q = (url.searchParams.get("q") ?? "").trim();
+    const includePending = url.searchParams.get("includePending") === "1";
+    const status = url.searchParams.get("status");
+
+    const leads = await prisma.lead.findMany({
+      where: {
+        ...(type ? { type } : {}),
+        ...(region ? { region } : {}),
+        ...(status ? { status } : {}),
+        ...(includePending ? {} : { lastScannedAt: { not: null } }),
+        ...(q
+          ? {
+              OR: [
+                { companyName: { contains: q } },
+                { website: { contains: q } },
+                { city: { contains: q } },
+                { email: { contains: q } },
+                { pec: { contains: q } },
+                { phone: { contains: q } },
+                { piva: { contains: q } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ reminderAt: "asc" }, { updatedAt: "desc" }],
+      take: 2000,
+    });
+
+    return NextResponse.json({ success: true, data: leads });
+  } catch {
+    return NextResponse.json({ success: false, error: "Errore durante il recupero dei lead." }, { status: 500 });
+  }
+}
+
 // Aggiorna stato commerciale, note e promemoria di un lead (workflow CRM).
 export async function PATCH(req: Request) {
   try {

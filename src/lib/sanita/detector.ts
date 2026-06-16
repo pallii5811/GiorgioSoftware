@@ -151,9 +151,8 @@ function findMassimale(text: string): string | null {
   const rct = text.match(/RCT\s+sinistro\s+([\d]{1,3}(?:\.\d{3})+)/i);
   if (rct?.[1]) return `EUR ${rct[1].replace(/\s+/g, " ").trim()}`;
 
-  const alt = /((?:€|euro|eur)\s*[\d.]{7,}(?:,\d{2})?|\d{1,3}(?:\.\d{3}){1,3}(?:,\d{2})?\s*(?:euro|€|eur))/i;
-  const m2 = text.match(alt);
-  if (m2?.[1]) return m2[1].replace(/\s+/g, " ").trim();
+  // Niente fallback "alt": rischia falsi massimali da bilanci/XBRL (fondo rischi, accantonamenti, ecc.)
+  // Se non è esplicitamente marcato come massimale/limite/RCT/RCO, preferiamo null.
   return null;
 }
 

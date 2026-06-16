@@ -158,8 +158,10 @@ export function SanitaLeads() {
     city?: string
     continueAnalysis?: boolean
     liveRescan?: boolean
+    reset?: boolean
   }) => {
     const live = body.liveRescan ?? false
+    const reset = body.reset ?? false
     const label = body.city
       ? `Scansione live · ${body.city} (${body.region})`
       : `Scansione live · ${body.region}`
@@ -183,13 +185,27 @@ export function SanitaLeads() {
     const maxRounds = 80
 
     try {
+      const scanKey = `sanita.scan.${body.region}`
+      const savedOffset = (() => {
+        try {
+          const raw = window.localStorage.getItem(scanKey)
+          if (!raw) return 0
+          const v = JSON.parse(raw) as { mapsCityOffset?: number } | null
+          return Number(v?.mapsCityOffset ?? 0) || 0
+        } catch {
+          return 0
+        }
+      })()
+
       let payload: Record<string, unknown> = {
         region: body.region,
         city: body.city,
         liveRescan: live,
-        forceDiscovery: live || !body.continueAnalysis,
-        continueAnalysis: body.continueAnalysis ?? false,
-        mapsCityOffset: 0,
+        // reset forza ripartenza da 0 e cancella lo stato locale
+        freshScan: reset,
+        forceDiscovery: reset || live || !body.continueAnalysis,
+        continueAnalysis: reset ? false : (body.continueAnalysis ?? false),
+        mapsCityOffset: reset ? 0 : savedOffset,
       }
 
       while (round < maxRounds) {
@@ -226,6 +242,11 @@ export function SanitaLeads() {
           if (event === "paused" || event === "complete") {
             sessionStats = (data.stats as Record<string, unknown>) ?? {}
             mapsCityOffset = Number(sessionStats?.mapsCityOffset ?? 0)
+            try {
+              window.localStorage.setItem(scanKey, JSON.stringify({ mapsCityOffset }))
+            } catch {
+              /* ignore */
+            }
           }
           if (event === "error") {
             toast.error(String(data.message ?? "Errore scansione"), { id: toastId })
@@ -295,6 +316,16 @@ export function SanitaLeads() {
 
   const startRegionScan = (region: "Veneto" | "Campania") => {
     void runFullScan({ region, liveRescan: true })
+  }
+
+  const continueRegionScan = (region: "Veneto" | "Campania") => {
+    void runFullScan({ region, continueAnalysis: true })
+  }
+
+  const resetRegionScan = (region: "Veneto" | "Campania") => {
+    if (!confirm(`Reset ${region}: cancella i lead e riparte da zero. Confermi?`)) return
+    try { window.localStorage.removeItem(`sanita.scan.${region}`) } catch {}
+    void runFullScan({ region, reset: true })
   }
 
   const verdictOf = (l: Lead): Verdict | null =>
@@ -454,6 +485,16 @@ export function SanitaLeads() {
       const daysSince = d != null ? -d : null
       const isObsolete = daysSince != null && daysSince > 365
       const exp = l.policyExpiry ? ` · scadenza ${formatDate(l.policyExpiry)}` : ""
+      // Se la scadenza è passata (anche < 365gg), non dire "Già coperta".
+      // Operativamente è un contatto urgente (continuità copertura / rinnovo).
+      if (d != null && d < 0 && !isObsolete) {
+        return (
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700"><Zap className="h-3 w-3" />Polizza scaduta sul sito{exp}</span>
+            <span className="block text-[10px] text-muted-foreground">URGENTE — chiamare oggi per rinnovo/continuità copertura</span>
+          </div>
+        )
+      }
       if (isObsolete) {
         return (
           <div className="space-y-1">
@@ -604,6 +645,12 @@ export function SanitaLeads() {
               <><Search className="h-4 w-4" /> Scansiona <span className="ml-1 font-bold">Veneto</span></>
             )}
           </Button>
+          <Button variant="outline" onClick={() => continueRegionScan("Veneto")} disabled={isScanning} className="h-10">
+            Continua Veneto
+          </Button>
+          <Button variant="outline" onClick={() => resetRegionScan("Veneto")} disabled={isScanning} className="h-10">
+            Reset Veneto
+          </Button>
           <Button
             onClick={() => startRegionScan("Campania")}
             disabled={isScanning}
@@ -612,6 +659,12 @@ export function SanitaLeads() {
             {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : (
               <><Search className="h-4 w-4" /> Scansiona <span className="ml-1 font-bold">Campania</span></>
             )}
+          </Button>
+          <Button variant="outline" onClick={() => continueRegionScan("Campania")} disabled={isScanning} className="h-10">
+            Continua Campania
+          </Button>
+          <Button variant="outline" onClick={() => resetRegionScan("Campania")} disabled={isScanning} className="h-10">
+            Reset Campania
           </Button>
         </div>
       </div>
@@ -973,9 +1026,6 @@ export function SanitaLeads() {
                       <td className="px-4 py-3 align-top">{expiryCell(l)}</td>
                       <td className="px-4 py-3 align-top">
                         {strategy(l)}
-                        <button onClick={() => copyText(callScript(l), "Script chiamata copiato")} className="mt-1 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
-                          <Copy className="h-3 w-3" /> Script chiamata
-                        </button>
                       </td>
                       <td className="px-4 py-3 align-top">
                         <StatusSelect id={l.id} value={l.status} onChanged={(s) => updateStatus(l.id, s)} />
@@ -1007,7 +1057,7 @@ export function SanitaLeads() {
                   <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700"><ShieldQuestion className="h-3 w-3" />Da verificare</span> — esito non conclusivo; controllo manuale consigliato
                 </li>
               </ol>
-              <p className="text-xs text-muted-foreground">Clicca il nome della struttura per aprire la scheda con contatti, script di chiamata, note e promemoria.</p>
+              <p className="text-xs text-muted-foreground">Clicca il nome della struttura per aprire la scheda con contatti, note e promemoria.</p>
               <p className="text-xs text-amber-700">I risultati si basano sui siti web ufficiali delle strutture. In caso di sito non aggiornato o documentazione incompleta, lo stato &quot;Da verificare&quot; segnala la necessità di un controllo diretto.</p>
             </div>
           </div>
@@ -1022,7 +1072,7 @@ export function SanitaLeads() {
       {detail && (
         <LeadDetail
           lead={detail}
-          callScript={callScript(detail)}
+          callScript={null}
           onClose={() => setDetail(null)}
           onUpdated={applyPatch}
         />

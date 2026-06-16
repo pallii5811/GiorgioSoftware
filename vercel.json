@@ -1,5 +1,5 @@
 {
-  "buildCommand": "prisma generate && prisma db push && next build",
+  "buildCommand": "node scripts/prisma-smart.mjs && next build",
   "framework": "nextjs",
   "regions": ["fra1"]
 }

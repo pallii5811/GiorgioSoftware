@@ -51,7 +51,7 @@ export function LeadDetail({
   lead, callScript, onClose, onUpdated,
 }: {
   lead: DetailLead
-  callScript: string
+  callScript: string | null
   onClose: () => void
   onUpdated: (patch: Partial<DetailLead>) => void
 }) {
@@ -145,16 +145,18 @@ export function LeadDetail({
           <Row label="Scadenza">{fmt(lead.policyExpiry)}</Row>
         </div>
 
-        {/* SCRIPT */}
-        <div className="mb-4">
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Script di chiamata</span>
-            <button onClick={() => copyText(callScript, "Script copiato")} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              <Copy className="h-3 w-3" /> Copia
-            </button>
+        {/* SCRIPT (opzionale) */}
+        {callScript && (
+          <div className="mb-4">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Script di chiamata</span>
+              <button onClick={() => copyText(callScript, "Script copiato")} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                <Copy className="h-3 w-3" /> Copia
+              </button>
+            </div>
+            <p className="rounded-lg bg-muted/40 p-3 text-sm leading-relaxed">{callScript}</p>
           </div>
-          <p className="rounded-lg bg-muted/40 p-3 text-sm leading-relaxed">{callScript}</p>
-        </div>
+        )}
 
         {/* AZIONI CRM */}
         <div className="grid grid-cols-2 gap-3">

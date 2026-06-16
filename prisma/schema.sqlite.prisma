@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Lead {
+  id              String   @id @default(cuid())
+  type            String
+  companyName     String
+  region          String
+  status          String   @default("NEW")
+
+  osmId            String?   @unique
+  website          String?
+  city             String?
+  phone            String?
+  email            String?
+  pec              String?
+  piva             String?
+  leadScore        Int?      @default(0)
+  category         String?
+  policyFound      Boolean?  @default(false)
+  policyCompany    String?
+  policyMassimale  String?
+  policyNumber     String?
+  policyExpiry     DateTime?
+  confidence       Float?
+  evidence         String?
+  notes            String?
+  reminderAt       DateTime?
+  websiteReachable Boolean?
+  pagesVisited     Int?      @default(0)
+  lastScannedAt    DateTime?
+
+  tenderCig       String?  @unique
+  tenderAmount    Float?
+  tenderObject    String?
+  tenderWinner    String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type, region])
+  @@index([type, region, lastScannedAt])
+  @@index([region, companyName])
+}
+
