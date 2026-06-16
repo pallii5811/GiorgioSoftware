@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/prisma-smart.mjs && next build",
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/prisma-smart.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "tsx scripts/test-suite.mjs",
