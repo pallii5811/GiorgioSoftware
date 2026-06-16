@@ -7,10 +7,12 @@ import {
 import { toast } from "sonner"
 import { StatusSelect } from "@/components/status-select"
 import { parseEvidenceSections } from "@/lib/sanita/audit"
+import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
 import { cn } from "@/lib/utils"
 
 export type DetailLead = {
   id: string
+  osmId?: string | null
   companyName: string
   category: string | null
   region: string
@@ -59,6 +61,7 @@ export function LeadDetail({
   const [reminder, setReminder] = useState(lead.reminderAt ? lead.reminderAt.slice(0, 10) : "")
   const [saving, setSaving] = useState(false)
   const evidenceParts = parseEvidenceSections(lead.evidence)
+  const scope = classifyGelliScope(lead.companyName, lead.category, lead.osmId)
 
   const save = async () => {
     setSaving(true)
@@ -116,6 +119,14 @@ export function LeadDetail({
               <Hash className="h-4 w-4" /> P.IVA {lead.piva} <Copy className="h-3 w-3" />
             </button>
           )}
+        </div>
+
+        {/* MOTIVO IN LISTA */}
+        <div className="mb-4 rounded-xl border border-border/60 bg-muted/20 p-3 text-sm">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Motivo in lista</div>
+          <p className={scope.ok ? "text-foreground" : "text-amber-700"}>
+            {scope.reason}
+          </p>
         </div>
 
         {/* VERIFICA / FONTI */}

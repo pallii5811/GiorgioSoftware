@@ -21,9 +21,11 @@ import { StatusSelect } from "@/components/status-select"
 import { LeadDetail } from "@/components/lead-detail"
 import { cn } from "@/lib/utils"
 import { consumeSanitaScanStream } from "@/lib/sanita/scan-sse-client"
+import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
 
 type Lead = {
   id: string
+  osmId: string | null
   companyName: string
   region: string
   category: string | null
@@ -609,6 +611,11 @@ export function SanitaLeads() {
     return `Buongiorno, parlo con ${l.companyName}? Sono [Nome] di [Agenzia]. Ho verificato che sul vostro sito non risulta pubblicata la copertura RC professionale come richiede l'art. 10 della Legge Gelli (L. 24/2017). Posso aiutarvi a mettervi in regola e verificare che massimali e condizioni siano adeguati. Ha due minuti?`
   }
 
+  const scopeReason = (l: Lead) => {
+    const r = classifyGelliScope(l.companyName, l.category, l.osmId)
+    return r.ok ? r.reason : `Fuori scope: ${r.reason}`
+  }
+
   const KPIS = [
     { key: "total", label: "Strutture", value: kpi.total, cls: "", icon: Building2 },
     { key: "hot", label: "Prioritari Gelli", value: kpi.hot, cls: "text-red-600", icon: ShieldAlert, filter: "HOT" as const },
@@ -934,6 +941,7 @@ export function SanitaLeads() {
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-4 py-3 font-medium">Priorità</th>
                     <th className="px-4 py-3 font-medium">Struttura</th>
+                    <th className="px-4 py-3 font-medium">Motivo in lista</th>
                     <th className="px-4 py-3 font-medium">Contatti</th>
                     <th className="px-4 py-3 font-medium">Verdetto Gelli</th>
                     <th className="px-4 py-3 font-medium">Compagnia / Massimale</th>
@@ -945,7 +953,7 @@ export function SanitaLeads() {
                 <tbody>
                   {isScanning && processingName && (
                     <tr className="border-b border-indigo-200 bg-indigo-50/60">
-                      <td colSpan={8} className="px-4 py-3">
+                      <td colSpan={9} className="px-4 py-3">
                         <div className="flex items-center gap-3 text-sm text-indigo-900">
                           <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                           <div>
@@ -981,6 +989,11 @@ export function SanitaLeads() {
                           <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{l.category || "Struttura"}</span>
                           {l.city && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{l.city}</span>}
                           <Badge variant="outline" className="text-[10px]">{l.region}</Badge>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="max-w-[220px] text-xs text-muted-foreground" title={scopeReason(l)}>
+                          {scopeReason(l)}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top">
