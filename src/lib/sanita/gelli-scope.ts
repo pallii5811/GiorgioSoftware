@@ -19,7 +19,7 @@ const GELLI_MAPS_CATEGORY =
  * Esclude studi individuali, enti pubblici, associazioni e attività non sanitarie.
  */
 const GELLI_STRUCTURE_NAME =
-  /casa\s+di\s+cura|clinica\b|ospedal|policlinic|rsa\b|casa\s+di\s+riposo|residenza\s+sanitaria|residenza\s+assistenz|residenza\s+per\s+anziani|casa\s+albergo|casa\s+alloggio|casa\s+protetta|casa\s+famiglia|comunit[aà]\s+alloggio|poliambulator|polidiagnostic|istituto\s+(di\s+)?cura|istituto\s+clinico|day\s+hospital|hospice\b|centro\s+riabilit|centro\s+di\s+riabilit|fisioterap|riabilitaz|centro\s+diagnostic|centro\s+medic|laboratorio\s+(analisi|di\s+analisi)|analisi\s+clinic|dialisi|emodialisi|lungodegen|radioterap|radiochirurg|radio\s*surgery|oncolog|cardiolog|neurochirurg|presidio\s+privat|nursing\s+home|sanitaria\s+assistenziale/i;
+  /casa\s+di\s+cura|clinica\b|ospedal|policlinic|rsa\b|casa\s+di\s+riposo|residenza\s+sanitaria|residenza\s+assistenz|residenza\s+per\s+anziani|casa\s+protetta|poliambulator|polidiagnostic|istituto\s+(di\s+)?cura|istituto\s+clinico|day\s+hospital|hospice\b|centro\s+riabilit|centro\s+di\s+riabilit|fisioterap|riabilitaz|centro\s+diagnostic|centro\s+medic|laboratorio\s+(analisi|di\s+analisi)|analisi\s+clinic|dialisi|emodialisi|lungodegen|radioterap|radiochirurg|radio\s*surgery|oncolog|cardiolog|neurochirurg|presidio\s+privat|nursing\s+home|sanitaria\s+assistenziale/i;
 
 /** Professionista singolo / attività NON soggetta come struttura Gelli. */
 const SOLO_PROFESSIONISTA_O_FUORI_SCOPE =
@@ -27,7 +27,7 @@ const SOLO_PROFESSIONISTA_O_FUORI_SCOPE =
 
 /** Enti pubblici, associazioni, settori non target. */
 const HARD_EXCLUDE =
-  /immobiliar|tecnocasa|tempocasa|remax|prestit|finanziament|compass|banca\b|assicurazion|agenzia\s+viagg|hotel\b|resort\b|b&b\b|bed\s+and\s+breakfast|affittacamere|vacanz|ristorant|pizzeri|trattoria|home\s+restaurant|caff[eè]\b|parrucchier|centro\s+estetic|istituto\s+di\s+bellezza|palestra\b|autofficin|carrozzeri|gommist|supermercat|onoranze|pompe\s+funebr|avvocat|notai\b|commercialist|geometr|architett|scuola\s+guida|autoscuol|tabacch|edicol|ferrament|agrari\b|on-? ?line|portale\s+web|abcsalute|\blilt\b|lega\s+italiana.*tumor|associazione\s+di\s+promozione|\baps\b|comitato\s+di\s+volontariato|fondazione\s+assistenza\s+e\s+preghiera|scuola\s+primaria|scuola\s+elementare|scuola\s+media|\bistituto\s+comprensivo\b|museo\b|chiesa\b|parrocch|basilic[aà]\b/i;
+  /immobiliar|tecnocasa|tempocasa|remax|prestit|finanziament|compass|banca\b|assicurazion|agenzia\s+viagg|hotel\b|resort\b|b&b\b|bed\s+and\s+breakfast|affittacamere|vacanz|ristorant|pizzeri|trattoria|home\s+restaurant|caff[eè]\b|parrucchier|centro\s+estetic|istituto\s+di\s+bellezza|palestra\b|autofficin|carrozzeri|gommist|supermercat|onoranze|pompe\s+funebr|avvocat|notai\b|commercialist|geometr|architett|scuola\s+guida|autoscuol|tabacch|edicol|ferrament|agrari\b|on-? ?line|portale\s+web|abcsalute|\blilt\b|lega\s+italiana.*tumor|associazione\s+di\s+promozione|\baps\b|comitato\s+di\s+volontariato|fondazione\s+assistenza\s+e\s+preghiera|scuola\s+primaria|scuola\s+elementare|scuola\s+media|\bistituto\s+comprensivo\b|museo\b|chiesa\b|parrocch|basilic[aà]\b|comunit[aà]\s+alloggio\s+minori/i;
 
 /** Uffici ASL/ULSS pubblici — non case di cura private. */
 const PUBLIC_HEALTH_OFFICE =

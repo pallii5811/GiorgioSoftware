@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeWebsite, type Region } from "@/lib/sanita/discovery";
 import { discoverFromMaps, mapsOsmId } from "@/lib/sanita/maps-discovery";
 import { fetchAccreditedClinics, titleCase } from "@/lib/sanita/salute";
+import { isGelliSubjectStructure } from "@/lib/sanita/gelli-scope";
 import {
   buildLeadIdentityIndex,
   findMatchingLead,
@@ -126,7 +127,9 @@ export async function discoverRegionFromMaps(
 
     const CHUNK = 40;
     for (let i = 0; i < mapsResult.places.length; i += CHUNK) {
-      const slice = mapsResult.places.slice(i, i + CHUNK);
+      const slice = mapsResult.places
+        .slice(i, i + CHUNK)
+        .filter((p) => isGelliSubjectStructure(p.name, p.category));
       await prisma.$transaction(
         slice.map((p) => {
           const key = normKey(p.name, p.city);
@@ -194,7 +197,8 @@ export async function discoverRegionFromMaps(
         })
       );
     }
-    mapsDiscovered = mapsResult.places.length;
+    // Conteggio solo strutture effettivamente in scope (coerente con UI/progresso)
+    mapsDiscovered = mapsResult.places.filter((p) => isGelliSubjectStructure(p.name, p.category)).length;
   }
 
   const newOffset = cityOffset + mapsResult.citiesScanned.length;
