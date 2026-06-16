@@ -1,9 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isVercelUiHost, HETZNER_SCAN_ENGINE, getScanEngineUrl } from "@/lib/sanita/scan-engine-url";
 
 const ALLOWED_STATUS = ["NEW", "CONTACTED", "CONVERTED", "LOST"];
 
+async function proxyToEngine(req: Request) {
+  const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter((v, i, a) => v && a.indexOf(v) === i);
+  const url = new URL(req.url);
+  for (const base of bases) {
+    try {
+      const upstream = await fetch(`${base}/api/leads${url.search}`, { cache: "no-store" });
+      if (!upstream.ok) continue;
+      const body = await upstream.text();
+      return new NextResponse(body, {
+        status: upstream.status,
+        headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
+      });
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 export async function GET(req: Request) {
+  // UI Vercel deve vedere lo stesso DB del motore (Hetzner), altrimenti CRM risulta vuoto.
+  if (isVercelUiHost()) {
+    const proxied = await proxyToEngine(req);
+    if (proxied) return proxied;
+  }
   try {
     const url = new URL(req.url);
     const type = url.searchParams.get("type");
@@ -44,6 +69,11 @@ export async function GET(req: Request) {
 
 // Aggiorna stato commerciale, note e promemoria di un lead (workflow CRM).
 export async function PATCH(req: Request) {
+  // UI Vercel: patchare sul motore (DB Hetzner) per non perdere gli aggiornamenti CRM.
+  if (isVercelUiHost()) {
+    const proxied = await proxyToEngine(req);
+    if (proxied) return proxied;
+  }
   try {
     const body = (await req.json()) as {
       id?: string;
