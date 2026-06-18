@@ -82,12 +82,12 @@ export async function withLeadAnalysisLock<T>(
 
 /** Ferma la pipeline batch — evita doppio motore sullo stesso SQLite. */
 export async function stopBatchPipeline(): Promise<void> {
-  await execFileAsync("bash", ["-lc", "pkill -TERM -f hetzner-full-pipeline 2>/dev/null || true"]).catch(
+  await execFileAsync("bash", ["-lc", "pkill -9 -f hetzner-full-pipeline 2>/dev/null || true"]).catch(
     () => {}
   );
   await execFileAsync("bash", [
     "-lc",
-    "pkill -TERM -f chrome-headless-shell 2>/dev/null || true; pkill -TERM -f chromium 2>/dev/null || true",
+    "pkill -9 -f chrome-headless-shell 2>/dev/null || true; pkill -9 -f chromium 2>/dev/null || true",
   ]).catch(() => {});
 
   const deadline = Date.now() + 30_000;

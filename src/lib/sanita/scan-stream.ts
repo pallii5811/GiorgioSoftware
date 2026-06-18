@@ -24,8 +24,8 @@ import {
 import { packEvidence } from "@/lib/sanita/audit";
 import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
 import { ensureSqliteWal } from "@/lib/sanita/db-ready";
-import { dedupeRegionByCompanyName, dedupeRegionByWebsite } from "@/lib/sanita/lead-dedup";
-import { acquireLiveScanLock, releaseLiveScanLock } from "@/lib/sanita/scan-coordinator";
+import { dedupeRegionByWebsite } from "@/lib/sanita/lead-dedup";
+import { acquireLiveScanLock, releaseLiveScanLock, stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
 
 export { SCAN_BUDGET_MS };
 
@@ -119,11 +119,10 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
 
   try {
   const deduped = await dedupeRegionByWebsite(region);
-  const dedupedNames = await dedupeRegionByCompanyName(region);
-  if (deduped > 0 || dedupedNames > 0) {
+  if (deduped > 0) {
     emit("progress", {
       phase: "analysis",
-      message: `${region} — unificati ${deduped + dedupedNames} duplicati (sito/nome)`,
+      message: `${region} — unificati ${deduped} duplicati (stesso sito web)`,
       done: 0,
       total: 0,
     });
@@ -292,6 +291,7 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   });
 
   while (Date.now() < deadline) {
+    if (liveScanLocked) await stopBatchPipeline();
     const batch = await prisma.lead.findMany({
       where: { type: "HEALTHCARE", region, ...cityFilter, lastScannedAt: null },
       orderBy: [{ website: "desc" }, { createdAt: "asc" }],
