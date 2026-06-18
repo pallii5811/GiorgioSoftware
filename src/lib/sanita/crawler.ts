@@ -1,6 +1,17 @@
 import * as cheerio from "cheerio";
 import { externalFetch } from "@/lib/http";
-import { analyzePolicy, type PolicyAnalysis } from "@/lib/sanita/detector";
+import {
+  analyzePolicy,
+  isGelliComplianceReportOnly,
+  isGelliComplianceReportText,
+  type PolicyAnalysis,
+} from "@/lib/sanita/detector";
+import { isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
+import {
+  discoverJsonApiUrls,
+  extractJsonPolicyText,
+  extractPageText,
+} from "@/lib/sanita/extract-embedded";
 // NB: pdf-parse (e la dipendenza nativa @napi-rs/canvas) viene importato in modo
 // LAZY dentro fetchPdfText: l'import statico farebbe crashare `next build` durante
 // la fase di "Collecting page data" (caricamento del modulo nativo).
@@ -23,6 +34,8 @@ export interface CrawlResult {
   needsOcrReview: boolean;
   /** Analisi del PDF che ha trovato la polizza — preserva compagnia/scadenza/massimale. */
   policyPdfAnalysis: PolicyAnalysis | null;
+  /** URL del PDF che ha certificato la polizza (se trovata in PDF). */
+  policyPdfUrl: string | null;
   emails: string[];
   pec: string | null;
   phones: string[];
@@ -126,22 +139,116 @@ const STRONG_RELEVANT =
 
 const PRIVACY_ONLY_URL = /(?:^|\/)(?:privacy|cookie|gdpr|legal-notice|note-legali|informativa-privacy)/i;
 
+const POLICY_BODY_RE =
+  /trasparen|polizz|assicuraz|gelli|art\.?\s*10|legge\s*(?:24|gelli)|massimale|rco\b|rct\b|responsabilit[aà]\s*civile/i;
+
+const COOKIE_PRIVACY_BOILERPLATE =
+  /cookie|informativa\s+privacy|gdpr|consenso|trattamento\s+(?:dei\s+)?dati|diritto\s+all.?oblio|utilizziamo\s+i\s+cookie/i;
+
+/** Segnale forte RC art.10 — esclude falsi positivi da cookie/GDPR. */
+export function hasStrongRcPolicySignal(text: string): boolean {
+  const t = policyFocusSlice(text);
+  if (/polizza\s+(?:in\s+vigore|rc\b|n[°º.])|numero\s+(?:della\s+)?pratica|codice\s+polizza/i.test(t)) {
+    return true;
+  }
+  if (/responsabilit[aà]\s+civile.{0,140}(?:massimale|rct|rco|€)/i.test(t)) return true;
+  if (/massimale.{0,100}(?:rct|rco)|\bR\.?C\.?T\b|\bR\.?C\.?O\b/i.test(t)) return true;
+  if (
+    /art\.?\s*10.{0,100}gelli|legge\s+(?:24\/2017|gelli)/i.test(t) &&
+    /polizz|assicuraz|massimale/i.test(t)
+  ) {
+    return true;
+  }
+  if (/autoassicuraz|gestione\s+diretta\s+del\s+rischio/i.test(t)) return true;
+  if (/dati\s+assicurazion|sottoscritto\s+(?:con|da)\s+.{3,40}\s+polizza/i.test(t)) return true;
+  if (/copertura\s+assicurativa|polizza\s+stipulata/i.test(t) && /unipolsai|generali|am\s*trust|berkshire|hdi/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+export function isTransparencyUrl(url: string): boolean {
+  return /amministrazione-trasparente|societa-trasparente|\/trasparen|\/polizz|\/assicuraz|responsabilit[aà]-civile|note-legali|dati-assicuraz/i.test(
+    url.toLowerCase()
+  );
+}
+
+/** Pagine dove molte strutture pubblicano la polizza RC (non solo /trasparenza). */
+export function isPolicyPublicationUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return (
+    isTransparencyUrl(u) ||
+    /gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico|art\.?\s*10|legge[\-_]?gelli|assicurazion|convenzion|note-legali|legal-notice|dati-assicuraz|risk[\-_]?management|qualita[\-_]?e[\-_]?sicurezza|area[\-_]?trasparenza/i.test(
+      u
+    )
+  );
+}
+
+/** Focus su sezione polizza se la pagina ha molto rumore (news/blog prima dell'art.10). */
+function policyFocusSlice(pageText: string): string {
+  const t = pageText.trim();
+  const idx = t.search(
+    /art\.?\s*10|legge\s+gelli|polizza\s+n\.?|copertura\s+assicurativa|responsabilit[aà]\s+civile\s+verso/i
+  );
+  if (idx > 400) return t.slice(Math.max(0, idx - 400), idx + 8000);
+  return t.slice(0, 16_000);
+}
+
 /** Pagina conta come Trasparenza/polizza per certificare HOT (no privacy GDPR). */
 export function pageCountsAsPolicyRelevant(url: string, pageText: string): boolean {
+  const t = policyFocusSlice(pageText).trim();
+  if (t.length < 40) return false;
+  if (isSiteUnderMaintenance(pageText)) return false;
+  if (analyzePolicy(t).policyFound || analyzePolicy(pageText).policyFound) return true;
+
   const u = url.toLowerCase();
-  const t = pageText.slice(0, 8000);
-  const policyInText =
-    /trasparen|polizz|assicuraz|gelli|art\.?\s*10|legge\s*(?:24|gelli)|massimale|rco\b|rct\b|responsabilit[aà]\s*civile/i.test(
-      t
+
+  const onTransparencyUrl = isTransparencyUrl(u);
+  const onPolicyUrl = isPolicyPublicationUrl(u);
+  const strong = hasStrongRcPolicySignal(t);
+
+  if (onTransparencyUrl || onPolicyUrl) {
+    return (
+      strong ||
+      /eventi\s+avversi|risarcimenti\s+erogat|bilanci?\s+di\s+esercizio|attestazione.{0,50}anac/i.test(t)
     );
-  const policyInUrl =
-    /trasparen|polizz|assicuraz|gelli|amministrazione-trasparente|societa-trasparente|responsabilit[aà]-civile|\/documenti/i.test(
-      u
-    );
-  if (PRIVACY_ONLY_URL.test(u) && !policyInUrl) {
-    return policyInText && /responsabilit[aà]\s*civile|polizza\s*rc|massimale|art\.?\s*10/i.test(t);
   }
-  return policyInUrl || policyInText;
+
+  let path = "/";
+  try {
+    path = new URL(url).pathname.replace(/\/$/, "") || "/";
+  } catch {
+    /* ignore */
+  }
+  if (path === "/" && !strong) return false;
+  if (COOKIE_PRIVACY_BOILERPLATE.test(t) && !strong) return false;
+  return strong;
+}
+
+export function policyTextHasSubstance(text: string): boolean {
+  const t = text.trim();
+  return t.length >= 60 && hasStrongRcPolicySignal(t);
+}
+
+/** Trasparenza visitata e tutti i PDF in coda analizzati (anche 0/0). */
+export function transparencyCrawlComplete(crawl: {
+  pagesVisited: string[];
+  foundRelevantPage: boolean;
+  policyPdfsQueued: number;
+  policyPdfsRead: number;
+  needsOcrReview: boolean;
+}): boolean {
+  const visitedPolicyish = crawl.pagesVisited.some(
+    (u) => isTransparencyUrl(u) || isPolicyPublicationUrl(u)
+  );
+  const allPdfsRead =
+    crawl.policyPdfsQueued === 0 || crawl.policyPdfsRead === crawl.policyPdfsQueued;
+  return (
+    visitedPolicyish &&
+    crawl.foundRelevantPage &&
+    allPdfsRead &&
+    !crawl.needsOcrReview
+  );
 }
 
 // Parole chiave che indicano pagine rilevanti per la polizza Gelli
@@ -154,6 +261,11 @@ const RELEVANT_LINK_KEYWORDS = [
   "gelli",
   "responsabilit",
   "risarciment",
+  "rischio clinico",
+  "gestione del rischio",
+  "risk management",
+  "assicurazioni",
+  "convenzioni",
   "amministrazione",
   "qualita",
   "qualità",
@@ -167,17 +279,26 @@ const RELEVANT_LINK_KEYWORDS = [
   "contatto",
   "recapiti",
   "dove-siamo",
+  "note-legali",
+  "note legali",
+  "documenti",
+  "allegati",
+  "download",
+  "modulistica",
+  "sicurezza",
 ];
 
 const FAST = process.env.SCAN_FAST !== "0" && process.env.SCAN_FAST !== "false";
 /** Crawl policy sempre esaustivo: zero falsi HOT (polizza pubblicata ma non vista). */
 const POLICY_EXHAUSTIVE = process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false";
-const MAX_SUBPAGES = POLICY_EXHAUSTIVE ? 14 : FAST ? 10 : 14;
-const MAX_TOTAL_CHARS = 64_000;
-const MAX_POLICY_CHARS = 120_000;
-/** Nessun limite PDF in modalità esaustiva — ogni PDF trovato DEVE essere letto. */
-const MAX_PDFS = POLICY_EXHAUSTIVE ? Number.POSITIVE_INFINITY : FAST ? 8 : 14;
+/** Esaustivo: BFS su tutte le pagine HTML del dominio (fino al tetto). */
+const MAX_HTML_PAGES = POLICY_EXHAUSTIVE ? 150 : FAST ? 12 : 40;
+const MAX_TOTAL_CHARS = POLICY_EXHAUSTIVE ? 200_000 : 64_000;
+const MAX_POLICY_CHARS = 200_000;
+/** Esaustivo: tutta la coda PDF scoperta sul sito. */
+const MAX_PDFS = POLICY_EXHAUSTIVE ? Number.MAX_SAFE_INTEGER : FAST ? 8 : 20;
 const MAX_PDF_BYTES = 12_000_000;
+const PDF_FETCH_TIMEOUT_MS = POLICY_EXHAUSTIVE ? 90_000 : 25_000;
 const PDF_READ_RETRIES = POLICY_EXHAUSTIVE ? 3 : 1;
 
 function emptyCrawl(partial: Partial<CrawlResult> = {}): CrawlResult {
@@ -193,6 +314,7 @@ function emptyCrawl(partial: Partial<CrawlResult> = {}): CrawlResult {
     policyPdfsRead: 0,
     needsOcrReview: false,
     policyPdfAnalysis: null,
+    policyPdfUrl: null,
     emails: [],
     pec: null,
     phones: [],
@@ -203,6 +325,12 @@ function emptyCrawl(partial: Partial<CrawlResult> = {}): CrawlResult {
 
 /** Percorsi tipici della sezione Trasparenza / polizza Gelli sui siti italiani. */
 const PROBE_PATHS = [
+  "/note-legali",
+  "/note-legali/",
+  "/it-it/note-legali",
+  "/it-it/note-legali/",
+  "/it/note-legali",
+  "/legal",
   "/societa-trasparente",
   "/societa-trasparente/",
   "/amministrazione-trasparente",
@@ -222,13 +350,52 @@ const PROBE_PATHS = [
   "/modulistica",
   "/it/trasparenza",
   "/it/chi-siamo/trasparenza",
+  "/chi-siamo/gestione-del-rischio-clinico",
+  "/gestione-del-rischio-clinico",
+  "/cuore/q-service/gestione-del-rischio-clinico",
+  "/assicurazioni-e-convenzioni",
+  "/assicurazioni",
   "/wp-content/uploads",
+  // Varianti aggiuntive trovate su siti strutture italiane reali
+  "/la-struttura/amministrazione-trasparente",
+  "/it/la-struttura/amministrazione-trasparente",
+  "/chi-siamo/trasparenza",
+  "/dati-assicurazione",
+  "/dati-assicurativi",
+  "/polizza-assicurativa",
+  "/info/trasparenza",
+  "/info/note-legali",
+  "/it/societa-trasparente",
+  "/la-clinica/amministrazione-trasparente",
+  "/la-clinica/trasparenza",
+  "/la-struttura/trasparenza",
+  "/rischio-clinico",
+  "/risk-management",
+  "/gestione-rischio",
+  "/qualita-e-sicurezza",
+  "/qualita",
+  "/sito/amministrazione-trasparente",
+  "/it/documenti",
+  "/area-trasparenza",
 ];
 
 function extractText(html: string): string {
-  const $ = cheerio.load(html);
-  $("script, style, noscript, svg, iframe").remove();
-  return $("body").text().replace(/\s+/g, " ").trim();
+  return extractPageText(html);
+}
+
+async function fetchJsonApiText(url: string): Promise<string | null> {
+  try {
+    const res = await externalFetch(url, { timeoutMs: 12_000, redirect: "follow" });
+    if (!res.ok) return null;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (!ct.includes("json") && !url.toLowerCase().includes(".json")) return null;
+    const raw = await res.text();
+    if (!raw.trim() || raw.length > 2_000_000) return null;
+    const t = extractJsonPolicyText(raw);
+    return t || null;
+  } catch {
+    return null;
+  }
 }
 
 function sameHost(base: URL, href: string): string | null {
@@ -243,14 +410,42 @@ function sameHost(base: URL, href: string): string | null {
   }
 }
 
+/**
+ * Sotto-pagina su portale corporate (es. kosgroup.com/it/centri/villa-…):
+ * non espandere a tutto il dominio — solo prefisso struttura + link policy/trasparenza.
+ */
+function crawlPathPrefix(entry: URL): string | null {
+  const p = entry.pathname.replace(/\/$/, "") || "/";
+  if (p === "/") return null;
+  const segments = p.split("/").filter(Boolean);
+  return segments.length >= 2 ? p : null;
+}
+
+function sameHostScoped(base: URL, href: string, scopePrefix: string | null): string | null {
+  const abs = sameHost(base, href);
+  if (!abs || !scopePrefix) return abs;
+  try {
+    const path = new URL(abs).pathname;
+    if (path === scopePrefix || path.startsWith(`${scopePrefix}/`)) return abs;
+    const hay = abs.toLowerCase();
+    if (/\.pdf(?:$|\?|#)/i.test(hay) && POLICY_PDF_HINT.test(hay)) return abs;
+  if (/trasparen|amministrazione-trasparente|societa-trasparente|polizza|assicuraz|\/documenti|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico/.test(hay)) {
+      return abs;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function scoreLink(text: string, href: string): number {
   const hay = (text + " " + href).toLowerCase();
   let score = 0;
   for (const kw of RELEVANT_LINK_KEYWORDS) {
     if (hay.includes(kw)) score += 1;
   }
-  // Priorità massima alle pagine di trasparenza / polizza
-  if (/trasparen|polizza|gelli|assicuraz/.test(hay)) score += 3;
+  // Priorità massima alle pagine di trasparenza / polizza / art.10
+  if (/trasparen|polizza|gelli|assicuraz|rischio\s+clinico|gestione.{0,20}rischio/.test(hay)) score += 3;
   return score;
 }
 
@@ -294,17 +489,20 @@ async function fetchHomepage(base: URL): Promise<{ html: string; url: URL } | nu
   return null;
 }
 
-function isParmOrGelliReportPdf(url: string): boolean {
-  return /parm|risarcimenti[-_]?erogat|eventi[-_]?avvers|griglia[-_]?rilevaz|relazione.*avvers/i.test(
-    url.toLowerCase()
+/** Esclude PDF noti non-assicurativi dal nome file. PARM/PARS vanno letti e filtrati sul testo. */
+function isNonPolicyDocumentPdf(url: string): boolean {
+  const h = url.toLowerCase();
+  // Se il nome file contiene keyword assicurative, NON escludere mai (priorità policy).
+  if (/polizz|assicuraz|rcg\d|responsabilit|rc[-_]|appendice|rinnovo/i.test(h)) return false;
+  return /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|bilancio|xbrl|privacy|gdpr|modulo[\-_]|regolamento|organigramma|costi[\-_]?contabilizzat|conto[\-_]?economico|stato[\-_]?patrimoniale|relazione[\-_]?(?:annuale|finanziaria|gestione|sindaci|revisore)/i.test(
+    h
   );
 }
 
 function isPolicyPdfUrl(url: string): boolean {
   const h = url.toLowerCase();
-  if (isParmOrGelliReportPdf(h)) return false;
-  // PARM/relazioni art.2-4 NON sono la polizza RC art.10
-  return /polizz|assicuraz|rcg\d|responsabilit[aà]|\/rc[-_]/i.test(h);
+  if (isNonPolicyDocumentPdf(h)) return false;
+  return /polizz|assicuraz|rcg\d|responsabilit[aà]|\/rc[-_]|appendice|rinnovo|pol\.-|pol[\-_]\d/i.test(h);
 }
 
 /** Legge un PDF con retry — se esiste sul sito, deve essere letto (mai "PDF non letto"). */
@@ -340,7 +538,7 @@ async function fetchPdfText(
   opts?: { forceOcr?: boolean }
 ): Promise<{ text: string | null; needsOcr: boolean }> {
   try {
-    const res = await externalFetch(url, { timeoutMs: 25_000, redirect: "follow" });
+    const res = await externalFetch(url, { timeoutMs: PDF_FETCH_TIMEOUT_MS, redirect: "follow" });
     if (!res.ok) return { text: null, needsOcr: false };
     const ct = res.headers.get("content-type") || "";
     if (!/pdf/i.test(ct) && !/\.pdf(?:$|\?|#)/i.test(url)) return { text: null, needsOcr: false };
@@ -348,17 +546,17 @@ async function fetchPdfText(
     if (buf.length === 0 || buf.length > MAX_PDF_BYTES) return { text: null, needsOcr: false };
 
     const prevOcr = process.env.OCR_ENABLED;
-    const policyPdf = opts?.forceOcr || isPolicyPdfUrl(url);
+    const policyPdf = opts?.forceOcr || isPolicyPdfUrl(url) || POLICY_EXHAUSTIVE;
     if (policyPdf) process.env.OCR_ENABLED = "1";
 
     try {
-      const { extractPdfFullText, isOcrEnabled } = await import("./ocr");
+      const { extractPdfFullText } = await import("./ocr");
       const { text, digital, ocr } = await extractPdfFullText(buf);
-      const needsOcr =
-        policyPdf &&
-        (digital?.length ?? 0) < 200 &&
-        !ocr &&
-        !isOcrEnabled();
+      // Documento candidato-polizza ma ILLEGGIBILE (né testo digitale né OCR):
+      // non possiamo certificare l'assenza polizza → REVIEW, MAI falso HOT.
+      // (Indipendente da OCR on/off: se non abbiamo letto nulla, è un dubbio.)
+      const unreadable = (digital?.length ?? 0) < 200 && !(ocr && ocr.trim());
+      const needsOcr = policyPdf && unreadable;
       return { text: text || null, needsOcr };
     } finally {
       if (policyPdf) process.env.OCR_ENABLED = prevOcr ?? "0";
@@ -368,22 +566,24 @@ async function fetchPdfText(
   }
 }
 
-/** Su pagina Trasparenza: TUTTI i PDF. Altrimenti solo link con anchor policy. */
+/** Su pagina Trasparenza: TUTTI i PDF (PARM/PARS inclusi). Esaustivo: ogni PDF del sito. */
 function collectPdfsFromPage(
   $: ReturnType<typeof cheerio.load>,
   base: URL,
-  pageIsRelevant = false
+  pageIsRelevant = false,
+  pageUrl?: string
 ): string[] {
   const out: string[] = [];
+  const onTransparency = pageUrl ? isTransparencyUrl(pageUrl) : false;
+  const onPolicyUrl = pageUrl ? isPolicyPublicationUrl(pageUrl) : false;
+  const collectAll = POLICY_EXHAUSTIVE || pageIsRelevant || onTransparency || onPolicyUrl;
   $("a[href]").each((_, el) => {
     const href = $(el).attr("href") || "";
     if (!/\.pdf(?:$|\?|#)/i.test(href)) return;
     const text = $(el).text() || "";
     const meta = `${text} ${href}`;
-    // In Trasparenza spesso ci sono bilanci (XBRL) che NON vanno letti come polizza RC.
-    // Permetti solo PDF "bilancio" se nel link appare anche un chiaro riferimento assicurativo.
     if (FINANCIAL_PDF_HINT.test(meta) && !POLICY_PDF_HINT.test(meta)) return;
-    if (!pageIsRelevant && !STRONG_RELEVANT.test(`${text} ${href}`)) return;
+    if (!collectAll && !STRONG_RELEVANT.test(meta) && !/parm|pars[\-_./]/i.test(href)) return;
     try {
       const u = new URL(href, base);
       if (!/^https?:$/.test(u.protocol)) return;
@@ -396,13 +596,35 @@ function collectPdfsFromPage(
   return out;
 }
 
+function isSkippableAssetUrl(href: string): boolean {
+  return /\.(?:pdf|jpe?g|png|gif|webp|svg|zip|rar|docx?|xlsx?|pptx?|mp4|mp3|css|js|woff2?)(?:$|\?|#)/i.test(
+    href
+  );
+}
+
+function discoverHtmlLinks(
+  $: ReturnType<typeof cheerio.load>,
+  base: URL,
+  scopePrefix: string | null,
+  sink: (url: string) => void
+) {
+  $("a[href]").each((_, el) => {
+    const href = $(el).attr("href") || "";
+    if (!href || href.startsWith("#") || /^mailto:|^tel:/i.test(href)) return;
+    if (isSkippableAssetUrl(href)) return;
+    const abs = sameHostScoped(base, href, scopePrefix);
+    if (!abs || abs === base.toString()) return;
+    sink(abs);
+  });
+}
+
 /** Priorità PDF: la polizza RC deve essere letta anche se il testo HTML ha già riempito il budget. */
 function scorePdfUrl(url: string): number {
   const h = url.toLowerCase();
   // Bilanci/XBRL: mai prioritari per polizza RC (solo se linkato esplicitamente come assicurazione).
   if (FINANCIAL_PDF_HINT.test(h) && !POLICY_PDF_HINT.test(h)) return -50;
-  // PARM/risarcimenti erogati: obbligo art.4, NON è la polizza RC art.10 → mai top priority.
-  if (/risarcimenti-erogat|risarcimenti_erogat|parm/.test(h)) return 40;
+  // PARM/PARS con RC art.10: priorità alta (spesso unica fonte polizza su Trasparenza).
+  if (/parm|pars[\-_./]|[\-_/]pars[\-_./]|risk[\-_]?management|clinical[\-_]?risk|mcrm/i.test(h)) return 95;
   if (/polizz|rcg\d|_rc_|\/rc-/.test(h)) return 100;
   if (/assicuraz/.test(h)) return 90;
   if (/trasparen|gelli|responsabilit/.test(h)) return 60;
@@ -412,6 +634,8 @@ function scorePdfUrl(url: string): number {
 function sortPdfQueue(urls: Iterable<string>): string[] {
   return [...urls].sort((a, b) => scorePdfUrl(b) - scorePdfUrl(a));
 }
+
+export { sortPdfQueue };
 
 /**
  * Naviga il sito di una struttura sanitaria partendo dalla homepage,
@@ -454,16 +678,21 @@ async function crawlSiteInner(
   foundRelevantPage: boolean
 ): Promise<CrawlResult> {
 
-  let base: URL;
+  let entry: URL;
   try {
-    base = new URL(baseUrl);
+    entry = new URL(baseUrl);
   } catch {
     return emptyCrawl({ error: "URL non valido" });
   }
+  const scopePrefix = crawlPathPrefix(entry);
+  let base = entry;
 
   const home = await fetchHomepage(base);
   if (home === null) {
     return emptyCrawl({ error: "Sito irraggiungibile o non in formato HTML" });
+  }
+  if (isParkedOrForSalePage(home.html, home.url.toString())) {
+    return emptyCrawl({ error: "Dominio parcheggiato o in vendita — non è un sito istituzionale" });
   }
   const homeHtml = home.html;
   // Usa l'host che ha effettivamente risposto come base per i link relativi.
@@ -474,74 +703,92 @@ async function crawlSiteInner(
   pagesVisited.push(base.toString());
   combined += extractText(homeHtml);
 
-  // Trova e ordina i link rilevanti nella homepage
   const $ = cheerio.load(homeHtml);
   collectContactsFromHtml($, contacts);
-  const candidates = new Map<string, number>();
 
-  $("a[href]").each((_, el) => {
-    const href = $(el).attr("href") || "";
-    const linkText = $(el).text() || "";
-    const abs = sameHost(base, href);
-    if (!abs || abs === base.toString()) return;
-    const score = scoreLink(linkText, href);
-    if (score > 0) {
-      candidates.set(abs, Math.max(candidates.get(abs) ?? 0, score));
-    }
-  });
-
-  const ranked = [...candidates.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_SUBPAGES)
-    .map(([url]) => url);
-
-  // Coda dei PDF rilevanti: prima quelli linkati in homepage
-  const pdfQueue = new Set<string>(collectPdfsFromPage($, base));
-
+  const pdfQueue = new Set<string>(collectPdfsFromPage($, base, false, base.toString()));
+  const jsonApiQueue = new Set<string>(discoverJsonApiUrls(homeHtml, base.toString()));
   const visitedSet = new Set(pagesVisited);
+  const htmlQueue: string[] = [];
+  const enqueuedHtml = new Set<string>();
 
-  for (const url of ranked) {
-    if (combined.length >= MAX_TOTAL_CHARS) break;
+  const enqueueHtml = (url: string, front = false) => {
+    if (visitedSet.has(url) || enqueuedHtml.has(url)) return;
+    enqueuedHtml.add(url);
+    if (front) htmlQueue.unshift(url);
+    else htmlQueue.push(url);
+  };
+
+  // Probe path noti (note-legali, trasparenza) in testa alla coda.
+  for (const path of PROBE_PATHS) {
+    try {
+      enqueueHtml(new URL(path, base).toString(), true);
+    } catch {
+      /* path assente */
+    }
+  }
+  discoverHtmlLinks($, base, scopePrefix, (u) => enqueueHtml(u));
+
+  let policyFoundInHtml = false;
+  let bfsComplete = false;
+  let policyPdfAnalysis: PolicyAnalysis | null = null;
+  let policyPdfUrl: string | null = null;
+
+  while (htmlQueue.length > 0 && visitedSet.size < MAX_HTML_PAGES) {
+    const url = htmlQueue.shift()!;
+    if (visitedSet.has(url)) continue;
+
     const html = await fetchHtml(url);
-    if (html) {
-      pagesVisited.push(url);
-      visitedSet.add(url);
-      const pageText = extractText(html);
-      combined += " \n " + pageText;
-      const pageRelevant = pageCountsAsPolicyRelevant(url, pageText);
-      if (pageRelevant) {
-        foundRelevantPage = true;
-        policyText = appendPolicy(policyText, pageText);
-      }
-      const sub = cheerio.load(html);
-      collectContactsFromHtml(sub, contacts);
-      for (const p of collectPdfsFromPage(sub, base, pageRelevant)) pdfQueue.add(p);
+    if (!html) continue;
+    if (isParkedOrForSalePage(html, url)) continue;
+
+    visitedSet.add(url);
+    pagesVisited.push(url);
+    const pageText = extractText(html);
+    combined += " \n " + pageText;
+
+    const pageRelevant = pageCountsAsPolicyRelevant(url, pageText);
+    if (pageRelevant) {
+      foundRelevantPage = true;
+      policyText = appendPolicy(policyText, pageText);
+    }
+
+    const pageAnalysis = analyzePolicy(pageText);
+    if (pageAnalysis.policyFound) {
+      policyFoundInHtml = true;
+      foundRelevantPage = true;
+      policyText = appendPolicy(policyText, pageText);
+      if (!policyPdfAnalysis) policyPdfAnalysis = pageAnalysis;
+    }
+
+    const sub = cheerio.load(html);
+    collectContactsFromHtml(sub, contacts);
+    for (const p of collectPdfsFromPage(sub, base, pageRelevant || pageAnalysis.policyFound, url)) {
+      pdfQueue.add(p);
+    }
+    for (const j of discoverJsonApiUrls(html, url)) jsonApiQueue.add(j);
+    discoverHtmlLinks(sub, base, scopePrefix, (u) => enqueueHtml(u));
+
+    if (policyFoundInHtml && POLICY_EXHAUSTIVE) {
+      // Polizza trovata in HTML — continua a raccogliere PDF link ma non espandere altre pagine.
+      bfsComplete = true;
+      break;
     }
   }
 
-  // Probe diretto dei path standard (molti CMS non linkano bene la Trasparenza dalla home)
-  for (const path of PROBE_PATHS) {
-    if (!POLICY_EXHAUSTIVE && combined.length >= MAX_TOTAL_CHARS) break;
-    if (pagesVisited.length >= MAX_SUBPAGES + PROBE_PATHS.length) break;
-    try {
-      const probeUrl = new URL(path, base).toString();
-      if (visitedSet.has(probeUrl)) continue;
-      const html = await fetchHtml(probeUrl);
-      if (!html) continue;
-      pagesVisited.push(probeUrl);
-      visitedSet.add(probeUrl);
-      const pageText = extractText(html);
-      combined += " \n " + pageText;
-      const probeRelevant = pageCountsAsPolicyRelevant(probeUrl, pageText);
-      if (probeRelevant) {
-        foundRelevantPage = true;
-        policyText = appendPolicy(policyText, pageText);
-      }
-      const sub = cheerio.load(html);
-      collectContactsFromHtml(sub, contacts);
-      for (const p of collectPdfsFromPage(sub, base, probeRelevant)) pdfQueue.add(p);
-    } catch {
-      /* path assente sul dominio */
+  if (!bfsComplete) {
+    bfsComplete = htmlQueue.length === 0 || visitedSet.size >= MAX_HTML_PAGES;
+  }
+
+  for (const apiUrl of jsonApiQueue) {
+    if (pagesVisited.includes(apiUrl)) continue;
+    const apiText = await fetchJsonApiText(apiUrl);
+    if (!apiText) continue;
+    pagesVisited.push(apiUrl);
+    combined += ` \n ${apiText}`;
+    if (analyzePolicy(apiText).policyFound) {
+      foundRelevantPage = true;
+      policyText = appendPolicy(policyText, apiText);
     }
   }
 
@@ -550,11 +797,10 @@ async function crawlSiteInner(
   const policyPdfsQueued = sortedPdfs.length;
   let policyPdfsRead = 0;
   let needsOcrReview = false;
-  let policyFoundInPdf = false;
-  let policyPdfAnalysis: PolicyAnalysis | null = null;
+  let policyFoundInPdf = policyFoundInHtml;
 
   for (const pdfUrl of sortedPdfs) {
-    if (!POLICY_EXHAUSTIVE && policyPdfsRead >= MAX_PDFS) break;
+    if (policyPdfsRead >= MAX_PDFS) break;
 
     const { text, needsOcr } = await fetchPdfTextWithRetry(pdfUrl, {
       forceOcr: POLICY_EXHAUSTIVE || isPolicyPdfUrl(pdfUrl),
@@ -574,13 +820,14 @@ async function crawlSiteInner(
       foundRelevantPage = true;
     }
     const pdfAnalysis = analyzePolicy(text);
-    const pdfConcrete = Boolean(pdfAnalysis.massimale || pdfAnalysis.policyNumber || pdfAnalysis.expiry);
-    const parmDoc = isParmOrGelliReportPdf(pdfUrl);
-    if (pdfAnalysis.policyFound && !parmDoc && (pdfConcrete || isPolicyPdfUrl(pdfUrl))) {
+    const complianceDoc = isGelliComplianceReportOnly(text, pdfUrl);
+    const nonPolicyDoc = isNonPolicyDocumentPdf(pdfUrl);
+    if (pdfAnalysis.policyFound && !complianceDoc && !nonPolicyDoc) {
       policyFoundInPdf = true;
       // Conserva l'analisi del PDF vincente: scadenza/massimale non vanno persi
       // quando il verdetto viene ricalcolato sul corpus aggregato.
       policyPdfAnalysis = pdfAnalysis;
+      policyPdfUrl = pdfUrl;
       policyText = appendPolicy(policyText, text);
       combined = (text + " \n " + combined).substring(0, MAX_TOTAL_CHARS);
       break;
@@ -591,17 +838,38 @@ async function crawlSiteInner(
     }
   }
 
-  if (!policyFoundInPdf && analyzePolicy(policyText || combined).policyFound) {
-    policyFoundInPdf = true;
+  if (!policyFoundInPdf) {
+    const fallback = analyzePolicy(policyText || combined);
+    if (fallback.policyFound) {
+      policyFoundInPdf = true;
+      policyPdfAnalysis = policyPdfAnalysis ?? fallback;
+      policyPdfUrl =
+        policyPdfUrl ??
+        sortedPdfs.find((u) => /parm|pars|polizz|assicuraz/i.test(u.toLowerCase())) ??
+        null;
+    }
   }
 
   const allPdfsRead = policyPdfsQueued === 0 || policyPdfsRead === policyPdfsQueued;
+  const crawlMeta = {
+    pagesVisited,
+    foundRelevantPage,
+    policyPdfsQueued,
+    policyPdfsRead,
+    needsOcrReview,
+  };
   const policyExhaustive =
-    policyFoundInPdf ||
-    (allPdfsRead &&
-      !needsOcrReview &&
-      ((policyPdfsQueued === 0 && foundRelevantPage && policyText.trim().length >= 120) ||
-        policyPdfsQueued > 0));
+    !isSiteUnderMaintenance(combined) &&
+    (policyFoundInPdf ||
+      (bfsComplete &&
+        allPdfsRead &&
+        !needsOcrReview &&
+        (foundRelevantPage || policyPdfsQueued > 0)) ||
+      transparencyCrawlComplete(crawlMeta));
+
+  if (isSiteUnderMaintenance(combined)) {
+    foundRelevantPage = false;
+  }
 
   collectContactsFromText(combined, contacts);
   const emailList = [...contacts.emails].sort((a, b) => emailRank(a) - emailRank(b));
@@ -619,6 +887,7 @@ async function crawlSiteInner(
     policyPdfsRead,
     needsOcrReview,
     policyPdfAnalysis,
+    policyPdfUrl,
     emails: emailList,
     pec,
     phones: [...contacts.phones],

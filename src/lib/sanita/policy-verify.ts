@@ -1,6 +1,16 @@
+import { isSiteUnderMaintenance } from "@/lib/sanita/website";
+import {
+  analyzePolicy,
+  isAccountingOrBalanceSheetText,
+  isGelliComplianceReportPdf,
+  isGelliComplianceReportOnly,
+  isGelliComplianceReportText,
+  isParmRcInsuranceDisclosure,
+  type PolicyAnalysis,
+} from "@/lib/sanita/detector";
+import { companyNameOnSite, crawlDepthSufficient, validateSiteIdentity } from "@/lib/sanita/site-identity";
+import { isPolicyPublicationUrl } from "@/lib/sanita/crawler";
 import type { CrawlResult } from "@/lib/sanita/crawler";
-import { analyzePolicy, type PolicyAnalysis } from "@/lib/sanita/detector";
-import { crawlDepthSufficient, validateSiteIdentity } from "@/lib/sanita/site-identity";
 import type { Verdict } from "@/lib/sanita/verdict";
 
 export type ReconcileContext = {
@@ -98,21 +108,107 @@ export function analyzeCrawlPolicy(crawl: CrawlResult): PolicyAnalysis {
   return deepScanCrawlForPolicy(crawl);
 }
 
-/** Evidenza sufficiente per PUBLISHED certo (no falsi positivi). Scadenza opzionale. */
+/** Evidenza sufficiente per PUBLISHED certo: PDF polizza RC letto, oppure pagina HTML con polizza (Trasparenza o art.10). */
+function htmlPolicyPublicationCertain(
+  analysis: PolicyAnalysis,
+  crawl: CrawlResult
+): boolean {
+  if (!analysis.policyFound || analysis.policyObsolete) return false;
+  const body = policyTextFromCrawl(crawl);
+  if (isGelliComplianceReportOnly(body, crawl.policyPdfUrl ?? undefined)) return false;
+  const { company, policyNumber, massimale, expiry } = analysis;
+  const visitedPolicyPage = crawl.pagesVisited.some((u) => isPolicyPublicationUrl(u));
+  const hasRcContext = /copertura\s+assicurativa|polizza\s+stipulata|numero\s+(?:della\s+)?pratica|responsabilit[aà]\s+civile|\bRCT\b|\bRCO\b|polizza\s+n/i.test(body);
+
+  // EVIDENZA SCHIACCIANTE: company + policyNumber + massimale → PUBLISHED sempre
+  // (anche se la polizza è nel footer, non serve pagina Trasparenza dedicata)
+  if (company && policyNumber && massimale) return true;
+  // company + (policyNumber | massimale) + contesto RC → PUBLISHED
+  if (company && (policyNumber || massimale) && hasRcContext) return true;
+
+  // Evidenza parziale: richiede pagina Trasparenza visitata
+  if (!crawl.foundRelevantPage || !visitedPolicyPage) return false;
+  // company + qualsiasi dato concreto su pagina Trasparenza → PUBLISHED
+  if (company && (policyNumber || massimale || expiry)) return true;
+  // policyNumber + massimale (senza company) su pagina Trasparenza → PUBLISHED
+  if (policyNumber && massimale) return true;
+  // company + contesto RC su pagina Trasparenza → PUBLISHED
+  if (company && hasRcContext) return true;
+  return false;
+}
+
+/** Polizza rilevata ma senza tutti i metadati — sufficiente per PUBLISHED se c'è PDF RC/PARM valido. */
+function softPublicationCertain(analysis: PolicyAnalysis, crawl: CrawlResult): boolean {
+  if (!analysis.policyFound || analysis.policyObsolete) return false;
+  const body = policyTextFromCrawl(crawl);
+  if (isGelliComplianceReportOnly(body, crawl.policyPdfUrl ?? undefined)) return false;
+  if (!analysis.company) return false;
+  if (crawl.foundRelevantPage && isParmRcInsuranceDisclosure(body) && analysis.company) return true;
+
+  if (!crawl.policyPdfUrl || !crawl.policyPdfAnalysis?.policyFound) return false;
+  if (
+    /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|costi[\-_]?contabilizzat|conto[\-_]?economico|bilancio/i.test(
+      crawl.policyPdfUrl
+    )
+  ) {
+    return false;
+  }
+  const pdfText = [crawl.policyPdfAnalysis?.evidence, crawl.policyText, body].filter(Boolean).join(" ");
+  if (isAccountingOrBalanceSheetText(pdfText)) return false;
+  const hasRcContext = /polizza|assicurativ|art\.?\s*10|legge\s+gelli|responsabilit[aà]\s+civile|rc\s+sanitar|\bRCT\b|\bRCO\b|massimale|autoassicuraz|gestione\s+diretta/i.test(
+    pdfText
+  );
+  if (!hasRcContext) return false;
+  if (/autoassicuraz|gestione\s+diretta/i.test(analysis.company)) return true;
+  if (analysis.massimale || analysis.expiry || analysis.policyNumber) return true;
+  if (isParmRcInsuranceDisclosure(pdfText)) return true;
+  return false;
+}
+
+function pdfPolicyPublicationCertain(analysis: PolicyAnalysis, crawl: CrawlResult): boolean {
+  const pdf = crawl.policyPdfAnalysis;
+  const policyFound = Boolean(pdf?.policyFound || analysis.policyFound);
+  if (!crawl.policyPdfUrl || !policyFound) return false;
+  const pdfText = [pdf?.evidence, crawl.policyText].filter(Boolean).join(" ");
+  if (isGelliComplianceReportOnly(pdfText, crawl.policyPdfUrl)) return false;
+  if (
+    /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|costi[\-_]?contabilizzat|conto[\-_]?economico|bilancio/i.test(
+      crawl.policyPdfUrl
+    )
+  ) {
+    return false;
+  }
+
+  const hasRcContext = /polizza|assicurativ|art\.?\s*10|legge\s+gelli|responsabilit[aà]\s+civile|rc\s+sanitar|appendice|codice\s+polizza|\bRCT\b|\bRCO\b|massimale|autoassicuraz|gestione\s+diretta/i.test(
+    pdfText
+  );
+  if (!hasRcContext) return false;
+  if (isAccountingOrBalanceSheetText(pdfText)) return false;
+
+  const company = pdf?.company ?? analysis.company ?? null;
+  const massimale = pdf?.massimale ?? analysis.massimale ?? null;
+  const policyNumber = pdf?.policyNumber ?? analysis.policyNumber ?? null;
+  const expiry = pdf?.expiry ?? analysis.expiry ?? null;
+  const selfInsured = /autoassicuraz|gestione\s+diretta/i.test(company ?? "");
+  const hasInsurer = Boolean(company);
+  const appendix =
+    /appendice\s+(?:di\s+)?rinnovo|codice\s+polizza|rc\s+sanitar/i.test(
+      [pdf?.evidence, crawl.policyText].filter(Boolean).join(" ")
+    );
+  const hasConcrete = Boolean(massimale || policyNumber);
+
+  if (selfInsured) return true;
+  if (isParmRcInsuranceDisclosure(pdfText) && hasInsurer) return true;
+  if (hasInsurer && hasConcrete) return true;
+  if (appendix && policyNumber && expiry) return true;
+  return false;
+}
+
 function publicationIsCertain(analysis: PolicyAnalysis, crawl: CrawlResult): boolean {
   if (!analysis.policyFound || analysis.policyObsolete) return false;
-  if (/autoassicuraz|gestione\s+diretta/i.test(analysis.company ?? "")) return true;
-  const pdf = crawl.policyPdfAnalysis;
-  const company = analysis.company ?? pdf?.company ?? null;
-  const massimale = analysis.massimale ?? pdf?.massimale ?? null;
-  const policyNumber = analysis.policyNumber ?? pdf?.policyNumber ?? null;
-  const expiry = analysis.expiry ?? pdf?.expiry ?? null;
-  const hasInsurer = Boolean(company);
-  const hasConcrete = Boolean(massimale || policyNumber || expiry);
-  // PUBLISHED solo con estremi concreti (compagnia + massimale/scadenza/numero).
-  // Mai da sola: menzione compagnia in PARM o PDF report eventi avversi.
-  if (hasInsurer && hasConcrete) return true;
-  return false;
+  // HTML art.10 (es. Gestione Rischio Clinico) non deve essere bloccato da PDF PARM/parziali.
+  if (htmlPolicyPublicationCertain(analysis, crawl)) return true;
+  return pdfPolicyPublicationCertain(analysis, crawl);
 }
 
 export type ReconcileResult = {
@@ -144,23 +240,39 @@ export function reconcilePolicyVerdict(
     };
   }
 
+  const crawlCorpus = [crawl.policyText, crawl.text].filter(Boolean).join("\n");
+  if (isSiteUnderMaintenance(crawlCorpus)) {
+    return {
+      verdict: "REVIEW",
+      analysis: analysisIn,
+      adjusted: true,
+      note: "Sito in manutenzione — impossibile verificare pubblicazione polizza RC online.",
+    };
+  }
+
   // ── PASSO 1: trova polizza ovunque (priorità assoluta) ──
   const analysis = deepScanCrawlForPolicy(crawl);
   if (analysis.policyFound) {
     const enriched = enrichPublishedAnalysis(analysis, crawl);
-    if (!publicationIsCertain(enriched, crawl)) {
+    if (!publicationIsCertain(enriched, crawl) && !softPublicationCertain(enriched, crawl)) {
+      const note = crawl.policyPdfUrl
+        ? "PDF presente ma dati polizza RC insufficienti — verifica manuale."
+        : "Riferimenti assicurativi su pagina web ma PDF polizza RC non individuato — verifica manuale.";
       return {
         verdict: "REVIEW",
         analysis: enriched,
         adjusted: true,
-        note: "Riferimenti assicurativi deboli — verifica manuale prima di considerare in regola.",
+        note,
       };
     }
+    const publishedNote = crawl.policyPdfUrl
+      ? `Polizza RC certificata da PDF: ${crawl.policyPdfUrl}`
+      : "Polizza RC certificata in sezione Amministrazione Trasparente (HTML).";
     return {
       verdict: "PUBLISHED",
       analysis: enriched,
       adjusted: true,
-      note: "Polizza RC certificata su sito (Trasparenza/PDF/HTML).",
+      note: publishedNote,
     };
   }
 
@@ -182,7 +294,18 @@ export function reconcilePolicyVerdict(
 
   // Sempre: Maps può associare il sito dell'ente padre (es. fapc.it) alla singola RSA.
   if (ctx) {
-    const identity = validateSiteIdentity(ctx.companyName, ctx.website, crawl, ctx.city);
+    let identity: { ok: boolean; reason: string };
+    if (
+      ctx.mapsVerified &&
+      crawl.foundRelevantPage &&
+      crawl.policyExhaustive &&
+      !crawl.needsOcrReview &&
+      companyNameOnSite(ctx.companyName, policyTextFromCrawl(crawl))
+    ) {
+      identity = { ok: true, reason: "Sito da Google Maps + Trasparenza visitata" };
+    } else {
+      identity = validateSiteIdentity(ctx.companyName, ctx.website, crawl, ctx.city);
+    }
     if (!identity.ok) gates.push(identity.reason);
     else {
       const depth = crawlDepthSufficient(crawl);

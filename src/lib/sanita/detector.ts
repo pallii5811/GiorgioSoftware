@@ -37,6 +37,8 @@ const INSURERS = [
   "Vittoria Assicurazioni",
   "Vittoria",
   "HDI",
+  "HDI Global",
+  "HDI Global SE",
   "AmTrust",
   "Lloyd's",
   "Lloyds",
@@ -119,15 +121,45 @@ const SELF_INSURANCE = [
   /fondo\s+(?:rischi|di\s+autoassicurazione)/i,
 ];
 
+function isGeneraliFalsePositive(text: string, index: number): boolean {
+  const ctx = text.slice(Math.max(0, index - 80), index + 30).toLowerCase();
+  return (
+    /notizie|servizi|risorse|informazioni|condizioni|disposizioni|norme|dati|aree|spazi|reparti|medicina|chirurgia|linee|indicazioni|coassicuraz|direzione|direttore|aspetti|caratteristiche|principi|obiettivi|prestazion|struttur[ae]|regole|requisiti|documenti|modalit[aà]|criteri|misure|obblighi|procedure/.test(
+      ctx
+    )
+  );
+}
+
 function findInsurer(text: string): string | null {
+  // AM Trust — molte varianti su siti reali
+  if (/AM\s*TRUST|AmTrust|Am\s+Trust|AM[\s\-_]*TRUST\s*(?:ASSICURAZIONI|ITALIA|INTERNATIONAL|EUROPE|CLINICS)?/i.test(text)) return "AmTrust";
+  if (/\bBH\s*ITALIA\b/i.test(text)) return "Berkshire Hathaway";
   for (const insurer of INSURERS) {
-    const re = new RegExp(`\\b${insurer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-    if (re.test(text)) return insurer;
+    const re = new RegExp(`\\b${insurer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+    const m = re.exec(text);
+    if (!m) continue;
+    if (insurer.toLowerCase() === "generali" && isGeneraliFalsePositive(text, m.index)) continue;
+    return insurer;
   }
+  // Fallback: "compagnia assicurativa: X" o "stipulat[ao] ... con X"
   const free = text.match(
-    /compagnia\s+(?:di\s+)?assicurazione\s+([A-Z][A-Za-z0-9\s.&'()/\-]{3,80}?)(?:\s+N\.?\s*Polizza|\s+Scadenza|\s+Massimal|\s+SIR\b|$)/i
+    /compagnia\s+(?:di\s+)?assicurazion[ei]\s*[:\s]+([A-Z][A-Za-z0-9\s.&'()/\-]{3,80}?)(?:\s+N\.?\s*Polizza|\s+Scadenza|\s+Massimal|\s+SIR\b|\s+Polizza\s+n|$)/i
   );
   if (free?.[1]) return free[1].trim().replace(/\s+/g, " ");
+  const free2 = text.match(
+    /compagnia\s+(?:di\s+)?assicurazione\s+([A-Z][A-Za-z0-9\s.&'()/\-]{3,80}?)(?:\s+N\.?\s*Polizza|\s+Scadenza|\s+Massimal|\s+SIR\b|$)/i
+  );
+  if (free2?.[1]) return free2[1].trim().replace(/\s+/g, " ");
+  // "stipulata con X" / "polizza ... con X"
+  const stipulata = text.match(
+    /(?:stipulat[aoe]|sottoscritt[aoe]|contratt[aoe])\s+(?:con\s+(?:la\s+)?)?([A-Z][A-Za-z0-9\s.&'()/\-]{3,60}?)(?:\s+(?:N\.?\s*Polizza|n\.|polizza|scadenz|massimal))/i
+  );
+  if (stipulata?.[1]) return stipulata[1].trim().replace(/\s+/g, " ");
+  // "polizza ... con la/con X"
+  const polizzaCon = text.match(
+    /polizza\s+(?:assicurativa\s+)?(?:per\s+)?(?:RCT|RCO|RC)\s*(?:e\s+RCO\s+)?con\s+(?:la\s+)?([A-Z][A-Za-z0-9\s.&'()/\-]{3,60}?)(?:\.|$|\s+(?:N\.?|n\.|polizza|scadenz|massimal))/i
+  );
+  if (polizzaCon?.[1]) return polizzaCon[1].trim().replace(/\s+/g, " ");
   return null;
 }
 
@@ -136,14 +168,29 @@ function isPayoutTableContext(ctx: string): boolean {
   return /risarcimenti\s+erogat|sinistr[oi]\s+liquidat|liquidato\s+annuo|quinquennio/i.test(ctx);
 }
 
+function isTicketOrIncomeContext(ctx: string): boolean {
+  // Soglie reddito/ticket (Carta servizi) — NON massimale RC.
+  return /ticket|reddito|esenzion|nucleo\s+famili|isee|pagament|tariff|prestazion/i.test(ctx);
+}
+
 function findMassimale(text: string): string | null {
+  const euroBeforeLimit = text.match(
+    /((?:€|eur|euro)\s*[\d]{1,3}(?:\.\d{3})+(?:,\d{2})?)\s+limite\s+di\s+indennizzo/i
+  );
+  if (euroBeforeLimit?.[1]) return euroBeforeLimit[1].replace(/\s+/g, " ").trim();
+
+  const afterMassimali = text.match(
+    /massimali?:[\s\S]{0,220}?((?:€|eur|euro)\s*[\d]{1,3}(?:\.\d{3})+(?:,\d{2})?)/i
+  );
+  if (afterMassimali?.[1]) return afterMassimali[1].replace(/\s+/g, " ").trim();
+
   // RC strutture sanitarie: "Limite dell'Indennizzo ... EUR 5.000.000,00"
   const rcLimit =
     /limite\s+(?:dell['’]?)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
   const rc = text.match(rcLimit);
   if (rc?.[1]) {
     const ctx = text.slice(Math.max(0, (rc.index ?? 0) - 80), (rc.index ?? 0) + 200);
-    if (isPayoutTableContext(ctx)) return null;
+    if (isPayoutTableContext(ctx) || isTicketOrIncomeContext(ctx)) return null;
     return rc[1].replace(/\s+/g, " ").trim();
   }
 
@@ -152,7 +199,7 @@ function findMassimale(text: string): string | null {
   const m = text.match(near);
   if (m?.[1]) {
     const ctx = text.slice(Math.max(0, (m.index ?? 0) - 80), (m.index ?? 0) + 200);
-    if (isPayoutTableContext(ctx)) return null;
+    if (isPayoutTableContext(ctx) || isTicketOrIncomeContext(ctx)) return null;
     return m[1].replace(/\s+/g, " ").trim();
   }
 
@@ -207,11 +254,37 @@ function policyFocusText(text: string): string {
 }
 
 function findExpiry(text: string): Date | null {
+  const appendixRenewal = text.match(
+    /appendice\s+di\s+rinnovo[\s\S]{0,220}?fino\s+alle\s+ore\s+24\s+del\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})/i
+  );
+  if (appendixRenewal?.[1]) {
+    const d = parseItalianDate(appendixRenewal[1]);
+    if (d) return d;
+  }
+
+  const scadBlock = text.match(/scadenza\s+contratto[\s\S]{0,200}/i);
+  if (scadBlock) {
+    const dates = [...scadBlock[0].matchAll(/(\d{1,2})\s+(\d{1,2})\s+(\d{4})/g)];
+    const last = dates.at(-1);
+    if (last) {
+      const d = parseItalianDate(`${last[1]}/${last[2]}/${last[3]}`);
+      if (d) return d;
+    }
+  }
+
   const periodEnd = text.match(
     /scadenza\s+periodo\s+assicurativo\s+\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\s+al\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/i
   );
   if (periodEnd?.[1]) {
     const d = parseItalianDate(periodEnd[1]);
+    if (d) return d;
+  }
+
+  const spacedEnd = text.match(
+    /scadenza\s+contratto[\s\S]{0,220}?(\d{1,2})\s+(\d{1,2})\s+(\d{4})/i
+  );
+  if (spacedEnd) {
+    const d = parseItalianDate(`${spacedEnd[1]}/${spacedEnd[2]}/${spacedEnd[3]}`);
     if (d) return d;
   }
 
@@ -245,12 +318,15 @@ function findExpiry(text: string): Date | null {
 }
 
 function findPolicyNumber(text: string): string | null {
-  // "n. polizza XXX", "polizza n. XXX", "numero polizza: XXX", "Numero polizza: RC-2024-001234"
   const patterns = [
+    /numero\s+(?:della\s+)?pratica\s+(?:[éeè]\s*:?\s*)?(\d{6,12})/i,
+    /codice\s+polizza\s+(\d{6,12})/i,
     /N\.?\s*Polizza\s+RCT\/O\s+([A-Z0-9_]+)/i,
     /\b(\d{4}RCG\d+)\b/i,
     /\b(RCH\d{9,})\b/i,
     /polizza\s+n[°º.]?\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
+    /polizza\s+(\d[\d\-]{8,})/i,
+    /sottoscritto\s+(?:con|da)\s+[^.]{3,80}?\s+polizza\s+([A-Z0-9][\d\-]{6,})/i,
     /(?:polizza\s+(?:n\.?|numero|nr\.?)|(?:n\.?|numero|nr\.)\s+polizza)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
     /numero\s+polizza\s*[:\-]\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
   ];
@@ -286,8 +362,115 @@ function countMatches(text: string, patterns: RegExp[]): number {
   return patterns.reduce((acc, re) => (re.test(text) ? acc + 1 : acc), 0);
 }
 
+function isPolicyAppendixDocument(text: string): boolean {
+  return (
+    /appendice\s+(?:di\s+)?rinnovo|appendice\s+n\.?\s*\d+/i.test(text) &&
+    /polizz|codice\s+polizza|rc\s+sanitar/i.test(text)
+  );
+}
+
+/** Bilancio / costi contabilizzati: "fondo rischi" è accantonamento contabile, NON autoassicurazione Gelli. */
+export function isAccountingOrBalanceSheetText(text: string): boolean {
+  return /costi\s+contabilizzat|accantonamento\s+fondo\s+risch|stato\s+patrimoniale|conto\s+economico|rendiconto\s+finanziario|bilancio\s+d.?esercizio|materie\s+prime.*personale.*altri\s+costi|servizi\s+offerti.*materie\s+prime/i.test(
+    text
+  );
+}
+
+/**
+ * PARM (art.4) e PARS / piani gestione rischio clinico — NON sono la polizza RC art.10.
+ * Es: pars-2025-ICM_.pdf = Piano Annuale Gestione Rischio Sanitario.
+ */
+export function isGelliComplianceReportPdf(url: string): boolean {
+  const h = url.toLowerCase();
+  return /parm|pars[\-_./]|[\-_/]pars[\-_./]|\bpars\b|risarcimenti[\-_]?erogat|relazione[\-_]?parm|eventi[\-_]?avvers|griglia[\-_]?rilevaz|relazione.*avvers|piano[\-_]?annuale|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?sanitario|grs[\-_]|risk[\-_]?management|clinical[\-_]?risk|mcrm|manuale[\-_]?risk/i.test(
+    h
+  );
+}
+
+/**
+ * Art.10 / autoassicurazione pubblicata dentro PARS o pagina gestione rischio.
+ * Non confondere con il solo obbligo PARM (art.4 risarcimenti).
+ */
+/**
+ * Sezione PARM 1.3/1.4: dichiarazione polizza RCT/RCO con compagnia (es. Villa dei Fiori / AmTrust).
+ * Diverso da PARM art.4 con sole tabelle risarcimenti erogati (Villa Maione).
+ */
+export function isParmRcInsuranceDisclosure(text: string): boolean {
+  const t = text.replace(/\s+/g, " ");
+  if (/risarcimenti\s+erogat|sinistr[oi]\s+liquidat/i.test(t) && !/polizza\s+assicurativa\s+per\s+RCT/i.test(t)) {
+    return false;
+  }
+  const rcDeclared =
+    /polizza\s+assicurativa.{0,200}(?:\bRCT\b|\bRCO\b)|stipulat[oa].{0,120}polizza.{0,160}(?:\bRCT\b|\bRCO\b)|polizza\s+assicurativa\s+per\s+RCT/i.test(
+      t
+    );
+  const insurerNamed = /am\s*trust|generali|unipol|berkshire|assicurazion|trust\s+italia/i.test(t);
+  const inInsuranceSection =
+    /posizione\s+assicurativa|descrizione\s+della\s+posizione\s+assicurativa/i.test(t) ||
+    /piano\s+annuale.{0,50}risk\s+management|parm\s*20\d{2}/i.test(t);
+  return rcDeclared && insurerNamed && inInsuranceSection;
+}
+
+export function hasArt10RcOrSelfInsurancePublication(text: string): boolean {
+  const t = text.replace(/\s+/g, " ");
+  if (isParmRcInsuranceDisclosure(t)) return true;
+  const selfInsured = /autoassicuraz|auto[\s-]?assicuraz|ritenzione\s+del\s+rischio|gestione\s+diretta\s+(?:del\s+rischio|dei\s+sinistri|dei\s+rischi)/i.test(
+    t
+  );
+  const rcPolicy =
+    /art\.?\s*10.{0,80}(?:gelli|legge\s*24|n\.?\s*24)/i.test(t) &&
+    /polizza\s+n\.?|copertura\s+assicurativa|responsabilit[aà]\s+civile/i.test(t);
+  if (selfInsured) {
+    return /art\.?\s*10|legge\s+gelli|legge\s*24|responsabilit[aà]\s+civile|\bRCT\b|\bRCO\b|copertura\s+assicurativa|polizza/i.test(
+      t
+    );
+  }
+  return rcPolicy;
+}
+
+/**
+ * PARM/PARS senza art.10 nel testo — usare solo sul testo, non sul solo nome file.
+ */
+export function isGelliComplianceReportOnly(text: string, url?: string): boolean {
+  if (isGelliComplianceReportText(text)) return true;
+  if (!url) return false;
+  const h = url.toLowerCase();
+  if (!/parm|pars[\-_./]|[\-_/]pars[\-_./]|\bpars\b|risarcimenti[\-_]?erogat|relazione[\-_]?parm/i.test(h)) {
+    return false;
+  }
+  return !hasArt10RcOrSelfInsurancePublication(text);
+}
+
+export function isGelliComplianceReportText(text: string): boolean {
+  const t = text.replace(/\s+/g, " ");
+  if (hasArt10RcOrSelfInsurancePublication(t)) return false;
+  // Art.10 RC con polizza su stessa pagina (es. Montevergine)
+  if (
+    /art\.?\s*10.{0,60}(?:gelli|legge\s*24|n\.?\s*24)/i.test(t) &&
+    /polizza\s+n\.?|copertura\s+assicurativa|responsabilit[aà]\s+civile\s+verso/i.test(t) &&
+    (/\bRCT\b|\bRCO\b|massimali?/i.test(t) || /generali|unipolsai|berkshire/i.test(t))
+  ) {
+    return false;
+  }
+  if (/risarcimenti\s+erogat|sinistr[oi]\s+liquidat|relazione\s+parm/i.test(t)) return true;
+  return /piano\s+annuale.{0,80}gestione.{0,40}rischio\s+sanitario|\bpars\b.{0,60}rischio\s+sanitario|gestione\s+del\s+rischio\s+sanitario|risk\s+manager|clinical\s+risk\s+management|manuale.{0,40}risk\s+management|\bmcrm\b/i.test(
+    t
+  );
+}
+
 export function analyzePolicy(text: string): PolicyAnalysis {
   const clean = text.replace(/\s+/g, " ");
+  if (isGelliComplianceReportText(clean)) {
+    return {
+      policyFound: false,
+      confidence: 0,
+      company: null,
+      massimale: null,
+      expiry: null,
+      policyNumber: null,
+      evidence: null,
+    };
+  }
   const focus = policyFocusText(clean);
 
   const gelliScore = countMatches(clean, GELLI_PATTERNS);
@@ -298,9 +481,8 @@ export function analyzePolicy(text: string): PolicyAnalysis {
   const massimale = findMassimale(focus) ?? findMassimale(clean);
   const expiry = findExpiry(focus) ?? findExpiry(clean);
   const policyNumber = sanitizePolicyNumber(findPolicyNumber(focus) ?? findPolicyNumber(clean));
-  const selfInsured = countMatches(clean, SELF_INSURANCE) > 0;
-  // Compagnia esplicita, oppure autoassicurazione (obbligo assolto in forma diretta).
-  const company = insurer || (selfInsured ? "Autoassicurazione / gestione diretta del rischio" : null);
+  const selfInsured =
+    countMatches(clean, SELF_INSURANCE) > 0 && !isAccountingOrBalanceSheetText(clean);
 
   // Strategia di scoring:
   // - Compagnia + (massimale o scadenza o n.polizza) = pubblicazione concreta
@@ -319,11 +501,26 @@ export function analyzePolicy(text: string): PolicyAnalysis {
   // Soglia ANTI falso-positivo: dichiariamo "polizza pubblicata" solo con evidenza concreta.
   //  - concreteData: nome compagnia + (massimale | scadenza | n. polizza) -> prova diretta
   const concreteData = Boolean(insurer && (massimale || expiry || policyNumber));
+  const appendixPolicy = isPolicyAppendixDocument(clean);
+  // Trasparenza HTML: n. polizza + massimale + contesto RC (es. Villa Igea / AmTrust).
+  const rcDeclaredOnPage =
+    Boolean(policyNumber && (massimale || insurer)) &&
+    /polizza\s+in\s+vigore|responsabilit[aà]\s+civile|\bR\.?C\.?T\b|\bR\.?C\.?O\b|art\.?\s*10|legge\s+gelli|copertura\s+assicurativa|polizza\s+stipulata|numero\s+(?:della\s+)?pratica/i.test(
+      clean
+    );
+  const parmRcDisclosure = isParmRcInsuranceDisclosure(clean) && Boolean(insurer);
 
-  // Autoassicurazione = struttura coperta in forma diretta (non lead caldo).
-  // Nota: niente "strongGelli" qui: su documenti tipo PARM/ANAC può comparire
-  // il contesto assicurativo senza essere la polizza RC art.10.
-  let policyFound = concreteData || selfInsured;
+  let policyFound =
+    concreteData ||
+    selfInsured ||
+    rcDeclaredOnPage ||
+    parmRcDisclosure ||
+    (appendixPolicy && Boolean(policyNumber && expiry));
+
+  const company =
+    insurer ||
+    (rcDeclaredOnPage ? findInsurer(clean) : null) ||
+    (selfInsured ? "Autoassicurazione / gestione diretta del rischio" : null);
 
   // Art. 10 Legge Gelli richiede la pubblicazione della polizza AGGIORNATA.
   // Se la data di scadenza è passata da più di 1 anno, la polizza trovata

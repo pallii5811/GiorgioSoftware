@@ -1,16 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeWebsite, type Region } from "@/lib/sanita/discovery";
-import { isBlockedWebsiteHost } from "@/lib/sanita/website";
+import { alternateBrandTldUrls, isBlockedWebsiteHost } from "@/lib/sanita/website";
+import { companyNameOnSite } from "@/lib/sanita/site-identity";
+import { policyTextFromCrawl } from "@/lib/sanita/policy-verify";
 import { resolveOfficialWebsite } from "@/lib/sanita/resolve-website";
+import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
 import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
-import type { MapsPlace } from "@/lib/sanita/playwright-maps";
 import { crawlSite } from "@/lib/sanita/crawler";
 import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
-import { enrichContacts } from "@/lib/sanita/contact-enrichment";
+import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
+import { absorbWebsiteDuplicates } from "@/lib/sanita/lead-dedup";
 import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
-import { packEvidence, type AuditSources } from "@/lib/sanita/audit";
+import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, type AuditSources } from "@/lib/sanita/audit";
+import { isSiteUnderMaintenance } from "@/lib/sanita/website";
 import { verdictFromSite, verdictFromRegional } from "@/lib/sanita/verdict";
 import type { Verdict } from "@/lib/sanita/verdict";
 import { scoreLead } from "@/lib/sanita/score";
@@ -49,22 +53,16 @@ function policyDbFields(
   };
 }
 
-function applyMapsEnrichment<
-  T extends { phone: string | null; city: string | null },
->(lead: T, maps: MapsPlace, audit: AuditSources): { lead: T; website: string | null } {
-  audit.mapsLookup = true;
-  const website = normalizeWebsite(maps.website ?? undefined);
-  const patched = { ...lead };
-  if (!patched.phone && maps.phone) patched.phone = maps.phone;
-  const mapsCity = extractCityFromMapsAddress(maps.address);
-  if (mapsCity) patched.city = mapsCity;
-  return { lead: patched, website };
-}
-
 export async function runBatch<T>(items: T[], size: number, worker: (item: T) => Promise<void>) {
   for (let i = 0; i < items.length; i += size) {
     const chunk = items.slice(i, i + size);
-    await Promise.all(chunk.map(worker));
+    await Promise.all(
+      chunk.map((item) =>
+        worker(item).catch((err) => {
+          console.error(`  [runBatch] worker error:`, err instanceof Error ? err.message : err);
+        })
+      )
+    );
   }
 }
 
@@ -85,44 +83,46 @@ export async function analyzeLead(
   counters: Pick<ScanCounters, "analyzed" | "withPolicy" | "hot" | "review">
 ) {
   const audit: AuditSources = { mapsLookup: true };
-  const mapsCardTrusted = Boolean(lead.osmId?.startsWith("gmaps/") && lead.website);
+  let website: string | null = lead.website ? normalizeWebsite(lead.website) : null;
+  let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && website);
 
-  const resolved = await resolveOfficialWebsite(
-    lead.companyName,
-    lead.city,
-    lead.region as Region,
-    {
-      deadline: Date.now() + 65_000,
-      mapsCardWebsite: lead.website,
-      mapsCardTrusted: mapsCardTrusted,
-    }
-  );
+  if (!website) {
+    const resolved = await resolveOfficialWebsite(
+      lead.companyName,
+      lead.city,
+      lead.region as Region,
+      { deadline: Date.now() + 120_000 }
+    );
 
-  if (resolved.source === "google") audit.googleSearch = true;
-  if (resolved.source === "maps-card" || resolved.source === "maps-lookup") audit.mapsLookup = true;
+    if (resolved.source === "google") audit.googleSearch = true;
+    if (resolved.source === "maps-card" || resolved.source === "maps-lookup") audit.mapsLookup = true;
 
-  const website = resolved.website;
-  const mapsVerified =
-    resolved.source === "maps-card" || resolved.source === "maps-lookup";
+    website = resolved.website;
+    mapsVerified =
+      resolved.source === "maps-card" || resolved.source === "maps-lookup";
 
-  lead = {
-    ...lead,
-    companyName: resolved.companyName,
-    city: resolved.city ?? lead.city,
-    phone: resolved.phone ?? lead.phone,
-  };
-
-  await prisma.lead.update({
-    where: { id: lead.id },
-    data: {
+    lead = {
+      ...lead,
       companyName: resolved.companyName,
-      ...(website ? { website } : {}),
-      city: lead.city,
-      phone: lead.phone,
-    },
-  });
+      city: resolved.city ?? lead.city,
+      phone: resolved.phone ?? lead.phone,
+    };
+
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        companyName: resolved.companyName,
+        ...(website ? { website } : {}),
+        city: lead.city,
+        phone: lead.phone,
+      },
+    });
+  }
 
   if (!website) return;
+
+  const canonicalId = await absorbWebsiteDuplicates(lead.id, website, lead.region);
+  if (canonicalId !== lead.id) return;
 
   const crawl = await crawlSite(website);
   counters.analyzed++;
@@ -183,6 +183,9 @@ export async function analyzeLead(
 
   audit.sitePages = crawl.pagesVisited;
   audit.siteRelevant = crawl.foundRelevantPage;
+  audit.siteUnderMaintenance = isSiteUnderMaintenance([crawl.policyText, crawl.text].filter(Boolean).join("\n"));
+  audit.policyPdfUrl = pickPolicyPdfUrl(crawl);
+  audit.policySourceUrl = pickPolicySourceUrl(crawl);
   audit.policyPdfsQueued = crawl.policyPdfsQueued;
   audit.policyPdfsRead = crawl.policyPdfsRead;
   audit.needsOcrReview = crawl.needsOcrReview;
@@ -214,11 +217,56 @@ export async function analyzeLead(
     audit.regionalQueries = regional.queryCount;
     audit.regionalUrls = regional.sourceUrls;
     if (regional.policyFound) {
-      verdict = "PUBLISHED";
-      analysis = { ...analysis, ...regional, policyFound: true };
-      evidenceBody = `Polizza trovata su portale regionale/ASL ma non sul sito web — sito non aggiornato. ${regional.evidence || ""}`;
+      verdict = "REVIEW";
+      evidenceBody = `Portale regionale/ASL: possibile polizza ma PDF RC non sul sito — verifica manuale. ${regional.evidence || ""}`;
     } else if (regional.checked) {
       evidenceBody = `Sito: polizza non pubblicata in Trasparenza. Portali ASL/regionali: confermata assenza pubblicazione. ${analysis.evidence || ""}`;
+    }
+  }
+
+  // Polizza assente su .it/.com Maps — prova il TLD gemello (stesso brand nel nome).
+  if (!analysis.policyFound && (verdict === "HOT" || verdict === "REVIEW")) {
+    for (const altUrl of alternateBrandTldUrls(website, lead.companyName)) {
+      const altCrawl = await crawlSite(altUrl);
+      if (!altCrawl.ok) continue;
+      const altAnalysis = analyzeCrawlPolicy(altCrawl);
+      const altRec = reconcilePolicyVerdict(
+        altCrawl,
+        altAnalysis,
+        verdictFromSite({
+          reachable: true,
+          policyFound: altAnalysis.policyFound,
+          foundRelevantPage: altCrawl.foundRelevantPage,
+        }),
+        {
+          companyName: lead.companyName,
+          website: altUrl,
+          city: lead.city,
+          category: lead.category,
+          osmId: lead.osmId,
+          mapsVerified: false,
+        }
+      );
+      if (
+        altRec.verdict === "PUBLISHED" &&
+        altRec.analysis.policyFound &&
+        companyNameOnSite(lead.companyName, policyTextFromCrawl(altCrawl))
+      ) {
+        website = normalizeWebsite(altUrl) ?? altUrl;
+        Object.assign(crawl, altCrawl);
+        analysis = altRec.analysis;
+        verdict = "PUBLISHED";
+        evidenceBody =
+          `Polizza su dominio alternativo ${website} (Maps aveva ${lead.website}). ${altRec.note ?? ""} ${altRec.analysis.evidence ?? ""}`.trim();
+        audit.sitePages = altCrawl.pagesVisited;
+        audit.siteRelevant = altCrawl.foundRelevantPage;
+        audit.policyPdfUrl = pickPolicyPdfUrl(altCrawl);
+        audit.policySourceUrl = pickPolicySourceUrl(altCrawl);
+        audit.policyPdfsQueued = altCrawl.policyPdfsQueued;
+        audit.policyPdfsRead = altCrawl.policyPdfsRead;
+        audit.needsOcrReview = altCrawl.needsOcrReview;
+        break;
+      }
     }
   }
 
@@ -301,23 +349,29 @@ export async function analyzeRegional(
   let pec = lead.pec;
   let website = lead.website;
   let mapsAlready = false;
+  let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && lead.website);
 
   if (!website) {
     const maps = await resolveWebsiteViaMaps(lead.companyName, lead.city, region, {
-      deadline: Date.now() + 40_000,
-      maxQueries: 4,
+      deadline: Date.now() + 120_000,
+      maxQueries: 6,
     });
     if (maps) {
       mapsAlready = true;
-      const applied = applyMapsEnrichment({ phone, email, pec, city: lead.city }, maps, audit);
-      phone = applied.lead.phone;
-      website = applied.website;
-      if (applied.lead.city) lead = { ...lead, city: applied.lead.city };
+      audit.mapsLookup = true;
+      if (!phone && maps.phone) phone = maps.phone;
+      const mapsCity = extractCityFromMapsAddress(maps.address);
+      if (mapsCity) lead = { ...lead, city: mapsCity };
+      if (maps.website) website = normalizeWebsite(maps.website);
+      if (maps.website && website) mapsVerified = true;
     }
   }
 
+  // Google/Tavily prima del guess dominio — molti siti non sono su Maps ma compaiono su Google.
   if (!website || !phone || !email) {
-    const enriched = await enrichContacts(lead.companyName, lead.city, region, { skipMaps: mapsAlready });
+    const enriched = await enrichContacts(lead.companyName, lead.city, region, {
+      skipMaps: mapsAlready,
+    });
     if (enriched.checked) {
       const m = mergeContacts({ phone, email, pec, website }, enriched.contacts, region);
       phone = m.phone;
@@ -326,7 +380,39 @@ export async function analyzeRegional(
       if (!website && m.website) website = m.website;
       audit.contactSearch = true;
       audit.contactUrls = enriched.sourceUrls;
+      audit.googleSearch = true;
     }
+  }
+
+  if (!website) {
+    const google = await findOfficialWebsite(lead.companyName, lead.city, region);
+    const w = normalizeWebsite(google.website ?? undefined);
+    if (w) {
+      website = w;
+      audit.googleSearch = true;
+      audit.contactUrls = [...(audit.contactUrls ?? []), ...google.sourceUrls];
+    }
+  }
+
+  if (!website) {
+    const guessed = await probeGuessedOfficialWebsite(lead.companyName);
+    if (guessed) {
+      website = normalizeWebsite(guessed);
+      audit.googleSearch = true;
+    }
+  }
+
+  if (website) {
+    const canonicalId = await absorbWebsiteDuplicates(lead.id, website, region);
+    if (canonicalId !== lead.id) return;
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        website,
+        ...(phone && !lead.phone ? { phone } : {}),
+        ...(lead.city ? { city: lead.city } : {}),
+      },
+    });
   }
 
   const result = await checkRegionalPolicy(lead.companyName, lead.city, region);
@@ -365,7 +451,11 @@ export async function analyzeRegional(
   let confidence = result.confidence ?? lead.confidence;
   let websiteReachable: boolean | null = lead.website ? true : null;
   let pagesVisited = 0;
-  let verdict: Verdict = verdictFromRegional({ checked: true, policyFound: result.policyFound });
+  let verdict: Verdict = verdictFromRegional({
+    checked: true,
+    policyFound: result.policyFound,
+    hasWebsite: Boolean(website),
+  });
   let evidenceBody = result.evidence;
 
   const priorSite = lead.website ? normalizeWebsite(lead.website) : null;
@@ -391,6 +481,9 @@ export async function analyzeRegional(
       websiteReachable = true;
       audit.sitePages = crawl.pagesVisited;
       audit.siteRelevant = crawl.foundRelevantPage;
+      audit.siteUnderMaintenance = isSiteUnderMaintenance([crawl.policyText, crawl.text].filter(Boolean).join("\n"));
+      audit.policyPdfUrl = pickPolicyPdfUrl(crawl);
+      audit.policySourceUrl = pickPolicySourceUrl(crawl);
       let siteAnalysis = analyzeCrawlPolicy(crawl);
       let siteVerdict = verdictFromSite({
         reachable: true,
@@ -403,6 +496,7 @@ export async function analyzeRegional(
         city: lead.city,
         category: lead.category,
         osmId: lead.osmId,
+        mapsVerified,
       });
       siteAnalysis = siteRec.analysis;
       siteVerdict = siteRec.verdict;
@@ -437,13 +531,8 @@ export async function analyzeRegional(
         audit.regionalQueries = regional.queryCount;
         audit.regionalUrls = regional.sourceUrls;
         if (regional.policyFound) {
-          verdict = "PUBLISHED";
-          policyFound = true;
-          policyCompany = regional.company || policyCompany;
-          policyMassimale = regional.massimale || policyMassimale;
-          policyNumber = regional.policyNumber || policyNumber;
-          policyExpiry = regional.expiry || policyExpiry;
-          confidence = regional.confidence ?? confidence;
+          verdict = "REVIEW";
+          evidenceBody = `Portale regionale/ASL: possibile polizza ma PDF RC non sul sito — verifica manuale. ${regional.evidence || ""}`;
         }
       }
       const m = mergeContacts({ phone, email, pec, website }, {
@@ -458,9 +547,9 @@ export async function analyzeRegional(
     } else {
       websiteReachable = false;
       if (result.policyFound) {
-        verdict = "PUBLISHED";
-        policyFound = true;
-        evidenceBody = `Polizza su portale regionale/ASL; sito web non raggiungibile (${website}). ${result.evidence ?? ""}`;
+        verdict = "REVIEW";
+        policyFound = false;
+        evidenceBody = `Portale regionale/ASL: possibile polizza ma sito irraggiungibile e PDF non verificato (${website}). ${result.evidence ?? ""}`;
       } else if (result.checked && verdict === "HOT") {
         evidenceBody = `Sito irraggiungibile (${website}); assenza polizza confermata su portali ASL/regionali (Art. 10 Gelli). ${result.evidence ?? ""}`;
       } else if (verdict === "HOT") {
@@ -477,7 +566,8 @@ export async function analyzeRegional(
   } else if (siteWasObsolete && result.policyFound && !policyFound) {
     evidenceBody = `Polizza su portale regionale/ASL; assente o non aggiornata sul sito. ${evidenceBody ?? ""}`;
   } else if (!policyFound && !website) {
-    evidenceBody = `Sito web non trovato in anagrafica né via ricerca. Portali ASL consultati: polizza RC non pubblicata (Art. 10 Gelli). ${evidenceBody ?? ""}`;
+    verdict = "REVIEW";
+    evidenceBody = `Sito ufficiale non individuato automaticamente — impossibile certificare assenza polizza. Verifica manuale obbligatoria (es. Google). ${evidenceBody ?? ""}`;
   } else if (
     !policyFound &&
     website &&
@@ -570,7 +660,26 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
   lead = fresh;
 
   if (lead.website) {
-    await analyzeLead({ ...lead, region, osmId: lead.osmId }, counters);
+    try {
+      await analyzeLead({ ...lead, region, osmId: lead.osmId }, counters);
+    } catch (err) {
+      console.error(`  [completeLeadAnalysis] analyzeLead failed for ${lead.companyName}:`, err instanceof Error ? err.message : err);
+      // Marca come REVIEW con errore — non lasciare lead bloccati
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          lastScannedAt: new Date(),
+          evidence: packEvidence(
+            "REVIEW",
+            `Errore durante analisi sito: ${err instanceof Error ? err.message : "errore sconosciuto"} — verifica manuale necessaria.`,
+            { mapsLookup: true }
+          ),
+          leadScore: scoreLead({ verdict: "REVIEW", phone: lead.phone, email: lead.email, pec: lead.pec }),
+        },
+      }).catch(() => {});
+      counters.review++;
+      return;
+    }
     const after = await prisma.lead.findUnique({
       where: { id: lead.id },
       select: { lastScannedAt: true },
@@ -582,7 +691,24 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
   if (!again || again.lastScannedAt) return;
 
   if (isRegionalCheckAvailable()) {
-    await analyzeRegional(again, region, counters);
+    try {
+      await analyzeRegional(again, region, counters);
+    } catch (err) {
+      console.error(`  [completeLeadAnalysis] analyzeRegional failed for ${lead.companyName}:`, err instanceof Error ? err.message : err);
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          lastScannedAt: new Date(),
+          evidence: packEvidence(
+            "REVIEW",
+            `Errore durante verifica portali regionali: ${err instanceof Error ? err.message : "errore sconosciuto"} — verifica manuale.`,
+            { mapsLookup: true }
+          ),
+          leadScore: scoreLead({ verdict: "REVIEW", phone: lead.phone, email: lead.email, pec: lead.pec }),
+        },
+      }).catch(() => {});
+      counters.review++;
+    }
     return;
   }
 
@@ -591,12 +717,12 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
     data: {
       lastScannedAt: new Date(),
       evidence: packEvidence(
-        "HOT",
-        "Nessun sito web su Google Maps — obbligo pubblicazione Art. 10 non rispettato online.",
+        "REVIEW",
+        "Nessun sito web individuato su Maps/ricerca — verifica manuale prima di classificare il lead.",
         { mapsLookup: true }
       ),
-      leadScore: scoreLead({ verdict: "HOT", phone: lead.phone, email: lead.email, pec: lead.pec }),
+      leadScore: scoreLead({ verdict: "REVIEW", phone: lead.phone, email: lead.email, pec: lead.pec }),
     },
   });
-  counters.hot++;
+  counters.review++;
 }

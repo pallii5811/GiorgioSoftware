@@ -1,6 +1,6 @@
 import type { CrawlResult } from "@/lib/sanita/crawler";
 import { mapsNameVariants, mapsNamesMatch } from "@/lib/sanita/maps-query";
-import { isBlockedWebsiteHost } from "@/lib/sanita/website";
+import { isBlockedWebsiteHost, isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
 
 const PUBLIC_ENTITY = /\b(asl|aulss|ausl|distretto|presidio|poliambulatorio|ospedale\s+pubblico)\b/i;
 const PRIVATE_ENTITY = /\b(casa di cura|clinica|rsa|riposo|privat|s\.?p\.?a\.?|s\.?r\.?l\.?)\b/i;
@@ -29,8 +29,10 @@ function norm(s: string): string {
 }
 
 const STOP = new Set([
-  "casa", "cura", "clinica", "ospedale", "centro", "villa", "san", "santa", "santo",
+  "casa", "cura", "clinica", "ospedale", "centro",
+  "san", "santa", "santo",
   "di", "de", "del", "della", "privata", "spa", "srl", "societa", "onlus", "coop",
+  "dei", "degli",
 ]);
 
 function distinctiveTokens(name: string): string[] {
@@ -54,8 +56,8 @@ export function companyNameOnSite(companyName: string, crawlText: string): boole
   const tokens = distinctiveTokens(companyName);
   if (tokens.length === 0) return false;
   const hits = tokens.filter((t) => text.includes(t));
-  if (tokens.length === 1) return hits.length >= 1 && hits[0].length >= 8;
-  return hits.length >= 2;
+  if (tokens.length === 1) return hits.length >= 1 && hits[0].length >= 5;
+  return hits.length >= Math.min(2, tokens.length);
 }
 
 export type SiteIdentityResult = {
@@ -116,6 +118,12 @@ export function validateSiteIdentity(
   }
 
   const corpus = `${crawl.text} ${crawl.policyText}`.trim();
+  if (isSiteUnderMaintenance(corpus)) {
+    return { ok: false, reason: "Sito in manutenzione — contenuti istituzionali non disponibili" };
+  }
+  if (isParkedOrForSalePage(corpus)) {
+    return { ok: false, reason: "Dominio parcheggiato o in vendita — non è un sito istituzionale" };
+  }
   if (!companyNameOnSite(companyName, corpus)) {
     return {
       ok: false,
