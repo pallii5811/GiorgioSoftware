@@ -529,16 +529,16 @@ export function SanitaLeads() {
       else if (v === "REVIEW") review++
       else pending++
     }
-    let total = scope.length
-    if (
-      isScanning &&
-      activeScan &&
-      regionFilter === activeScan.region
-    ) {
-      total = activeScan.done
-      pending = Math.max(0, activeScan.total - activeScan.done)
-    }
-    return { total, hot, pub, review, pending }
+    const scanned = scope.filter((l) => l.lastScannedAt != null).length
+    const queueTotal =
+      isScanning && activeScan && regionFilter === activeScan.region
+        ? Math.max(activeScan.total, scanned)
+        : scope.length
+  const pendingInQueue =
+      isScanning && activeScan && regionFilter === activeScan.region
+        ? Math.max(0, queueTotal - scanned)
+        : scope.filter((l) => !l.lastScannedAt).length
+    return { total: scanned, queueTotal, hot, pub, review, pending: pendingInQueue }
   }, [scope, isScanning, activeScan, regionFilter])
 
   const updateStatus = (id: string, status: string) =>
@@ -768,7 +768,16 @@ export function SanitaLeads() {
   }
 
   const KPIS = [
-    { key: "total", label: "Strutture", value: kpi.total, cls: "", icon: Building2 },
+    {
+      key: "total",
+      label: "Strutture",
+      value:
+        isScanning && activeScan && regionFilter === activeScan.region && kpi.queueTotal > 0
+          ? `${kpi.total} / ${kpi.queueTotal}`
+          : kpi.total,
+      cls: "",
+      icon: Building2,
+    },
     { key: "hot", label: "Prioritari Gelli", value: kpi.hot, cls: "text-red-600", icon: ShieldAlert, filter: "HOT" as const },
     { key: "review", label: "Da verificare", value: kpi.review, cls: "text-amber-600", icon: ShieldQuestion, filter: "REVIEW" as const },
     { key: "pub", label: "Polizza pubblicata", value: kpi.pub, cls: "text-emerald-600", icon: ShieldCheck, filter: "PUBLISHED" as const },

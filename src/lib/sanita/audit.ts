@@ -39,7 +39,7 @@ export interface AuditSources {
   anacCig?: string;
 }
 
-/** PDF che ha certificato la polizza — da policyPdfUrl o da pagine visitate. */
+/** PDF che ha certificato la polizza — solo URL policy-relevanti, mai il primo PDF a caso. */
 export function pickPolicyPdfUrl(
   crawl: Pick<CrawlResult, "policyPdfUrl" | "pagesVisited">
 ): string | null {
@@ -47,7 +47,6 @@ export function pickPolicyPdfUrl(
   const pdfs = (crawl.pagesVisited || []).filter((u) => /\.pdf(?:$|\?|#)/i.test(u));
   return (
     pdfs.find((u) => /polizz|parm|pars|assicuraz|rinnovo|_rc_|\/rc[-_]/i.test(u.toLowerCase())) ??
-    pdfs[0] ??
     null
   );
 }
@@ -71,12 +70,9 @@ export function isParmOrGelliReportPdf(url: string): boolean {
   return isGelliComplianceReportPdf(url);
 }
 
-function buildDocsSection(sources: AuditSources): string | null {
-  // PUBLISHED: allega il PDF (o PARM/PARS con RC art.10) che ha certificato la polizza.
-  if (sources.policyPdfUrl) {
-    return `[DOCS: ${sources.policyPdfUrl}]`;
-  }
-  return null;
+function buildDocsSection(sources: AuditSources, verdict: Verdict): string | null {
+  if (verdict !== "PUBLISHED" || !sources.policyPdfUrl) return null;
+  return `[DOCS: ${sources.policyPdfUrl}]`;
 }
 
 /** PDF polizza da mostrare in UI — documento che ha certificato PUBLISHED. */
@@ -86,20 +82,15 @@ export function policyDocsForDisplay(docs: string[] | null): string[] {
     .slice(0, 3);
 }
 
-/** URL PDF polizza per la UI — [DOCS:] oppure fallback dal testo evidenza. */
+/** URL PDF polizza per la UI — solo PUBLISHED con [DOCS:] esplicito. */
 export function policyPdfUrlsForLead(evidence: string | null | undefined): string[] {
-  const { docs, body } = parseEvidenceSections(evidence);
-  const fromDocs = policyDocsForDisplay(docs);
-  if (fromDocs.length) return fromDocs;
-  const fromBody =
-    body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1] ??
-    body?.match(/(https?:\/\/\S+\.pdf(?:\?[^\s]*)?)/i)?.[1];
-  if (!fromBody || !/\.pdf/i.test(fromBody)) return [];
-  return [fromBody.replace(/[.,;)\]]+$/, "")];
+  if (!evidence || !/^\[V:PUB\]/i.test(evidence)) return [];
+  const { docs } = parseEvidenceSections(evidence);
+  return policyDocsForDisplay(docs);
 }
 
 /** Traccia documentata delle fonti controllate (per report assicuratore). */
-export function buildAuditTrail(sources: AuditSources): string {
+export function buildAuditTrail(sources: AuditSources, verdict: Verdict): string {
   const parts: string[] = [];
 
   if (sources.anac) {
@@ -157,19 +148,19 @@ export function buildAuditTrail(sources: AuditSources): string {
   }
 
   const when = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const docs = buildDocsSection(sources);
+  const docs = buildDocsSection(sources, verdict);
   return [docs, `[FONTI: ${parts.join(" · ") || "nessuna"}] [Verifica: ${when}]`]
     .filter(Boolean)
     .join(" ");
 }
 
 export function packEvidence(verdict: Verdict, body: string | null, audit: AuditSources): string {
-  const pdfFromBody = body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1];
+  const pdfFromBody = verdict === "PUBLISHED" ? body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1] : undefined;
   const auditWithPdf: AuditSources = {
     ...audit,
-    policyPdfUrl: audit.policyPdfUrl ?? pdfFromBody ?? null,
+    policyPdfUrl: verdict === "PUBLISHED" ? (audit.policyPdfUrl ?? pdfFromBody ?? null) : null,
   };
-  const trail = buildAuditTrail(auditWithPdf);
+  const trail = buildAuditTrail(auditWithPdf, verdict);
   const text = [body?.trim(), trail].filter(Boolean).join(" — ");
   return encodeEvidence(verdict, text);
 }

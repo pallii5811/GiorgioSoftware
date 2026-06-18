@@ -18,6 +18,7 @@ import {
   HETZNER_SCAN_ENGINE,
   isVercelUiHost,
 } from "@/lib/sanita/scan-engine-url";
+import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -70,29 +71,7 @@ async function releaseResetLock(): Promise<void> {
 }
 
 async function stopPipelineProcesses(): Promise<void> {
-  // Best-effort: ferma pipeline e Chromium (Playwright) per evitare scritture concorrenti su SQLite.
-  await execFileAsync("bash", ["-lc", "pkill -TERM -f hetzner-full-pipeline 2>/dev/null || true"]).catch(
-    () => {}
-  );
-  await execFileAsync(
-    "bash",
-    [
-      "-lc",
-      "pkill -TERM -f chrome-headless-shell 2>/dev/null || true; pkill -TERM -f chromium 2>/dev/null || true",
-    ]
-  ).catch(() => {});
-
-  // Attendi che le pipeline spariscano (evita P2025 durante deleteMany)
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const { stdout } = await execFileAsync("bash", ["-lc", "pgrep -f hetzner-full-pipeline || true"]);
-      if (!stdout.trim()) break;
-    } catch {
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 400));
-  }
+  await stopBatchPipeline();
 }
 
 /** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */

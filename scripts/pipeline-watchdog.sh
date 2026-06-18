@@ -9,6 +9,7 @@ cd /opt/leadsniper
 
 LOCK=/opt/leadsniper/.pipeline.lock
 RESET_LOCK=/opt/leadsniper/.reset.lock
+LIVE_SCAN_LOCK=/opt/leadsniper/.live-scan.lock
 LOG=/opt/leadsniper/pipeline.log
 WDLOG=/opt/leadsniper/pipeline-watchdog.log
 
@@ -56,6 +57,16 @@ while true; do
     fi
     echo "[$(ts)] reset lock present, waiting" | tee -a "$WDLOG"
     sleep 2
+  done
+  # Scansione live dalla UI: un solo motore sul DB.
+  while [ -f "$LIVE_SCAN_LOCK" ]; do
+    if [ "$(find "$LIVE_SCAN_LOCK" -mmin +360 2>/dev/null | wc -l)" -gt 0 ]; then
+      echo "[$(ts)] stale live-scan lock detected, removing" | tee -a "$WDLOG"
+      rm -f "$LIVE_SCAN_LOCK" || true
+      break
+    fi
+    echo "[$(ts)] live UI scan active, waiting" | tee -a "$WDLOG"
+    sleep 5
   done
   echo "[$(ts)] pipeline start" | tee -a "$WDLOG"
   # pm2 gestisce il processo: niente setsid/nohup qui.

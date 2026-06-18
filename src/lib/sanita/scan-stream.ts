@@ -22,8 +22,10 @@ import {
   SCAN_LEAD_MAX_MS,
 } from "@/lib/sanita/scan-config";
 import { packEvidence } from "@/lib/sanita/audit";
+import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
 import { ensureSqliteWal } from "@/lib/sanita/db-ready";
 import { dedupeRegionByCompanyName, dedupeRegionByWebsite } from "@/lib/sanita/lead-dedup";
+import { acquireLiveScanLock, releaseLiveScanLock } from "@/lib/sanita/scan-coordinator";
 
 export { SCAN_BUDGET_MS };
 
@@ -109,6 +111,13 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   } = input;
   const cityFilter = city && city.trim() ? { city: city.trim() } : {};
 
+  let liveScanLocked = false;
+  if (isScanEngineHost()) {
+    await acquireLiveScanLock(region);
+    liveScanLocked = true;
+  }
+
+  try {
   const deduped = await dedupeRegionByWebsite(region);
   const dedupedNames = await dedupeRegionByCompanyName(region);
   if (deduped > 0 || dedupedNames > 0) {
@@ -397,5 +406,10 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     emit("complete", { message, stats });
   } else {
     emit("paused", { message, stats, mapsCityOffset });
+  }
+  } finally {
+    if (liveScanLocked) {
+      await releaseLiveScanLock();
+    }
   }
 }
