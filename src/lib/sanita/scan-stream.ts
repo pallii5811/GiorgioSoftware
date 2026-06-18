@@ -29,6 +29,18 @@ import { acquireLiveScanLock, releaseLiveScanLock, stopBatchPipeline } from "@/l
 
 export { SCAN_BUDGET_MS };
 
+/** Errore infrastruttura (lock, browser, rete) — non è un verdetto Gelli. */
+function isTransientAnalysisFailure(msg: string): boolean {
+  return (
+    /Timeout lock analisi/i.test(msg) ||
+    /Analisi oltre \d+ min/i.test(msg) ||
+    /Target (page|context|browser).*closed/i.test(msg) ||
+    /Browser has been closed/i.test(msg) ||
+    /Execution context was destroyed/i.test(msg) ||
+    /ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(msg)
+  );
+}
+
 export type ScanStreamInput = {
   region: Region;
   forceDiscovery?: boolean;
@@ -344,7 +356,7 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
                   "REVIEW",
                   isLeadTimeout
                     ? `Timeout analisi (${msg}). Lead messo in REVIEW per non bloccare la scansione; riprova manualmente.`
-                    : `Analisi interrotta (${msg}). Usa «Continua scansione» per riprovare.`,
+                    : `Analisi interrotta (${msg}). Usa «Rianalizza» sulla riga per riprovare.`,
                   { mapsLookup: true }
                 ),
               },

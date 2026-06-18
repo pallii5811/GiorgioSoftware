@@ -1266,6 +1266,19 @@ export function SanitaLeads() {
                             {parseEvidenceSections(l.evidence).body}
                           </div>
                         )}
+                        {verdictOf(l) === "REVIEW" && l.lastScannedAt && (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => void rescanOneLead(l)}
+                              disabled={isScanning}
+                              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Rianalizza
+                            </button>
+                          </div>
+                        )}
                         {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && (
                           <div className="mt-1 text-[10px] font-medium text-amber-700">
                             PDF polizza RC mancante —{" "}
