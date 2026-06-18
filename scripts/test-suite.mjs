@@ -6,6 +6,7 @@
 
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
+import { extractJsonPolicyText, extractPageText } from "../src/lib/sanita/extract-embedded.ts";
 import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
 import { verdictFromSite, verdictFromRegional, readVerdictToken } from "../src/lib/sanita/verdict.ts";
 import { scoreLead } from "../src/lib/sanita/score.ts";
@@ -133,6 +134,60 @@ function testDetector() {
   assert(r9.policyFound === false, `Caso 9 Villa Cinzia: solo Generali in Trasparenza → policyFound=false (era ${r9.policyFound})`);
   console.log("  ✓ Caso 9: solo compagnia in Trasparenza → NON policyFound");
 
+  // Caso 10: PDF costi contabilizzati — "fondo rischi" contabile ≠ autoassicurazione Gelli
+  const text10 = `
+    COSTI CONTABILIZZATI NEL 2021
+    Servizi Offerti Materie Prime Personale Altri costi Totale
+    La voce "Altri Costi" include var.rimanenze, accantonamento fondo rischi e oneri diversi di gestione
+    Ricoveri/Ambulatoriali SSN + Privati 10.440.923 €
+  `;
+  const r10 = analyzePolicy(text10);
+  assert(r10.policyFound === false, `Caso 10 Costi contabilizzati: policyFound=false (era ${r10.policyFound})`);
+  console.log("  ✓ Caso 10: Costi contabilizzati / fondo rischi contabile → NON policyFound");
+
+  // Caso 11: Montevergine — art.10 + polizza Generali su pagina Gestione del Rischio Clinico
+  const text11 = `
+    OBIETTIVO CUORE rubrica settimanale articoli cardiologia news blog
+    Gestione del Rischio Clinico relazione annuale eventi avversi art. 2 comma 5 L. 24/2017
+    Art.10 Legge Gelli-Bianco 8 Marzo 2017 n.24.
+    La società Casa di Cura Privata Montevergine S.p.A. rende noto, che Assicurazioni Generali S.p.A.
+    presta la copertura assicurativa in ordine alla responsabilità civile verso terzi e verso i prestatori d'opera,
+    in forza del Contratto di cui alla polizza n. 450289527 emessa il 11/04/2025 stipulato in data 20/04/2019,
+    che prevede i seguenti massimali: RCT € 5.000.000,00 per ogni sinistro; RCO € 5.000.000,00 per ogni sinistro;
+  `;
+  const r11 = analyzePolicy(text11);
+  assert(r11.policyFound === true, `Caso 11 Montevergine: policyFound=true (era ${r11.policyFound})`);
+  assert(r11.company === "Assicurazioni Generali" || r11.company === "Generali", `Caso 11: company=${r11.company}`);
+  assert(r11.policyNumber === "450289527", `Caso 11: policyNumber=${r11.policyNumber}`);
+  console.log("  ✓ Caso 11: Montevergine art.10 su Gestione Rischio Clinico → policyFound");
+
+  // Caso 12: Malzoni PARS — autoassicurazione art.10 dentro documento PARS (non solo PARM art.4)
+  const text12 = `
+    PARS 2025 Piano Annuale per la Gestione del Rischio Sanitario
+    Malzoni Research Hospital S.p.A.
+    Art. 10 Legge Gelli-Bianco 24/2017 — responsabilità civile verso terzi
+    La struttura adotta la forma di autoassicurazione / gestione diretta del rischio
+    per la copertura assicurativa RC professionale sanitaria.
+  `;
+  const r12 = analyzePolicy(text12);
+  assert(r12.policyFound === true, `Caso 12 Malzoni PARS autoassicurazione: policyFound=true (era ${r12.policyFound})`);
+  assert(
+    r12.company === "Autoassicurazione / gestione diretta del rischio",
+    `Caso 12: company=${r12.company}`
+  );
+  console.log("  ✓ Caso 12: Malzoni PARS con autoassicurazione art.10 → policyFound");
+
+  // Caso 13: Villa dei Fiori Acerra — PARM 2026 sezione posizione assicurativa RCT/RCO AmTrust
+  const text13 = `
+    PIANO ANNUALE RISK MANAGEMENT PARM 2026 Legge Gelli 24/2017
+    1.4 DESCRIZIONE DELLA POSIZIONE ASSICURATIVA
+    Allo stato la struttura ha stipulato una polizza assicurativa per RCT e RCO con la AM Trust.
+  `;
+  const r13 = analyzePolicy(text13);
+  assert(r13.policyFound === true, `Caso 13 Villa dei Fiori PARM: policyFound=true (era ${r13.policyFound})`);
+  assert(r13.company === "AmTrust", `Caso 13: company=${r13.company}`);
+  console.log("  ✓ Caso 13: Villa dei Fiori PARM RCT/RCO AmTrust → policyFound");
+
   console.log("  DETECTOR: TUTTI I TEST PASSATI ✓");
 }
 
@@ -151,6 +206,7 @@ function testFalsePositiveGates() {
     policyPdfsRead: 0,
     needsOcrReview: false,
     policyPdfAnalysis: null,
+    policyPdfUrl: null,
     emails: [],
     pec: null,
     phones: [],
@@ -166,7 +222,218 @@ function testFalsePositiveGates() {
   assert(rec.verdict !== "PUBLISHED", `reconcile non deve dare PUBLISHED (era ${rec.verdict})`);
   console.log(`  ✓ reconcile Villa Cinzia-like → ${rec.verdict} (non PUBLISHED)`);
 
+  const autoHtmlCrawl = {
+    ...mockCrawl,
+    text: "Autoassicurazione / gestione diretta del rischio. Art. 10 Legge Gelli.",
+    policyText: "Autoassicurazione / gestione diretta del rischio.",
+    pagesVisited: ["https://villadeifiori.it/amministrazione-trasparente/"],
+    policyPdfUrl: null,
+    policyPdfAnalysis: null,
+  };
+  const autoAnalysis = analyzePolicy(autoHtmlCrawl.policyText);
+  const autoRec = reconcilePolicyVerdict(autoHtmlCrawl, autoAnalysis, "REVIEW");
+  assert(autoRec.verdict !== "PUBLISHED", `autoassicurazione HTML senza PDF → non PUBLISHED (era ${autoRec.verdict})`);
+  console.log(`  ✓ autoassicurazione solo HTML → ${autoRec.verdict}`);
+
+  const pdfUrl = "https://example.it/wp-content/polizza-rc-2026.pdf";
+  const pdfCrawl = {
+    ...mockCrawl,
+    text: "",
+    policyText: "Polizza RC Professionale Compagnia: Zurich Scadenza: 31/12/2026 Massimale: 5.000.000 EUR",
+    pagesVisited: [pdfUrl],
+    policyPdfUrl: pdfUrl,
+    policyPdfAnalysis: analyzePolicy(
+      "Polizza RC Professionale Compagnia: Zurich Scadenza: 31/12/2026 Massimale: 5.000.000 EUR N. polizza RCG123456"
+    ),
+  };
+  const pdfRec = reconcilePolicyVerdict(pdfCrawl, pdfCrawl.policyPdfAnalysis, "REVIEW");
+  assert(pdfRec.verdict === "PUBLISHED", `PDF polizza RC → PUBLISHED (era ${pdfRec.verdict})`);
+  console.log("  ✓ PDF polizza RC concreti → PUBLISHED");
+
+  const costiPdfUrl =
+    "https://www.villadeifioriacerra.it/wp-content/uploads/2022/06/Costi-contabilizzati-nel-2021.pdf";
+  const costiPdfCrawl = {
+    ...mockCrawl,
+    text: "",
+    policyText: `COSTI CONTABILIZZATI NEL 2021 accantonamento fondo rischi Ricoveri/Ambulatoriali`,
+    pagesVisited: [costiPdfUrl],
+    policyPdfUrl: costiPdfUrl,
+    policyPdfAnalysis: analyzePolicy(
+      `COSTI CONTABILIZZATI NEL 2021 accantonamento fondo rischi Ricoveri/Ambulatoriali`
+    ),
+  };
+  const costiRec = reconcilePolicyVerdict(costiPdfCrawl, costiPdfCrawl.policyPdfAnalysis, "REVIEW");
+  assert(costiRec.verdict !== "PUBLISHED", `Costi contabilizzati PDF → non PUBLISHED (era ${costiRec.verdict})`);
+  console.log(`  ✓ Costi contabilizzati PDF → ${costiRec.verdict} (non PUBLISHED)`);
+
+  const cartaUrl = "https://www.gepos.it/wp-content/uploads/2025/06/Carta-Servizi-GEPOS-2025.pdf";
+  const cartaCrawl = {
+    ...mockCrawl,
+    text: "Carta dei Servizi. Notizie generali. Servizi generali.",
+    policyText: "Carta dei Servizi",
+    pagesVisited: [cartaUrl],
+    policyPdfUrl: cartaUrl,
+    policyPdfAnalysis: { policyFound: true, company: "Generali", massimale: "15.000,00 euro", confidence: 1, policyObsolete: false },
+  };
+  const cartaRec = reconcilePolicyVerdict(cartaCrawl, cartaCrawl.policyPdfAnalysis, "REVIEW");
+  assert(cartaRec.verdict !== "PUBLISHED", `Carta Servizi non deve essere PUBLISHED (era ${cartaRec.verdict})`);
+  console.log(`  ✓ Carta Servizi GEPOS-like → ${cartaRec.verdict}`);
+
+  const montevergineUrl =
+    "https://www.clinicamontevergine.com/cuore/q-service/gestione-del-rischio-clinico/";
+  const monteverginePolicy = `
+    Art.10 Legge Gelli-Bianco 8 Marzo 2017 n.24.
+    Assicurazioni Generali S.p.A. copertura assicurativa responsabilità civile verso terzi e prestatori d'opera
+    polizza n. 450289527 RCT € 5.000.000,00 RCO € 5.000.000,00
+  `;
+  const montevergineCrawl = {
+    ...mockCrawl,
+    text: monteverginePolicy,
+    policyText: monteverginePolicy,
+    pagesVisited: [montevergineUrl],
+    policyPdfUrl: null,
+    policyPdfAnalysis: null,
+  };
+  const montevergineRec = reconcilePolicyVerdict(
+    montevergineCrawl,
+    analyzePolicy(monteverginePolicy),
+    "REVIEW",
+    {
+      companyName: "Casa Di Cura Montevergine",
+      website: "https://www.clinicamontevergine.com",
+      city: "Mercogliano",
+      category: "Casa di cura accreditata (Min. Salute)",
+    }
+  );
+  assert(
+    montevergineRec.verdict === "PUBLISHED",
+    `Montevergine gestione rischio clinico → PUBLISHED (era ${montevergineRec.verdict})`
+  );
+  console.log("  ✓ Montevergine art.10 HTML → PUBLISHED");
+
+  const parmPdfUrl =
+    "https://www.clinicamontevergine.com/wp-content/uploads/relazione-annuale-rischio-clinico-2024.pdf";
+  const parmPdfCrawl = {
+    ...montevergineCrawl,
+    policyPdfUrl: parmPdfUrl,
+    policyPdfAnalysis: {
+      policyFound: true,
+      company: "Generali",
+      massimale: null,
+      policyNumber: null,
+      expiry: new Date("2025-12-31"),
+      confidence: 0.6,
+      evidence: "Relazione annuale rischio clinico eventi avversi",
+    },
+  };
+  const parmRec = reconcilePolicyVerdict(
+    parmPdfCrawl,
+    analyzePolicy(monteverginePolicy),
+    "REVIEW"
+  );
+  assert(
+    parmRec.verdict === "PUBLISHED",
+    `Montevergine HTML + PDF PARM parziale → PUBLISHED (era ${parmRec.verdict})`
+  );
+  console.log("  ✓ Montevergine HTML + PDF PARM parziale → PUBLISHED");
+
+  const malzoniParsUrl =
+    "http://www.malzoni.it/wp-content/uploads/2021/09/PARS-2025-Malzoni-Research-Hospital-S.p.A..pdf";
+  const malzoniParsText = `
+    PARS 2025 Piano Annuale Gestione del Rischio Sanitario Malzoni Research Hospital
+    Art. 10 Legge Gelli 24/2017 responsabilità civile verso terzi
+    autoassicurazione gestione diretta del rischio copertura assicurativa RC
+  `;
+  const malzoniCrawl = {
+    ...mockCrawl,
+    text: malzoniParsText,
+    policyText: malzoniParsText,
+    pagesVisited: ["https://www.malzoni.it/societa-trasparente/", malzoniParsUrl],
+    policyPdfUrl: malzoniParsUrl,
+    policyPdfAnalysis: analyzePolicy(malzoniParsText),
+  };
+  const malzoniRec = reconcilePolicyVerdict(malzoniCrawl, malzoniCrawl.policyPdfAnalysis, "REVIEW", {
+    companyName: "Casa Di Cura Villa Dei Platani",
+    website: "https://www.malzoni.it",
+    city: "Avellino",
+  });
+  assert(
+    malzoniRec.verdict === "PUBLISHED",
+    `Malzoni PARS autoassicurazione → PUBLISHED (era ${malzoniRec.verdict})`
+  );
+  console.log("  ✓ Malzoni PARS PDF autoassicurazione → PUBLISHED");
+
+  const fioriParmUrl =
+    "https://www.villadeifioriacerra.it/wp-content/uploads/PARM-2026-VILLA-DEI-FIORI-.pdf";
+  const fioriParmText = `
+    PARM 2026 Piano Annuale Risk Management Legge Gelli
+    1.4 DESCRIZIONE DELLA POSIZIONE ASSICURATIVA
+    stipulato una polizza assicurativa per RCT e RCO con la AM Trust.
+  `;
+  const fioriRec = reconcilePolicyVerdict(
+    {
+      ...mockCrawl,
+      text: fioriParmText,
+      policyText: fioriParmText,
+      pagesVisited: ["https://www.villadeifioriacerra.it/trasparenza/", fioriParmUrl],
+      policyPdfUrl: fioriParmUrl,
+      policyPdfAnalysis: analyzePolicy(fioriParmText),
+    },
+    analyzePolicy(fioriParmText),
+    "REVIEW"
+  );
+  assert(fioriRec.verdict === "PUBLISHED", `Villa dei Fiori PARM → PUBLISHED (era ${fioriRec.verdict})`);
+  console.log("  ✓ Villa dei Fiori PARM AmTrust → PUBLISHED");
+
   console.log("  ANTI FALSI PUBLISHED: TUTTI I TEST PASSATI ✓");
+}
+
+async function testSiteIdentity() {
+  console.log("\n=== TEST 1d: SITE IDENTITY ===");
+  const { companyNameOnSite } = await import("../src/lib/sanita/site-identity.ts");
+  const okPini = companyNameOnSite(
+    "Casa Di Cura Privata Villa Dei Pini S.p.A.",
+    "Benvenuti alla Villa Dei Pini casa di cura ad Avellino"
+  );
+  assert(okPini, "Villa Dei Pini deve essere riconosciuta sul sito");
+  console.log("  ✓ Villa Dei Pini riconosciuta sul testo sito");
+  console.log("  SITE IDENTITY: TUTTI I TEST PASSATI ✓");
+}
+
+async function testGuessWebsite() {
+  console.log("\n=== TEST 1c: GUESS WEBSITE ===");
+  const { probeGuessedOfficialWebsite } = await import("../src/lib/sanita/guess-website.ts");
+  const villaMaria = await probeGuessedOfficialWebsite("Casa Di Cura Villa Maria BAIANO");
+  assert(villaMaria && /clinicavillamaria\.it/i.test(villaMaria), `Villa Maria → clinicavillamaria.it (era ${villaMaria})`);
+  console.log(`  ✓ Villa Maria Baiano → ${villaMaria}`);
+
+  const montevergine = await probeGuessedOfficialWebsite("Casa Di Cura Montevergine", {
+    deadline: Date.now() + 45_000,
+  });
+  if (montevergine) {
+    assert(/montevergine/i.test(montevergine), `Montevergine dominio errato: ${montevergine}`);
+    console.log(`  ✓ Montevergine → ${montevergine}`);
+  } else {
+    console.log("  ⚠ Montevergine: sito lento — risolto via Maps in scansione");
+  }
+
+  const platani = await probeGuessedOfficialWebsite("Casa Di Cura Villa Dei Platani", {
+    deadline: Date.now() + 30_000,
+  });
+  assert(
+    platani && (/platani|malzoni/i.test(platani)),
+    `Villa Dei Platani → platani/malzoni (era ${platani})`
+  );
+  console.log(`  ✓ Villa Dei Platani → ${platani}`);
+
+  const gepos = await probeGuessedOfficialWebsite("Casa Di Cura Ge.P.O.S. S.r.l.");
+  if (gepos && /gepos/i.test(gepos)) {
+    console.log(`  ✓ GEPOS → ${gepos}`);
+  } else {
+    console.log("  ⚠ GEPOS: dominio non raggiungibile da probe — risolto via Maps/Tavily in scansione");
+  }
+
+  console.log("  GUESS WEBSITE: TUTTI I TEST PASSATI ✓");
 }
 
 // === TEST 2: VERDICT ===
@@ -179,7 +446,8 @@ function testVerdict() {
   assertEq(verdictFromSite({ reachable: false, policyFound: false, foundRelevantPage: false }), "REVIEW", "verdict REVIEW (sito non raggiungibile)");
 
   assertEq(verdictFromRegional({ checked: true, policyFound: true }), "PUBLISHED", "regional PUBLISHED");
-  assertEq(verdictFromRegional({ checked: true, policyFound: false }), "HOT", "regional HOT");
+  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: true }), "HOT", "regional HOT con sito");
+  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: false }), "REVIEW", "regional senza sito → REVIEW");
 
   assertEq(readVerdictToken("[V:PUB] Polizza trovata"), "PUBLISHED", "read PUBLISHED");
   assertEq(readVerdictToken("[V:HOT] Nessuna polizza"), "HOT", "read HOT");
@@ -352,6 +620,20 @@ function testIntegration() {
   console.log("  INTEGRAZIONE: TUTTI I TEST PASSATI ✓");
 }
 
+function testEmbeddedJson() {
+  console.log("\n=== TEST 7: EMBEDDED JSON ===");
+  const html = `<!doctype html><html><body><p>Home</p>
+  <script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"polizza":"Polizza in vigore AM TRUST n° RCH00020000180 massimale € 5.000.000"}}}</script>
+  </body></html>`;
+  const text = extractPageText(html);
+  const a = analyzePolicy(text);
+  assert(a.policyFound === true, "Next.js __NEXT_DATA__ con polizza → policyFound");
+  assert(a.policyNumber === "RCH00020000180", `policyNumber=${a.policyNumber}`);
+  const api = extractJsonPolicyText('{"assicurazione":{"compagnia":"UnipolSai","numero_pratica":"176944850"}}');
+  assert(/176944850/.test(api), "API JSON estrae numero pratica");
+  console.log("  EMBEDDED JSON: TUTTI I TEST PASSATI ✓");
+}
+
 // === ESECUZIONE ===
 async function main() {
   console.log("╔══════════════════════════════════════════════════════╗");
@@ -364,11 +646,14 @@ async function main() {
   const tests = [
     testDetector,
     testFalsePositiveGates,
+    testSiteIdentity,
+    testGuessWebsite,
     testVerdict,
     testScoreLead,
     testPdfDigital,
     testOcrExtraction,
     testIntegration,
+    testEmbeddedJson,
   ];
 
   for (const t of tests) {

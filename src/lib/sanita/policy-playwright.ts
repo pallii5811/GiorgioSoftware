@@ -1,23 +1,32 @@
 import * as cheerio from "cheerio";
 import type { CrawlResult } from "@/lib/sanita/crawler";
-import { pageCountsAsPolicyRelevant } from "@/lib/sanita/crawler";
-import { analyzePolicy } from "@/lib/sanita/detector";
+import {
+  pageCountsAsPolicyRelevant,
+  transparencyCrawlComplete,
+} from "@/lib/sanita/crawler";
+import { extractPageText } from "@/lib/sanita/extract-embedded";
+import { analyzePolicy, isGelliComplianceReportOnly } from "@/lib/sanita/detector";
+import { isParkedOrForSalePage } from "@/lib/sanita/website";
 
 const POLICY_PATH =
-  /trasparen|documenti|amministrazione|polizz|assicuraz|gelli|responsabilit|societa-trasparente/i;
+  /trasparen|documenti|amministrazione|polizz|assicuraz|gelli|responsabilit|societa-trasparente|note-legali|legal/i;
 
 const PROBE_PATHS = [
+  "/note-legali",
+  "/note-legali/",
+  "/it-it/note-legali",
+  "/it-it/note-legali/",
+  "/it/note-legali",
   "/documenti",
   "/amministrazione-trasparente",
+  "/sito/amministrazione-trasparente",
   "/societa-trasparente",
   "/trasparenza",
   "/it/amministrazione-trasparente",
 ];
 
 function extractText(html: string): string {
-  const $ = cheerio.load(html);
-  $("script, style, noscript, svg, iframe").remove();
-  return $("body").text().replace(/\s+/g, " ").trim();
+  return extractPageText(html);
 }
 
 function pdfsFromHtml(html: string, base: string): string[] {
@@ -36,19 +45,31 @@ function pdfsFromHtml(html: string, base: string): string[] {
   return out;
 }
 
+/** Trasparenza visitata ma corpo pagina vuoto (Next.js / SPA senza SSR). */
+function transparencyPageUnrendered(crawl: CrawlResult): boolean {
+  const visitedTransparency = crawl.pagesVisited.some((u) =>
+    /amministrazione-trasparente|societa-trasparente|\/trasparen/i.test(u)
+  );
+  if (!visitedTransparency) return false;
+  const pt = crawl.policyText?.trim() || "";
+  if (pt.length < 120) return true;
+  return !/polizza|responsabilit[aà]\s+civile|assicuraz|massimale|art\.?\s*10|legge\s+gelli/i.test(
+    pt
+  );
+}
+
 /** Serve un secondo passaggio Playwright? */
 export function needsPlaywrightPolicyPass(crawl: CrawlResult): boolean {
   if (!crawl.ok) return false;
   if (crawl.policyPdfAnalysis?.policyFound) return false;
   const pt = crawl.policyText?.trim() || "";
   if (pt.length >= 80 && analyzePolicy(pt).policyFound) return false;
+  if (analyzePolicy(crawl.text || "").policyFound) return false;
 
-  const visitedPolicyish = crawl.pagesVisited.some((u) => POLICY_PATH.test(u));
-  // Sezione documenti/trasparenza visitata ma polizza non estratta → probabile contenuto JS.
-  if (visitedPolicyish) return true;
+  // SPA o siti con polizza in pagine non-SSR: Playwright su tutto il dominio.
+  if (transparencyPageUnrendered(crawl)) return true;
   if (!crawl.foundRelevantPage) return true;
   if (!crawl.policyExhaustive) return true;
-  if (crawl.pagesVisited.length <= 5) return true;
   return false;
 }
 
@@ -86,21 +107,62 @@ export async function enrichCrawlWithPlaywright(
         await page
           .goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 })
           .catch(() => {});
-        await page.waitForTimeout(2000);
+        await Promise.race([
+          page
+            .waitForFunction(
+              () => /polizza|responsabilit[aà]\s+civile|assicurativ/i.test(document.body?.innerText || ""),
+              { timeout: 12_000 }
+            )
+            .catch(() => {}),
+          page.waitForTimeout(5_000),
+        ]);
+        if (POLICY_PATH.test(url)) {
+          for (const sel of [
+            "text=/copertura assicurativa/i",
+            "text=/risk management/i",
+            "text=/PARS/i",
+            "text=/PARM/i",
+            "text=/autoassicuraz/i",
+            ".accordion-button",
+            ".elementor-tab-title",
+            "summary",
+            "[data-toggle='collapse']",
+            "[aria-expanded='false']",
+          ]) {
+            const loc = page.locator(sel);
+            const n = Math.min(await loc.count().catch(() => 0), 14);
+            for (let i = 0; i < n; i++) {
+              await loc.nth(i).click({ timeout: 2000 }).catch(() => {});
+            }
+          }
+          await page.waitForTimeout(800);
+        }
         const html = await page.content();
-        const text = extractText(html);
+        if (isParkedOrForSalePage(html, url)) continue;
+        const innerText = await page
+          .evaluate(() => document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "")
+          .catch(() => "");
+        const text = innerText.length >= 30 ? innerText : extractText(html);
         if (!text || text.length < 30) continue;
 
         extraPages.push(url);
         combined = `${combined} \n ${text}`.slice(0, 64_000);
 
-        const relevant =
+        const policyOnPage =
           pageCountsAsPolicyRelevant(url, text) ||
-          /trasparen|polizz|assicuraz|gelli|art\.?\s*10/i.test(text);
-        if (relevant) {
+          (POLICY_PATH.test(url) && analyzePolicy(text).policyFound);
+
+        // Trasparenza: raccogli TUTTI i PDF (PARM/PARS spesso senza testo RC in pagina).
+        if (POLICY_PATH.test(url)) {
+          foundRelevantPage = true;
+          for (const pdf of pdfsFromHtml(html, url)) pdfUrls.add(pdf);
+        }
+        if (policyOnPage) {
           foundRelevantPage = true;
           policyText = policyText ? `${policyText} \n ${text}` : text;
-          for (const pdf of pdfsFromHtml(html, url)) pdfUrls.add(pdf);
+          if (!POLICY_PATH.test(url)) {
+            for (const pdf of pdfsFromHtml(html, url)) pdfUrls.add(pdf);
+          }
         }
       } catch {
         /* pagina singola */
@@ -115,13 +177,15 @@ export async function enrichCrawlWithPlaywright(
   if (extraPages.length === 0 && pdfUrls.size === 0) return crawl;
 
   // Leggi PDF trovati via browser (import lazy dal crawler)
-  const { fetchPdfTextWithRetry } = await import("@/lib/sanita/crawler");
+  const { fetchPdfTextWithRetry, sortPdfQueue } = await import("@/lib/sanita/crawler");
+  const MAX_PLAYWRIGHT_PDFS = Number.MAX_SAFE_INTEGER;
   let policyPdfsRead = crawl.policyPdfsRead;
   let policyPdfsQueued = crawl.policyPdfsQueued + pdfUrls.size;
   let needsOcrReview = crawl.needsOcrReview;
   let policyPdfAnalysis = crawl.policyPdfAnalysis;
+  let policyPdfUrl = crawl.policyPdfUrl;
 
-  for (const pdfUrl of pdfUrls) {
+  for (const pdfUrl of sortPdfQueue(pdfUrls).slice(0, MAX_PLAYWRIGHT_PDFS)) {
     const { text, needsOcr } = await fetchPdfTextWithRetry(pdfUrl, { forceOcr: true });
     policyPdfsRead++;
     extraPages.push(pdfUrl);
@@ -130,30 +194,43 @@ export async function enrichCrawlWithPlaywright(
     policyText = policyText ? `${policyText} \n ${text}` : text;
     foundRelevantPage = true;
     const a = analyzePolicy(text);
-    if (a.policyFound) {
+    const selfInsuredDoc =
+      /autoassicuraz|gestione\s+diretta|ritenzione\s+del\s+rischio/i.test(text) &&
+      !/costi\s+contabilizzat|accantonamento\s+fondo\s+risch/i.test(text);
+    if (a.policyFound || (selfInsuredDoc && !isGelliComplianceReportOnly(text, pdfUrl))) {
       policyPdfAnalysis = a;
+      policyPdfUrl = pdfUrl;
       break;
     }
   }
 
   const allPdfsRead = policyPdfsQueued === 0 || policyPdfsRead >= policyPdfsQueued;
+  const mergedVisited = [
+    ...crawl.pagesVisited,
+    ...extraPages.filter((p) => !crawl.pagesVisited.includes(p)),
+  ];
   const policyExhaustive =
     !!policyPdfAnalysis?.policyFound ||
-    (allPdfsRead &&
-      !needsOcrReview &&
-      foundRelevantPage &&
-      (policyText.trim().length >= 120 || policyPdfsQueued > 0));
+    transparencyCrawlComplete({
+      pagesVisited: mergedVisited,
+      foundRelevantPage,
+      policyPdfsQueued,
+      policyPdfsRead,
+      needsOcrReview,
+    }) ||
+    (allPdfsRead && !needsOcrReview && policyPdfsQueued > 0);
 
   return {
     ...crawl,
     text: combined,
     policyText,
-    pagesVisited: [...crawl.pagesVisited, ...extraPages.filter((p) => !crawl.pagesVisited.includes(p))],
+    pagesVisited: mergedVisited,
     foundRelevantPage,
     policyExhaustive,
     policyPdfsQueued,
     policyPdfsRead,
     needsOcrReview,
     policyPdfAnalysis,
+    policyPdfUrl,
   };
 }

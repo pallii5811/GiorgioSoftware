@@ -3,42 +3,47 @@ import { buildAuditTrail, type AuditSources } from "@/lib/sanita/audit";
 import { enrichContacts } from "@/lib/sanita/contact-enrichment";
 import { mergeContacts } from "@/lib/sanita/contacts";
 import { runBatch } from "@/lib/sanita/scan-engine";
+import { relevanceCategory } from "@/lib/gare/display";
+import {
+  computeGareLeadScore,
+  type GareRelevance,
+} from "@/lib/gare/relevance";
 
 export type TenderMeta = {
-  year: number;
+  datasetYear: number;
   cig: string;
   object: string;
   buyer: string | null;
+  buyerCity: string | null;
   amount: number;
+  awardDate: Date | null;
+  relevance: GareRelevance;
 };
 
+function fmtAwardDate(d: Date | null): string | null {
+  if (!d) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 function buildTenderEvidence(meta: TenderMeta, audit: AuditSources): string {
-  const body = [
-    `Gara aggiudicata ANAC ${meta.year}`,
+  const parts = [
+    `Aggiudicazione ANAC ${meta.datasetYear}`,
     `CIG ${meta.cig}`,
+    meta.awardDate ? `Data aggiudicazione: ${fmtAwardDate(meta.awardDate)}` : null,
     meta.object.slice(0, 160),
     meta.buyer ? `Stazione appaltante: ${meta.buyer}` : null,
+    meta.buyerCity ? `Comune stazione: ${meta.buyerCity}` : null,
     `Importo €${Math.round(meta.amount).toLocaleString("it-IT")}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+    `Priorità broker: ${meta.relevance}`,
+  ].filter(Boolean);
 
   const trail = buildAuditTrail({
     ...audit,
     anac: true,
-    anacYear: meta.year,
+    anacYear: meta.datasetYear,
     anacCig: meta.cig,
   });
-  return `${body} — ${trail}`;
-}
-
-function scoreTenderLead(hasPhone: boolean, hasEmail: boolean, hasPec: boolean, hasWeb: boolean): number {
-  let s = 40;
-  if (hasPhone) s += 25;
-  if (hasEmail) s += 20;
-  if (hasPec) s += 10;
-  if (hasWeb) s += 5;
-  return Math.min(100, s);
+  return `${parts.join(" · ")} — ${trail}`;
 }
 
 /** Arricchisce contatti dell'azienda aggiudicataria (Tavily + Maps) con trail fonti. */
@@ -69,6 +74,8 @@ export async function enrichTenderLead(
     }
   }
 
+  const leadScore = computeGareLeadScore(meta.relevance, meta.amount, !!phone, !!(email || pec));
+
   await prisma.lead.update({
     where: { id: leadId },
     data: {
@@ -76,7 +83,9 @@ export async function enrichTenderLead(
       email,
       pec,
       website,
-      leadScore: scoreTenderLead(!!phone, !!email, !!pec, !!website),
+      city: meta.buyerCity,
+      category: relevanceCategory(meta.relevance),
+      leadScore,
       evidence: buildTenderEvidence(meta, audit),
       lastScannedAt: new Date(),
     },
@@ -96,10 +105,10 @@ export async function enrichTenderBatch(
     enriched++;
     const fresh = await prisma.lead.findUnique({
       where: { id: item.id },
-      select: { phone: true, email: true },
+      select: { phone: true, email: true, pec: true },
     });
     if (fresh?.phone) withPhone++;
-    if (fresh?.email) withEmail++;
+    if (fresh?.email || fresh?.pec) withEmail++;
   });
 
   return { enriched, withPhone, withEmail };

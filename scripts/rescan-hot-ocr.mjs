@@ -27,11 +27,6 @@ for (const region of targetRegions) {
 
   console.log(`\n${region}: rianalisi ${ids.length} HOT con OCR…`);
 
-  await prisma.lead.updateMany({
-    where: { id: { in: ids.map((l) => l.id) } },
-    data: { lastScannedAt: null, websiteReachable: null },
-  });
-
   const leads = await prisma.lead.findMany({ where: { id: { in: ids.map((l) => l.id) } } });
   let pub = 0;
   let hot = 0;

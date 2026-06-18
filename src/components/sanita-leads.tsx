@@ -9,13 +9,13 @@ import {
   Stethoscope, Search, Loader2, AlertTriangle, CheckCircle2, MapPin, Globe,
   Phone, HelpCircle, Building2, ShieldAlert, ShieldCheck, ShieldQuestion,
   Filter, X, RefreshCw, Mail, ExternalLink, Download, Copy, Flame, Hash,
-  Info, Zap, FileSearch,
+  Info, Zap, FileSearch, RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
   deriveVerdict, VERDICT_META, type Verdict,
 } from "@/lib/sanita/verdict"
-import { parseEvidenceSections } from "@/lib/sanita/audit"
+import { parseEvidenceSections, policyPdfUrlsForLead } from "@/lib/sanita/audit"
 import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
 import { LeadDetail } from "@/components/lead-detail"
@@ -52,6 +52,19 @@ type Lead = {
 
 type VerdictFilter = "ALL" | Verdict | "PENDING"
 
+type RegionDiscoveryMeta = {
+  mapsCityOffset: number
+  citiesTotal: number
+  mapsDiscoveryComplete: boolean
+}
+
+type RegionMeta = {
+  total: number
+  done: number
+  pending: number
+  discovery?: RegionDiscoveryMeta
+}
+
 const VERDICT_UI: Record<Verdict, { label: string; subtitle: string; cls: string; icon: typeof CheckCircle2 }> = {
   PUBLISHED: { label: VERDICT_META.PUBLISHED.label, subtitle: VERDICT_META.PUBLISHED.subtitle, cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: ShieldCheck },
   HOT: { label: VERDICT_META.HOT.label, subtitle: VERDICT_META.HOT.subtitle, cls: "bg-red-50 text-red-700 border-red-200", icon: ShieldAlert },
@@ -77,7 +90,11 @@ export function SanitaLeads() {
     total: number
     round: number
     phase: string
+    mapsCityOffset?: number
+    citiesTotal?: number
+    mapsDiscoveryComplete?: boolean
   } | null>(null)
+  const [discoveryMeta, setDiscoveryMeta] = useState<Record<string, RegionDiscoveryMeta>>({})
   const [processingName, setProcessingName] = useState<string | null>(null)
   const [freshLeadIds, setFreshLeadIds] = useState<Set<string>>(new Set())
 
@@ -116,10 +133,18 @@ export function SanitaLeads() {
   const fetchLeads = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true)
     try {
-      const res = await fetch("/api/sanita")
+      const res = await fetch("/api/sanita?includePending=1")
       const json = await res.json()
       if (json.success) {
         setLeads(json.data)
+        const regions = json.meta?.regions as Record<string, RegionMeta> | undefined
+        if (regions) {
+          const next: Record<string, RegionDiscoveryMeta> = {}
+          for (const [r, m] of Object.entries(regions)) {
+            if (m.discovery) next[r] = m.discovery
+          }
+          setDiscoveryMeta(next)
+        }
         if (!opts?.silent) {
           toast.success(`${json.data.length} strutture caricate dal database`)
         }
@@ -139,9 +164,24 @@ export function SanitaLeads() {
   }, [])
 
   const upsertLiveLead = (lead: Lead) => {
+    const host = (() => {
+      if (!lead.website) return null
+      try {
+        return new URL(lead.website).hostname.replace(/^www\./i, "").toLowerCase()
+      } catch {
+        return null
+      }
+    })()
     setLeads((prev) => {
-      const rest = prev.filter((l) => l.id !== lead.id)
-      // Ultimo analizzato in cima durante la scansione live
+      let rest = prev.filter((l) => l.id !== lead.id)
+      if (host) rest = rest.filter((l) => {
+        if (!l.website) return true
+        try {
+          return new URL(l.website).hostname.replace(/^www\./i, "").toLowerCase() !== host
+        } catch {
+          return true
+        }
+      })
       return [lead, ...rest]
     })
     setFreshLeadIds((prev) => new Set(prev).add(lead.id))
@@ -152,6 +192,29 @@ export function SanitaLeads() {
         return next
       })
     }, 4000)
+  }
+
+  const rescanOneLead = async (l: Lead) => {
+    if (isScanning) {
+      toast.error("Attendi la fine della scansione regionale in corso")
+      return
+    }
+    const toastId = toast.loading(`Riscansione ${l.companyName}…`)
+    try {
+      const res = await fetch("/api/sanita/rescan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: l.id }),
+      })
+      const json = (await res.json()) as { success?: boolean; error?: string; lead?: Lead }
+      if (!res.ok || !json.success || !json.lead) {
+        throw new Error(json.error ?? "Riscansione fallita")
+      }
+      upsertLiveLead(json.lead)
+      toast.success("Riscansione completata", { id: toastId })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore riscansione", { id: toastId })
+    }
   }
 
   /** Scansione regionale: ogni struttura compare in tabella appena analizzata. */
@@ -171,7 +234,7 @@ export function SanitaLeads() {
     setIsScanning(true)
     setScanProgress("Connessione al motore live…")
     setProcessingName(null)
-    if (live || reset) {
+    if (reset) {
       setLeads((prev) => prev.filter((l) => l.region !== body.region))
       setFreshLeadIds(new Set())
     }
@@ -187,6 +250,7 @@ export function SanitaLeads() {
     const maxRounds = 80
 
     try {
+      await fetchLeads({ silent: true })
       const scanKey = `sanita.scan.${body.region}`
       const savedOffset = (() => {
         try {
@@ -198,16 +262,16 @@ export function SanitaLeads() {
           return 0
         }
       })()
+      const serverOffset = discoveryMeta[body.region]?.mapsCityOffset ?? 0
 
       let payload: Record<string, unknown> = {
         region: body.region,
         city: body.city,
         liveRescan: live,
-        // reset forza ripartenza da 0 e cancella lo stato locale
         freshScan: reset,
         forceDiscovery: reset || live || !body.continueAnalysis,
         continueAnalysis: reset ? false : (body.continueAnalysis ?? false),
-        mapsCityOffset: reset ? 0 : savedOffset,
+        mapsCityOffset: reset ? 0 : Math.max(savedOffset, serverOffset),
       }
 
       while (round < maxRounds) {
@@ -228,7 +292,16 @@ export function SanitaLeads() {
             setProcessingName(
               typeof data.processingName === "string" ? data.processingName : null
             )
-            setActiveScan({ region: body.region, done, total, round, phase })
+            setActiveScan({
+              region: body.region,
+              done,
+              total,
+              round,
+              phase,
+              mapsCityOffset: Number(data.mapsCityOffset ?? mapsCityOffset),
+              citiesTotal: Number(data.citiesTotal ?? discoveryMeta[body.region]?.citiesTotal ?? 0),
+              mapsDiscoveryComplete: Boolean(data.mapsDiscoveryComplete),
+            })
             setScanProgress(
               total > 0 ? `${body.region}: ${done}/${total} completati` : phase
             )
@@ -236,6 +309,16 @@ export function SanitaLeads() {
               total > 0 ? `${label} — ${done}/${total}` : `${label} — ${phase}`,
               { id: toastId }
             )
+            // Allinea tabella/KPI al DB se il contatore server è avanti allo stato locale.
+            setLeads((prev) => {
+              const localDone = prev.filter(
+                (l) => l.region === body.region && l.lastScannedAt
+              ).length
+              if (done !== localDone) {
+                queueMicrotask(() => void fetchLeads({ silent: true }))
+              }
+              return prev
+            })
           }
           if (event === "lead" && data.lead && typeof data.lead === "object") {
             upsertLiveLead(data.lead as Lead)
@@ -244,6 +327,26 @@ export function SanitaLeads() {
           if (event === "paused" || event === "complete") {
             sessionStats = (data.stats as Record<string, unknown>) ?? {}
             mapsCityOffset = Number(sessionStats?.mapsCityOffset ?? 0)
+            const citiesTotal = Number(sessionStats?.citiesTotal ?? 0)
+            const mapsDiscoveryComplete = Boolean(sessionStats?.mapsDiscoveryComplete)
+            setDiscoveryMeta((prev) => ({
+              ...prev,
+              [body.region]: {
+                mapsCityOffset,
+                citiesTotal,
+                mapsDiscoveryComplete,
+              },
+            }))
+            setActiveScan((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    mapsCityOffset,
+                    citiesTotal,
+                    mapsDiscoveryComplete,
+                  }
+                : prev
+            )
             try {
               window.localStorage.setItem(scanKey, JSON.stringify({ mapsCityOffset }))
             } catch {
@@ -278,21 +381,34 @@ export function SanitaLeads() {
         const total = Number(stats.discovered ?? stats.total ?? 0)
         const rem = Number(stats.remainingUnscanned ?? 0)
         const doneCount = Number(stats.done ?? total - rem)
+        const mapsDone = Boolean(stats.mapsDiscoveryComplete)
+        const fullyComplete = Boolean(stats.complete)
 
-        if (outcome === "complete" || (stats.complete && rem === 0 && total > 0)) {
+        if (outcome === "complete" && fullyComplete) {
           setActiveScan({
             region: body.region,
             done: doneCount,
             total,
             round,
             phase: "Completato ✓",
+            mapsCityOffset: Number(stats.mapsCityOffset ?? 0),
+            citiesTotal: Number(stats.citiesTotal ?? 0),
+            mapsDiscoveryComplete: true,
           })
           setProcessingName(null)
           toast.success(
-            String(stats.message ?? `${body.region} completata: ${total} strutture analizzate`),
+            String(stats.message ?? `${body.region} completata: ${total} strutture, tutti i comuni Maps`),
             { id: toastId, duration: 12000 }
           )
+          void fetchLeads({ silent: true })
           return
+        }
+
+        if (!mapsDone && rem === 0 && total > 0 && outcome === "paused") {
+          toast.info(
+            `${body.region}: ${total} strutture analizzate — comuni Maps ${Number(stats.mapsCityOffset ?? 0)}/${Number(stats.citiesTotal ?? "?")}. Clicca «Continua ${body.region}».`,
+            { id: toastId, duration: 14000 }
+          )
         }
 
         payload = {
@@ -321,7 +437,7 @@ export function SanitaLeads() {
   }
 
   const startRegionScan = (region: "Veneto" | "Campania") => {
-    void runFullScan({ region, liveRescan: true })
+    void runFullScan({ region, continueAnalysis: false })
   }
 
   const continueRegionScan = (region: "Veneto" | "Campania") => {
@@ -343,8 +459,26 @@ export function SanitaLeads() {
       evidence: l.evidence,
     })
 
+  const policyDocLinks = (l: Lead) => policyPdfUrlsForLead(l.evidence)
+
+  const policyHtmlSource = (l: Lead): string | null => {
+    const { fonti } = parseEvidenceSections(l.evidence)
+    const m = fonti?.match(/fonte polizza HTML:\s*(https?:\/\/\S+)/i)
+    return m?.[1] ?? null
+  }
+
+  const docLabel = (url: string) => {
+    try {
+      const name = new URL(url).pathname.split("/").pop() || url
+      const decoded = decodeURIComponent(name)
+      return decoded.length > 44 ? `${decoded.slice(0, 41)}…` : decoded
+    } catch {
+      return url.length > 44 ? `${url.slice(0, 41)}…` : url
+    }
+  }
+
   const visibleLeads = useMemo(
-    () => leads.filter((l) => l.lastScannedAt != null),
+    () => leads.filter((l) => l.lastScannedAt != null || l.evidence?.trim()),
     [leads]
   )
 
@@ -395,8 +529,17 @@ export function SanitaLeads() {
       else if (v === "REVIEW") review++
       else pending++
     }
-    return { total: scope.length, hot, pub, review, pending }
-  }, [scope])
+    let total = scope.length
+    if (
+      isScanning &&
+      activeScan &&
+      regionFilter === activeScan.region
+    ) {
+      total = activeScan.done
+      pending = Math.max(0, activeScan.total - activeScan.done)
+    }
+    return { total, hot, pub, review, pending }
+  }, [scope, isScanning, activeScan, regionFilter])
 
   const updateStatus = (id: string, status: string) =>
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)))
@@ -536,6 +679,14 @@ export function SanitaLeads() {
     }
     // REVIEW: due sottocasi per chiarezza
     if (l.website && l.websiteReachable !== false) {
+      if (/manutenzione/i.test(l.evidence ?? "")) {
+        return (
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 text-xs text-amber-700"><ShieldQuestion className="h-3 w-3" />Sito in manutenzione</span>
+            <span className="block text-[10px] text-muted-foreground">Impossibile leggere Trasparenza online — verifica manuale</span>
+          </div>
+        )
+      }
       return (
         <div className="space-y-1">
           <span className="inline-flex items-center gap-1 text-xs text-amber-700"><ShieldQuestion className="h-3 w-3" />Sito analizzato — non conclusivo</span>
@@ -682,82 +833,151 @@ export function SanitaLeads() {
 
       {/* Stato scansione — sempre chiaro quale regione e quanto manca */}
       {(() => {
+        const focusRegion =
+          activeScan?.region ??
+          (regionFilter !== "ALL" ? regionFilter : null)
+
         const focus =
           activeScan ??
-          (regionFilter !== "ALL"
+          (focusRegion
             ? {
-                region: regionFilter,
-                done: regionStats[regionFilter].done,
-                total: regionStats[regionFilter].total,
+                region: focusRegion,
+                done: regionStats[focusRegion].done,
+                total: regionStats[focusRegion].total,
                 round: 0,
-                phase:
-                  regionStats[regionFilter].pending === 0
-                    ? "Completato ✓"
-                    : "In attesa — clicca Scansiona per continuare",
+                phase: "",
+                mapsCityOffset: discoveryMeta[focusRegion]?.mapsCityOffset,
+                citiesTotal: discoveryMeta[focusRegion]?.citiesTotal,
+                mapsDiscoveryComplete: discoveryMeta[focusRegion]?.mapsDiscoveryComplete,
               }
             : null)
+
         if (!focus && kpi.total === 0) return null
-        const pct = focus && focus.total > 0 ? Math.round((focus.done / focus.total) * 100) : 0
-        const complete = focus ? focus.done >= focus.total && focus.total > 0 : kpi.pending === 0
+
+        const structuresDone = focus ? focus.done >= focus.total && focus.total > 0 : kpi.pending === 0
+        const mapsTotal = focus?.citiesTotal ?? discoveryMeta[focus?.region ?? ""]?.citiesTotal ?? 0
+        const mapsOffset =
+          focus?.mapsCityOffset ?? discoveryMeta[focus?.region ?? ""]?.mapsCityOffset ?? 0
+        const mapsDone =
+          focus?.mapsDiscoveryComplete ??
+          discoveryMeta[focus?.region ?? ""]?.mapsDiscoveryComplete ??
+          (mapsTotal > 0 && mapsOffset >= mapsTotal)
+        const fullyComplete = structuresDone && (mapsTotal === 0 || mapsDone)
+        const structuresOnlyDone = structuresDone && mapsTotal > 0 && !mapsDone
+
+        const structPct = focus && focus.total > 0 ? Math.round((focus.done / focus.total) * 100) : 0
+        const mapsPct = mapsTotal > 0 ? Math.round((mapsOffset / mapsTotal) * 100) : 0
+
+        const statusTitle = isScanning
+          ? `Scansione ${focus?.region} in corso`
+          : fullyComplete
+            ? `${focus?.region ?? "Regione"} — scansione territoriale completata`
+            : structuresOnlyDone
+              ? `${focus?.region} — strutture OK, comuni Maps incompleti`
+              : "Stato analisi"
 
         return (
-          <Card className={cn("border-border/60", isScanning && "border-indigo-300 ring-1 ring-indigo-200")}>
-            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div className={cn("rounded-full p-2", isScanning ? "bg-indigo-100" : complete ? "bg-emerald-100" : "bg-primary/10")}>
-                  {isScanning ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                  ) : complete ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  ) : (
-                    <FileSearch className="h-4 w-4 text-primary" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">
-                    {isScanning
-                      ? `Scansione ${focus?.region} in corso`
-                      : complete
-                        ? `${focus?.region ?? "Regione"} — analisi completata`
-                        : "Stato analisi"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {isScanning && focus
-                      ? focus.phase
-                      : scanProgress ??
-                        (focus
-                          ? `${focus.region}: ${focus.done}/${focus.total} strutture analizzate`
-                          : `${scope.filter((l) => l.lastScannedAt).length}/${scope.length} nel filtro attuale`)}
-                  </p>
-                  {isScanning && processingName && (
-                    <p className="mt-1 text-[10px] font-medium text-indigo-700 animate-pulse">
-                      In analisi ora: {processingName}
+          <Card
+            className={cn(
+              "border-border/60",
+              isScanning && "border-indigo-300 ring-1 ring-indigo-200",
+              structuresOnlyDone && !isScanning && "border-amber-300 ring-1 ring-amber-100"
+            )}
+          >
+            <CardContent className="flex flex-col gap-4 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      "rounded-full p-2",
+                      isScanning
+                        ? "bg-indigo-100"
+                        : fullyComplete
+                          ? "bg-emerald-100"
+                          : structuresOnlyDone
+                            ? "bg-amber-100"
+                            : "bg-primary/10"
+                    )}
+                  >
+                    {isScanning ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                    ) : fullyComplete ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : structuresOnlyDone ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    ) : (
+                      <FileSearch className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{statusTitle}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isScanning && focus
+                        ? focus.phase
+                        : scanProgress ??
+                          (focus
+                            ? `${focus.region}: ${focus.done}/${focus.total} strutture analizzate`
+                            : `${scope.filter((l) => l.lastScannedAt).length}/${scope.length} nel filtro attuale`)}
                     </p>
-                  )}
-                  {isScanning && !processingName && (
-                    <p className="mt-1 text-[10px] font-medium text-indigo-700">
-                      Sessione {focus?.round ?? 0} — i lead compaiono uno alla volta, già completi
-                    </p>
-                  )}
+                    {structuresOnlyDone && !isScanning && focus && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-800">
+                        Comuni Maps {mapsOffset}/{mapsTotal} — clicca «Continua {focus.region}» per scoprire altre
+                        strutture.
+                      </p>
+                    )}
+                    {isScanning && processingName && (
+                      <p className="mt-1 text-[10px] font-medium text-indigo-700 animate-pulse">
+                        In analisi ora: {processingName}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
+
               {focus && focus.total > 0 && (
-                <div className="w-full sm:w-72">
-                  <div className="mb-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
-                    <span>{focus.done} / {focus.total} strutture</span>
-                    <span className={cn(complete && !isScanning && "font-semibold text-emerald-600")}>
-                      {pct}%{complete && !isScanning ? " · FATTO" : ""}
-                    </span>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="mb-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
+                      <span>Strutture analizzate</span>
+                      <span>
+                        {focus.done} / {focus.total}
+                        {structuresDone && !isScanning ? " ✓" : ""}
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all duration-500",
+                          structuresDone && !isScanning
+                            ? "bg-emerald-500"
+                            : "bg-gradient-to-r from-indigo-500 to-violet-500"
+                        )}
+                        style={{ width: `${structPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-500",
-                        complete && !isScanning ? "bg-emerald-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"
-                      )}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  {mapsTotal > 0 && (
+                    <div>
+                      <div className="mb-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
+                        <span>Comuni Maps ({focus.region})</span>
+                        <span className={cn(mapsDone && !isScanning && "font-semibold text-emerald-600")}>
+                          {mapsOffset} / {mapsTotal}
+                          {mapsDone && !isScanning ? " ✓" : ` · ${mapsPct}%`}
+                        </span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all duration-500",
+                            mapsDone && !isScanning
+                              ? "bg-emerald-500"
+                              : "bg-gradient-to-r from-sky-500 to-blue-600"
+                          )}
+                          style={{ width: `${mapsPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -771,14 +991,27 @@ export function SanitaLeads() {
         <CardContent className="p-4 text-sm">
           <p className="font-semibold text-blue-900">Avanzamento per regione</p>
           <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-            <span className="rounded-md border border-emerald-200 bg-white px-2 py-1">
-              Campania: {regionStats.Campania.done}/{regionStats.Campania.total}
-              {regionStats.Campania.pending === 0 && regionStats.Campania.total > 0 ? " ✓" : regionStats.Campania.total > 0 ? ` (${regionStats.Campania.pending} in coda)` : ""}
-            </span>
-            <span className="rounded-md border border-indigo-200 bg-white px-2 py-1">
-              Veneto: {regionStats.Veneto.done}/{regionStats.Veneto.total}
-              {regionStats.Veneto.pending === 0 && regionStats.Veneto.total > 0 ? " ✓" : regionStats.Veneto.total > 0 ? ` (${regionStats.Veneto.pending} in coda)` : ""}
-            </span>
+            {(["Campania", "Veneto"] as const).map((r) => {
+              const d = discoveryMeta[r]
+              const mapsLabel =
+                d && d.citiesTotal > 0
+                  ? ` · comuni Maps ${d.mapsCityOffset}/${d.citiesTotal}${d.mapsDiscoveryComplete ? " ✓" : ""}`
+                  : ""
+              return (
+                <span
+                  key={r}
+                  className="rounded-md border border-emerald-200 bg-white px-2 py-1"
+                >
+                  {r}: {regionStats[r].done}/{regionStats[r].total}
+                  {regionStats[r].pending === 0 && regionStats[r].total > 0
+                    ? " strutture ✓"
+                    : regionStats[r].total > 0
+                      ? ` (${regionStats[r].pending} in coda)`
+                      : ""}
+                  {mapsLabel}
+                </span>
+              )
+            })}
           </div>
         </CardContent>
       </Card>
@@ -902,7 +1135,7 @@ export function SanitaLeads() {
                 toast.info("Seleziona un comune e una regione (Veneto o Campania)")
                 return
               }
-              void runFullScan({ region, city: selectedCity, liveRescan: true })
+              void runFullScan({ region, city: selectedCity, continueAnalysis: false })
             }}
             disabled={isScanning || !selectedCity}
             className="h-9"
@@ -1013,6 +1246,8 @@ export function SanitaLeads() {
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
                         {verdictBadge(l)}
                         {l.lastScannedAt && verdictOf(l) === "PUBLISHED" && (
                           <div className="mt-1 text-[10px] text-emerald-700">Polizza certificata sul sito</div>
@@ -1022,11 +1257,76 @@ export function SanitaLeads() {
                             {parseEvidenceSections(l.evidence).body}
                           </div>
                         )}
+                        {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && (
+                          <div className="mt-1 text-[10px] font-medium text-amber-700">
+                            PDF polizza RC mancante —{" "}
+                            <button
+                              type="button"
+                              onClick={() => void rescanOneLead(l)}
+                              disabled={isScanning}
+                              className="font-semibold text-primary underline hover:no-underline"
+                            >
+                              riscansiona
+                            </button>
+                          </div>
+                        )}
+                        {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && policyHtmlSource(l) && (
+                          <div className="mt-1.5">
+                            <a
+                              href={policyHtmlSource(l)!}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex max-w-[260px] items-center gap-1 text-[10px] text-primary hover:underline"
+                            >
+                              <FileSearch className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Fonte polizza (pagina web)</span>
+                              <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+                            </a>
+                          </div>
+                        )}
+                        {policyDocLinks(l).length > 0 && (
+                          <div className="mt-1.5 space-y-0.5">
+                            <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">
+                              {verdictOf(l) === "PUBLISHED" ? "Fonte polizza" : "Documenti analizzati"}
+                            </div>
+                            {policyDocLinks(l).slice(0, 3).map((u) => (
+                              <a
+                                key={u}
+                                href={u}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={u}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex max-w-[260px] items-center gap-1 text-[10px] text-primary hover:underline"
+                              >
+                                <FileSearch className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{docLabel(u)}</span>
+                                <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                         {parseEvidenceSections(l.evidence).fonti && (
                           <div className="mt-0.5 max-w-[260px] truncate text-[9px] text-slate-500" title={parseEvidenceSections(l.evidence).fonti ?? ""}>
                             {parseEvidenceSections(l.evidence).fonti}
                           </div>
                         )}
+                          </div>
+                          {l.lastScannedAt && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+                              title="Riscansiona questa struttura"
+                              disabled={isScanning}
+                              onClick={() => void rescanOneLead(l)}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div>

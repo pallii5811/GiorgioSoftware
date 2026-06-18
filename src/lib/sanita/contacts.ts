@@ -1,5 +1,6 @@
-import { mapsPrimaryName } from "@/lib/sanita/maps-query";
+import { mapsNameVariants, mapsSubsidiaryName } from "@/lib/sanita/maps-query";
 import { normalizeOfficialWebsite } from "@/lib/sanita/website";
+import type { TavilyHit } from "@/lib/sanita/tavily-client";
 
 /** Estrazione contatti da testo (sito, snippet Tavily, OSM). */
 
@@ -109,49 +110,118 @@ export function parseContactsFromText(text: string): ParsedContacts {
 }
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|asl|aulss|soresa/i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|asl|aulss|soresa|^rita\.(com|it|org|net)$/i;
+
+function nameTokens(companyName: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const variant of mapsNameVariants(companyName)) {
+    for (const t of variant
+      .toLowerCase()
+      .replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "")
+      .replace(/[^a-zàèéìòù0-9]+/g, " ")
+      .split(/\s+/)) {
+      if (t.length > 3 && !seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    }
+  }
+  return out;
+}
+
+function contentNameScore(companyName: string, text: string): number {
+  const body = text.toLowerCase().slice(0, 2000);
+  if (!body) return 0;
+  let score = 0;
+  for (const variant of mapsNameVariants(companyName)) {
+    const v = variant.toLowerCase().replace(/[^a-zàèéìòù0-9\s]/g, " ").trim();
+    if (v.length >= 6 && body.includes(v)) {
+      score += 8;
+      break;
+    }
+  }
+  for (const t of nameTokens(companyName)) {
+    const tc = t.replace(/[^a-z0-9]/g, "");
+    if (tc.length >= 5 && body.includes(tc)) score += 3;
+  }
+  if (/sito\s+ufficiale|home\s?page|www\./i.test(body)) score += 1;
+  if (/casa di cura|clinica|rsa|riposo|ospedale|centro\s+medico/i.test(body)) score += 1;
+  return score;
+}
+
+function scoreWebsiteUrl(raw: string, companyName: string, content = ""): { url: string; score: number } | null {
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+    if (BLOCKED_HOST.test(host)) return null;
+
+    const tokens = nameTokens(companyName);
+    let score = contentNameScore(companyName, content);
+    let tokenHits = 0;
+    const hostCompact = host.replace(/[^a-z0-9]/g, "");
+    for (const t of tokens) {
+      const tc = t.replace(/[^a-z0-9]/g, "");
+      if (tc.length >= 4 && hostCompact.includes(tc.slice(0, Math.min(tc.length, 8)))) {
+        score += 4;
+        tokenHits++;
+      }
+    }
+    // Acronimo nel dominio (es. CDS per Centro Diagnostico Sanitario)
+    if (tokenHits === 0 && tokens.length >= 2) {
+      const acronym = tokens.map((t) => t[0]).join("");
+      if (acronym.length >= 3 && hostCompact.includes(acronym)) {
+        score += 5;
+        tokenHits = 1;
+      }
+    }
+    if (tokenHits === 0 && score < 6) return null;
+    const sub = mapsSubsidiaryName(companyName);
+    if (sub) {
+      for (const t of sub
+        .toLowerCase()
+        .replace(/[^a-zàèéìòù0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 4)) {
+        const tc = t.replace(/[^a-z0-9]/g, "");
+        if (tc.length >= 5 && hostCompact.includes(tc)) score += 8;
+      }
+    }
+    if (/\.(it|com)$/.test(host)) score += 1;
+    if (u.pathname === "/" || u.pathname.length < 24) score += 1;
+
+    const normalized = normalizeOfficialWebsite(u.toString());
+    if (!normalized) return null;
+    return { url: normalized, score };
+  } catch {
+    return null;
+  }
+}
 
 /** Sceglie il sito istituzionale più probabile tra gli URL Tavily/snippet. */
 export function pickOfficialWebsite(urls: string[], companyName: string): string | null {
-  const tokens = mapsPrimaryName(companyName)
-    .toLowerCase()
-    .replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "")
-    .replace(/[^a-zàèéìòù0-9]+/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-
   let best: { url: string; score: number } | null = null;
-
   for (const raw of urls) {
-    try {
-      const u = new URL(raw);
-      const host = u.hostname.replace(/^www\./i, "").toLowerCase();
-      if (BLOCKED_HOST.test(host)) continue;
-
-      let score = 0;
-      let tokenHits = 0;
-      const hostCompact = host.replace(/[^a-z0-9]/g, "");
-      for (const t of tokens) {
-        const tc = t.replace(/[^a-z0-9]/g, "");
-        if (tc.length >= 4 && hostCompact.includes(tc.slice(0, Math.min(tc.length, 8)))) {
-          score += 4;
-          tokenHits++;
-        }
-      }
-      if (tokenHits === 0) continue;
-      if (/\.(it|com)$/.test(host)) score += 1;
-      if (u.pathname === "/" || u.pathname.length < 20) score += 1;
-
-      const normalized = normalizeOfficialWebsite(u.toString());
-      if (!normalized) continue;
-      if (!best || score > best.score) best = { url: normalized, score };
-    } catch {
-      /* ignore */
-    }
+    const scored = scoreWebsiteUrl(raw, companyName);
+    if (!scored) continue;
+    if (!best || scored.score > best.score) best = scored;
   }
-
   if (!best) return null;
+  const tokens = nameTokens(companyName);
   if (tokens.length === 0) return best.score >= 1 ? best.url : null;
+  return best.score >= 5 ? best.url : null;
+}
+
+/** Come pickOfficialWebsite ma usa anche il testo degli snippet Tavily (Google web). */
+export function pickOfficialWebsiteFromHits(hits: TavilyHit[], companyName: string): string | null {
+  let best: { url: string; score: number } | null = null;
+  for (const hit of hits) {
+    if (!hit.url) continue;
+    const scored = scoreWebsiteUrl(hit.url, companyName, `${hit.content} ${hit.url}`);
+    if (!scored) continue;
+    if (!best || scored.score > best.score) best = scored;
+  }
+  if (!best) return null;
   return best.score >= 5 ? best.url : null;
 }
 

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { installOcrSafetyHandlers } from "../src/lib/sanita/ocr.ts";
 import { discoverRegionFromMaps } from "../src/lib/sanita/discover-region.ts";
+import { saveRegionDiscoveryState, getRegionDiscoveryState } from "../src/lib/sanita/discovery-state.ts";
 import { closeMapsBrowserPool } from "../src/lib/sanita/playwright-maps.ts";
 import { ensureSqliteWal, prisma } from "../src/lib/sanita/db-ready.ts";
 import { terminateOcrWorker } from "../src/lib/sanita/ocr.ts";
@@ -89,11 +90,13 @@ async function analyzePending(region) {
 }
 
 async function processRegion(region) {
-  let offset = 0;
+  const saved = await getRegionDiscoveryState(region);
+  let offset = saved.mapsCityOffset;
   let round = 0;
-  let discoveryComplete = false;
+  let discoveryComplete = saved.mapsDiscoveryComplete;
 
-  console.log(`\n═══ ${region} (discover → analizza → ripeti) ═══\n`);
+  console.log(`\n═══ ${region} (discover → analizza → ripeti) ═══`);
+  console.log(`  Comuni Maps: ${offset}/${saved.citiesTotal}\n`);
 
   while (true) {
     round++;
@@ -103,10 +106,14 @@ async function processRegion(region) {
       const r = await discoverRegionFromMaps(region, {
         deadline,
         cityOffset: offset,
-        includeMinSalute: round === 1,
+        includeMinSalute: round === 1 && offset === 0,
       });
       offset = r.mapsCityOffset;
       discoveryComplete = r.discoveryComplete;
+      await saveRegionDiscoveryState(region, {
+        mapsCityOffset: offset,
+        mapsDiscoveryComplete: discoveryComplete,
+      });
       await closeMapsBrowserPool().catch(() => {});
 
       const total = await prisma.lead.count({ where: { type: "HEALTHCARE", region } });

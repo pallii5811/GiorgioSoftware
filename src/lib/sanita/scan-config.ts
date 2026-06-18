@@ -7,10 +7,16 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
+
 /** Durata massima di un round API/SSE (ms). */
 export const SCAN_BUDGET_MS = envInt(
   "SCAN_BUDGET_MS",
-  process.env.NODE_ENV === "development" ? 6 * 60_000 : 110_000
+  isScanEngineHost()
+    ? 60 * 60_000
+    : process.env.NODE_ENV === "development"
+      ? 6 * 60_000
+      : 110_000
 );
 
 /** Lead analizzati in parallelo per round (crawl paralleli; OCR resta serializzato). */
@@ -32,8 +38,25 @@ export const SCAN_DISCOVERY_SKIP_BACKLOG = envInt("SCAN_DISCOVERY_SKIP_BACKLOG",
 /** UI live: 1 = un lead alla volta in tabella (demo cliente). */
 export const SCAN_STREAM_CONCURRENCY = envInt("SCAN_STREAM_CONCURRENCY", 1);
 
-/** Timeout singolo lead se POLICY_EXHAUSTIVE disattivo (ms). */
-export const SCAN_LEAD_TIMEOUT_MS = envInt("SCAN_LEAD_TIMEOUT_MS", 12 * 60_000);
-
 /** Prima scansione da zero: discovery breve così parte subito l'analisi. */
 export const SCAN_INITIAL_DISCOVERY_MS = envInt("SCAN_INITIAL_DISCOVERY_MS", 75_000);
+
+/** Tetto discovery per round — evita sessioni bloccate ore su Maps. */
+export const SCAN_DISCOVERY_MAX_MS = envInt("SCAN_DISCOVERY_MAX_MS", 90_000);
+
+/** Su Hetzner nessun limite di round — accuratezza prima di tutto. */
+export function scanRoundDeadline(): number {
+  if (isScanEngineHost()) return Number.MAX_SAFE_INTEGER;
+  return Date.now() + SCAN_BUDGET_MS;
+}
+
+/** 0 = nessun limite per-lead. Default: illimitato su scan engine, 8 min su Vercel/demo. */
+export const SCAN_LEAD_MAX_MS = (() => {
+  const raw = process.env.SCAN_LEAD_MAX_MS;
+  if (raw === "0") return 0;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return isScanEngineHost() ? 0 : 8 * 60_000;
+})();

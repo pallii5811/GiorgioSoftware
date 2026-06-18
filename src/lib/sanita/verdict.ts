@@ -49,13 +49,14 @@ export function verdictFromSite(opts: {
   return "REVIEW";
 }
 
-/** Verdetto per una struttura SENZA sito (verifica portali regionali). */
+/** Verdetto per struttura senza sito crawlato — mai HOT senza aver letto il sito. */
 export function verdictFromRegional(opts: {
   checked: boolean;
   policyFound: boolean;
+  hasWebsite?: boolean;
 }): Verdict {
   if (opts.policyFound) return "PUBLISHED";
-  if (opts.checked) return "HOT"; // verificato sui portali, nessuna pubblicazione
+  if (opts.hasWebsite && opts.checked) return "HOT";
   return "REVIEW";
 }
 

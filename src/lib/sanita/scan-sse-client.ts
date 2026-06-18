@@ -16,16 +16,21 @@ export async function consumeSanitaScanStream(
   signal?: AbortSignal
 ): Promise<"complete" | "paused" | "error"> {
   let res: Response;
+  const timeoutMs = Number(process.env.SCAN_SSE_ROUND_MS) || 12 * 60_000;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
   try {
     res = await fetch(streamUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal,
+      signal: signal ?? abort.signal,
     });
   } catch {
+    clearTimeout(timer);
     return "paused";
   }
+  clearTimeout(timer);
 
   if (!res.ok || !res.body) {
     let detail = `HTTP ${res.status}`;

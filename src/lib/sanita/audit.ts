@@ -1,10 +1,28 @@
 import { encodeEvidence, type Verdict } from "./verdict";
+import type { CrawlResult } from "./crawler";
+import { isGelliComplianceReportPdf } from "./detector";
+
+function isPolicySourceUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return (
+    /amministrazione-trasparente|societa-trasparente|\/trasparen|\/polizz|\/assicuraz|responsabilit[aà]-civile|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico|art\.?\s*10|legge[\-_]?gelli/i.test(
+      u
+    )
+  );
+}
+
+function isTransparencyUrl(url: string): boolean {
+  return isPolicySourceUrl(url);
+}
 
 export interface AuditSources {
   osm?: boolean;
   minSalute?: boolean;
   sitePages?: string[];
   siteRelevant?: boolean;
+  siteUnderMaintenance?: boolean;
+  policyPdfUrl?: string | null;
+  policySourceUrl?: string | null;
   policyPdfsQueued?: number;
   policyPdfsRead?: number;
   needsOcrReview?: boolean;
@@ -21,13 +39,63 @@ export interface AuditSources {
   anacCig?: string;
 }
 
+/** PDF che ha certificato la polizza — da policyPdfUrl o da pagine visitate. */
+export function pickPolicyPdfUrl(
+  crawl: Pick<CrawlResult, "policyPdfUrl" | "pagesVisited">
+): string | null {
+  if (crawl.policyPdfUrl) return crawl.policyPdfUrl;
+  const pdfs = (crawl.pagesVisited || []).filter((u) => /\.pdf(?:$|\?|#)/i.test(u));
+  return (
+    pdfs.find((u) => /polizz|parm|pars|assicuraz|rinnovo|_rc_|\/rc[-_]/i.test(u.toLowerCase())) ??
+    pdfs[0] ??
+    null
+  );
+}
+
+/** Pagina HTML o PDF che ha certificato la polizza. */
+export function pickPolicySourceUrl(crawl: Pick<CrawlResult, "policyPdfUrl" | "pagesVisited">): string | null {
+  const pdf = pickPolicyPdfUrl(crawl);
+  if (pdf) return pdf;
+  return (
+    (crawl.pagesVisited || []).find(
+      (u) =>
+        !/\.pdf(?:$|\?|#)/i.test(u) &&
+        /trasparen|amministrazione|gelli|polizz|assicuraz|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico|note-legali/i.test(
+          u
+        )
+    ) ?? null
+  );
+}
+
+export function isParmOrGelliReportPdf(url: string): boolean {
+  return isGelliComplianceReportPdf(url);
+}
+
 function buildDocsSection(sources: AuditSources): string | null {
-  const urls = (sources.sitePages || [])
+  // PUBLISHED: allega il PDF (o PARM/PARS con RC art.10) che ha certificato la polizza.
+  if (sources.policyPdfUrl) {
+    return `[DOCS: ${sources.policyPdfUrl}]`;
+  }
+  return null;
+}
+
+/** PDF polizza da mostrare in UI — documento che ha certificato PUBLISHED. */
+export function policyDocsForDisplay(docs: string[] | null): string[] {
+  return (docs ?? [])
     .filter((u) => /\.pdf(?:$|\?|#)/i.test(u))
-    .slice(0, 6);
-  if (urls.length === 0) return null;
-  // Evita evidence enormi: solo campione per audit UI
-  return `[DOCS: ${urls.join("; ")}]`;
+    .slice(0, 3);
+}
+
+/** URL PDF polizza per la UI — [DOCS:] oppure fallback dal testo evidenza. */
+export function policyPdfUrlsForLead(evidence: string | null | undefined): string[] {
+  const { docs, body } = parseEvidenceSections(evidence);
+  const fromDocs = policyDocsForDisplay(docs);
+  if (fromDocs.length) return fromDocs;
+  const fromBody =
+    body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1] ??
+    body?.match(/(https?:\/\/\S+\.pdf(?:\?[^\s]*)?)/i)?.[1];
+  if (!fromBody || !/\.pdf/i.test(fromBody)) return [];
+  return [fromBody.replace(/[.,;)\]]+$/, "")];
 }
 
 /** Traccia documentata delle fonti controllate (per report assicuratore). */
@@ -43,6 +111,7 @@ export function buildAuditTrail(sources: AuditSources): string {
   if (sources.minSalute) parts.push("elenco Min. Salute (accreditate)");
   if (sources.sitePages?.length) {
     const n = sources.sitePages.length;
+    const transUrlVisited = (sources.sitePages || []).some((u) => isTransparencyUrl(u));
     const sample = sources.sitePages
       .slice(0, 2)
       .map((u) => {
@@ -54,8 +123,17 @@ export function buildAuditTrail(sources: AuditSources): string {
       })
       .join(", ");
     parts.push(
-      `sito web (${n} pag${n > 1 ? "ine" : "ina"}${sources.siteRelevant ? ", sezione Trasparenza letta" : ""}: ${sample})`
+      `sito web (${n} pag${n > 1 ? "ine" : "ina"}${
+        sources.siteUnderMaintenance
+          ? ", sito in manutenzione"
+          : sources.siteRelevant && transUrlVisited
+            ? ", sezione Trasparenza letta"
+            : ""
+      }: ${sample})`
     );
+  }
+  if (sources.policySourceUrl && !sources.policyPdfUrl) {
+    parts.push(`fonte polizza HTML: ${sources.policySourceUrl}`);
   }
   if (typeof sources.policyPdfsQueued === "number" || typeof sources.policyPdfsRead === "number") {
     const q = Math.max(0, Number(sources.policyPdfsQueued ?? 0));
@@ -86,7 +164,12 @@ export function buildAuditTrail(sources: AuditSources): string {
 }
 
 export function packEvidence(verdict: Verdict, body: string | null, audit: AuditSources): string {
-  const trail = buildAuditTrail(audit);
+  const pdfFromBody = body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1];
+  const auditWithPdf: AuditSources = {
+    ...audit,
+    policyPdfUrl: audit.policyPdfUrl ?? pdfFromBody ?? null,
+  };
+  const trail = buildAuditTrail(auditWithPdf);
   const text = [body?.trim(), trail].filter(Boolean).join(" — ");
   return encodeEvidence(verdict, text);
 }
@@ -99,8 +182,8 @@ export function parseEvidenceSections(evidence: string | null | undefined): {
 } {
   if (!evidence) return { body: null, fonti: null, docs: null };
   let s = evidence.replace(/^\[V:(PUB|HOT|REV)\]\s*/i, "").trim();
-  const docsMatch = s.match(/\[DOCS:[^\]]+\]/);
-  const docsRaw = docsMatch ? docsMatch[0] : null;
+  const docsMatches = [...s.matchAll(/\[DOCS:\s*([^\]]+)\]/gi)];
+  const docsRaw = docsMatches.length ? docsMatches[docsMatches.length - 1]![0] : null;
   const docs =
     docsRaw
       ? docsRaw

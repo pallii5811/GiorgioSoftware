@@ -1,37 +1,27 @@
 import { PrismaClient } from "@prisma/client";
+import { parseEvidenceSections } from "../src/lib/sanita/audit.ts";
 
-const prisma = new PrismaClient();
-const region = process.argv[2] || "Campania";
+const p = new PrismaClient();
+const region = "Campania";
 
-const leads = await prisma.lead.findMany({
-  where: { type: "HEALTHCARE", region, lastScannedAt: { not: null } },
-  select: { companyName: true, evidence: true, website: true },
+const rev = await p.lead.findMany({
+  where: { type: "HEALTHCARE", region, evidence: { startsWith: "[V:REV]" } },
+  select: { evidence: true, companyName: true, website: true },
 });
 
-const counts = { HOT: 0, PUB: 0, REV: 0 };
-const revReasons = {};
-
-for (const l of leads) {
-  const ev = l.evidence ?? "";
-  let v = "?";
-  if (/^\[V:HOT\]/.test(ev)) v = "HOT";
-  else if (/^\[V:PUB\]/.test(ev)) v = "PUB";
-  else if (/^\[V:REV\]/.test(ev)) v = "REV";
-  counts[v] = (counts[v] ?? 0) + 1;
-
-  if (v !== "REV") continue;
-  const body = ev.replace(/^\[V:REV\]\s*/, "");
-  const gate = body.match(/Impossibile certificare assenza polizza: ([^.]+)/)?.[1]
-    ?? body.match(/^([^—]+)/)?.[1]?.trim()
-    ?? "altro";
-  revReasons[gate] = (revReasons[gate] ?? 0) + 1;
+const reasons = {};
+for (const l of rev) {
+  const body = parseEvidenceSections(l.evidence).body || "";
+  let k = "altro";
+  if (/irraggiungibile/i.test(body)) k = "irraggiungibile";
+  else if (/Trasparenza non visitata|non trovata|polizza non trovata/i.test(body)) k = "no_trasparenza";
+  else if (/PDF non processati|crawl incompleto/i.test(body)) k = "crawl_incompleto";
+  else if (/sito errato|omonimia|assente nel sito/i.test(body)) k = "sito_errato";
+  else if (/OCR/i.test(body)) k = "ocr";
+  else if (/insufficienti|verifica manuale/i.test(body)) k = "policy_incerta";
+  else if (/non trovato|senza sito/i.test(body)) k = "no_sito";
+  reasons[k] = (reasons[k] || 0) + 1;
 }
-
-console.log("Total scanned:", leads.length);
-console.log("HOT:", counts.HOT, "PUB:", counts.PUB, "REV:", counts.REV);
-console.log("\nREVIEW gate breakdown:");
-for (const [k, n] of Object.entries(revReasons).sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${n}x  ${k.slice(0, 120)}`);
-}
-
-await prisma.$disconnect();
+console.log("REVIEW total:", rev.length);
+console.log(JSON.stringify(reasons, null, 2));
+await p.$disconnect();

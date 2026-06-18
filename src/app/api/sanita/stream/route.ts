@@ -76,8 +76,14 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      let closed = false;
       const send = (event: string, data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
 
       try {
@@ -88,7 +94,12 @@ export async function POST(req: Request) {
           message: error instanceof Error ? error.message : "Errore interno durante la scansione",
         });
       } finally {
-        controller.close();
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          /* già chiuso */
+        }
       }
     },
   });

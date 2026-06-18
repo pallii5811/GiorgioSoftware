@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,8 +8,16 @@ import { Badge } from "@/components/ui/badge"
 import {
   Building2, Search, Loader2, Euro, MapPin, FileText, Landmark,
   RefreshCw, Trash2, ShieldCheck, Download, Phone, Mail, Globe, Hash,
+  Calendar, Target,
 } from "lucide-react"
 import { parseEvidenceSections } from "@/lib/sanita/audit"
+import {
+  categoryToRelevance,
+  GARE_RELEVANCE_META,
+  parseTenderAwardDate,
+  parseTenderBuyer,
+  parseTenderDatasetYear,
+} from "@/lib/gare/display"
 import { toast } from "sonner"
 import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
@@ -30,6 +38,8 @@ type Lead = {
   website: string | null
   leadScore: number | null
   evidence: string | null
+  category: string | null
+  city: string | null
 }
 
 const fmtMoney = (n: number) =>
@@ -41,10 +51,12 @@ export function GareLeads() {
   const [isScanning, setIsScanning] = useState(false)
   const [query, setQuery] = useState("")
   const [regionFilter, setRegionFilter] = useState<"ALL" | "Veneto" | "Campania">("ALL")
+  const [priorityOnly, setPriorityOnly] = useState(true)
 
   const fetchLeads = async () => {
     try {
-      const res = await fetch("/api/gare")
+      const qs = priorityOnly ? "?priority=1" : ""
+      const res = await fetch(`/api/gare${qs}`)
       const json = await res.json()
       if (json.success) setLeads(json.data)
     } catch {
@@ -58,7 +70,8 @@ export function GareLeads() {
     let active = true
     void (async () => {
       try {
-        const res = await fetch("/api/gare")
+        const qs = priorityOnly ? "?priority=1" : ""
+        const res = await fetch(`/api/gare${qs}`)
         const json = await res.json()
         if (active && json.success) setLeads(json.data)
       } catch {
@@ -68,20 +81,20 @@ export function GareLeads() {
       }
     })()
     return () => { active = false }
-  }, [])
+  }, [priorityOnly])
 
   const scan = async (region: "Veneto" | "Campania") => {
     setIsScanning(true)
-    const toastId = toast.loading(`Ricerca aggiudicazioni reali in ${region}…`)
+    const toastId = toast.loading(`Import ANAC + contatti in ${region}…`)
     try {
       const res = await fetch("/api/gare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ region }),
+        body: JSON.stringify({ region, commercialOnly: true, max: 200 }),
       })
       const json = await res.json()
       if (json.success) {
-        toast.success(json.message, { id: toastId, duration: 9000 })
+        toast.success(json.message, { id: toastId, duration: 12000 })
         fetchLeads()
       } else {
         toast.error(json.error, { id: toastId, duration: 9000 })
@@ -110,49 +123,67 @@ export function GareLeads() {
   const updateStatus = (id: string, status: string) =>
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)))
 
+  const q = query.trim().toLowerCase()
+  const scope = useMemo(
+    () => leads.filter((l) => regionFilter === "ALL" || l.region === regionFilter),
+    [leads, regionFilter]
+  )
+  const filtered = scope.filter((l) => {
+    if (q && !(`${l.companyName} ${l.tenderObject} ${l.tenderCig} ${l.city ?? ""}`.toLowerCase().includes(q))) {
+      return false
+    }
+    return true
+  })
+
+  const priorityCount = scope.filter((l) => {
+    const r = categoryToRelevance(l.category)
+    return r === "HIGH" || r === "MEDIUM"
+  }).length
+
+  const totalAmount = filtered.reduce((s, l) => s + (l.tenderAmount || 0), 0)
+  const cauzioni = totalAmount * 0.1
+  const withPhone = filtered.filter((l) => l.phone).length
+  const withEmail = filtered.filter((l) => l.email || l.pec).length
+  const withFonti = filtered.filter((l) => l.evidence?.includes("[FONTI:")).length
+
   const exportCsv = () => {
     if (filtered.length === 0) { toast.info("Nessuna gara da esportare"); return }
-    const rows = filtered.map((l) => ({
-      Azienda: l.companyName,
-      CIG: l.tenderCig,
-      Oggetto: l.tenderObject,
-      Importo: l.tenderAmount,
-      Cauzione10: Math.round(l.tenderAmount * 0.1),
-      Telefono: l.phone ?? "",
-      Email: l.email ?? "",
-      PEC: l.pec ?? "",
-      Sito: l.website ?? "",
-      Fonti: parseEvidenceSections(l.evidence).fonti ?? "",
-      Regione: l.region,
-      Stato: l.status,
-    }))
+    const rows = filtered.map((l) => {
+      const rel = categoryToRelevance(l.category)
+      return {
+        Azienda: l.companyName,
+        Priorità: rel ?? "",
+        Score: l.leadScore ?? "",
+        CIG: l.tenderCig,
+        Oggetto: l.tenderObject,
+        Importo: l.tenderAmount,
+        Cauzione10: Math.round(l.tenderAmount * 0.1),
+        AnnoDataset: parseTenderDatasetYear(l.evidence) ?? "",
+        DataAggiudicazione: parseTenderAwardDate(l.evidence) ?? "",
+        StazioneAppaltante: parseTenderBuyer(l.evidence) ?? "",
+        Comune: l.city ?? "",
+        Telefono: l.phone ?? "",
+        Email: l.email ?? "",
+        PEC: l.pec ?? "",
+        Sito: l.website ?? "",
+        Fonti: parseEvidenceSections(l.evidence).fonti ?? "",
+        Regione: l.region,
+        Stato: l.status,
+      }
+    })
     downloadCsv(`gare-${new Date().toISOString().slice(0, 10)}.csv`, rows)
     toast.success(`Esportate ${rows.length} gare in CSV`)
   }
 
-  const q = query.trim().toLowerCase()
-  const scope = leads.filter((l) => regionFilter === "ALL" || l.region === regionFilter)
-  const filtered = scope.filter((l) => {
-    if (q && !(`${l.companyName} ${l.tenderObject} ${l.tenderCig}`.toLowerCase().includes(q))) return false
-    return true
-  })
-  const totalAmount = scope.reduce((s, l) => s + (l.tenderAmount || 0), 0)
-  const cauzioni = totalAmount * 0.1
-
-  const withPhone = scope.filter((l) => l.phone).length
-  const withEmail = scope.filter((l) => l.email).length
-  const withFonti = scope.filter((l) => l.evidence?.includes("[FONTI:")).length
-
   const KPIS = [
-    { label: "Aggiudicazioni", value: scope.length.toLocaleString("it-IT"), icon: Landmark, cls: "" },
-    { label: "Con telefono", value: `${withPhone}/${scope.length || 0}`, icon: Phone, cls: "" },
-    { label: "Con email / PEC", value: `${withEmail}/${scope.length || 0}`, icon: Mail, cls: "" },
-    { label: "Opportunità cauzioni", value: fmtMoney(cauzioni), icon: Euro, cls: "text-emerald-600" },
+    { label: "Gare prioritarie", value: priorityCount.toLocaleString("it-IT"), icon: Target, cls: "text-amber-600" },
+    { label: "In tabella", value: filtered.length.toLocaleString("it-IT"), icon: Landmark, cls: "" },
+    { label: "Con telefono", value: `${withPhone}/${filtered.length || 0}`, icon: Phone, cls: "" },
+    { label: "Cauzioni (10%)", value: fmtMoney(cauzioni), icon: Euro, cls: "text-emerald-600" },
   ]
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">
@@ -162,8 +193,7 @@ export function GareLeads() {
             Motore Gare Pubbliche · Cauzioni
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Aziende che hanno appena vinto un appalto e devono presentare la cauzione definitiva (10%).
-            Solo dati validati da fonti ufficiali.
+            Aggiudicazioni ANAC verificate (CIG + importo + vincitore). Priorità per broker: RC, cauzioni e appalti rilevanti.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -185,7 +215,6 @@ export function GareLeads() {
         </div>
       </div>
 
-      {/* KPI */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {KPIS.map((k) => (
           <Card key={k.label} className="ring-soft border-border/60">
@@ -200,12 +229,11 @@ export function GareLeads() {
         ))}
       </div>
 
-      {/* TOOLBAR */}
       <Card className="ring-soft border-border/60">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca azienda, oggetto o CIG…" className="pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca azienda, CIG, oggetto, comune…" className="pl-9" />
           </div>
           <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
             {(["ALL", "Veneto", "Campania"] as const).map((r) => (
@@ -221,10 +249,21 @@ export function GareLeads() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={() => setPriorityOnly((v) => !v)}
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm font-medium transition",
+              priorityOnly
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {priorityOnly ? "Solo prioritarie" : "Mostra anche rumore"}
+          </button>
         </CardContent>
       </Card>
 
-      {/* TABELLA */}
       <Card className="ring-soft border-border/60">
         <CardContent className="p-0">
           {isLoading ? (
@@ -232,7 +271,7 @@ export function GareLeads() {
           ) : filtered.length === 0 ? (
             <div className="m-4 rounded-xl border-2 border-dashed border-border p-10 text-center text-sm text-muted-foreground">
               {leads.length === 0
-                ? "Nessuna gara. Avvia una scansione: i dati arrivano dal dataset ufficiale ANAC (OCDS), senza bisogno di chiavi API."
+                ? "Nessuna gara. Avvia una scansione: dati ufficiali ANAC (OCDS), filtrati per valore commerciale broker."
                 : "Nessun risultato per i filtri selezionati."}
             </div>
           ) : (
@@ -240,28 +279,53 @@ export function GareLeads() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Azienda aggiudicataria</th>
+                    <th className="px-4 py-3 font-medium">Azienda</th>
                     <th className="px-4 py-3 font-medium">Appalto</th>
                     <th className="px-4 py-3 font-medium">Contatti</th>
                     <th className="px-4 py-3 font-medium">Importo</th>
-                    <th className="px-4 py-3 font-medium">Cauzione 10%</th>
-                    <th className="px-4 py-3 font-medium">Fonti</th>
+                    <th className="px-4 py-3 font-medium">Cauzione</th>
+                    <th className="px-4 py-3 font-medium">Priorità</th>
                     <th className="px-4 py-3 font-medium">Regione</th>
                     <th className="px-4 py-3 font-medium">Stato</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((l) => {
+                    const rel = categoryToRelevance(l.category)
+                    const meta = rel ? GARE_RELEVANCE_META[rel] : null
+                    const awardDate = parseTenderAwardDate(l.evidence)
+                    const datasetYear = parseTenderDatasetYear(l.evidence)
+                    const buyer = parseTenderBuyer(l.evidence)
                     const fonti = parseEvidenceSections(l.evidence).fonti
                     return (
                     <tr key={l.id} className="border-b border-border/60 last:border-0 hover:bg-muted/40">
-                      <td className="px-4 py-3 align-top font-medium">{l.companyName}</td>
                       <td className="px-4 py-3 align-top">
-                        <div className="flex flex-col">
+                        <div className="font-medium">{l.companyName}</div>
+                        {l.leadScore != null && (
+                          <span className="text-[10px] text-muted-foreground">Score {l.leadScore}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col gap-1">
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <FileText className="h-3 w-3" /> CIG: {l.tenderCig}
+                            <FileText className="h-3 w-3" /> CIG {l.tenderCig}
                           </span>
-                          <span className="max-w-[260px] truncate" title={l.tenderObject}>{l.tenderObject}</span>
+                          <span className="max-w-[280px] line-clamp-2" title={l.tenderObject}>{l.tenderObject}</span>
+                          {(datasetYear || awardDate) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {datasetYear ? `ANAC ${datasetYear}` : ""}
+                              {awardDate ? ` · ${awardDate}` : ""}
+                            </span>
+                          )}
+                          {buyer && (
+                            <span className="text-[10px] text-muted-foreground line-clamp-1" title={buyer}>
+                              {buyer}
+                            </span>
+                          )}
+                          {l.city && (
+                            <span className="text-[10px] text-muted-foreground">{l.city}</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top text-xs">
@@ -287,6 +351,9 @@ export function GareLeads() {
                               <Globe className="h-3 w-3 shrink-0" /> sito
                             </a>
                           )}
+                          {fonti && (
+                            <span className="text-[10px] text-muted-foreground line-clamp-2" title={fonti}>{fonti}</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top tabular-nums">{fmtMoney(l.tenderAmount)}</td>
@@ -295,11 +362,21 @@ export function GareLeads() {
                           <Euro className="h-3.5 w-3.5" /> {fmtMoney(l.tenderAmount * 0.1)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 align-top max-w-[200px]">
-                        {fonti ? (
-                          <span className="text-[10px] leading-snug text-muted-foreground" title={fonti}>{fonti}</span>
+                      <td className="px-4 py-3 align-top">
+                        {meta && rel ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[10px] font-medium",
+                              rel === "HIGH" && "border-emerald-300 bg-emerald-50 text-emerald-800",
+                              rel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-800",
+                              rel === "LOW" && "border-slate-300 bg-slate-50 text-slate-600"
+                            )}
+                          >
+                            {meta.label}
+                          </Badge>
                         ) : (
-                          <span className="text-xs text-amber-600">Riscansiona per fonti</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 align-top">
@@ -321,9 +398,9 @@ export function GareLeads() {
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-        Fonte gara: dataset ufficiale ANAC (BDNCP / OCDS). I contatti aziendali sono ricavati da fonti pubbliche verificabili — ogni scheda riporta le fonti consultate.
-        {withFonti < scope.length && scope.length > 0 && (
-          <span className="text-amber-600"> · {scope.length - withFonti} gare senza trail fonti: riscansiona la regione.</span>
+        Fonte gara: ANAC BDNCP (OCDS). Contatti da fonti pubbliche tracciate. Import esclude automaticamente gare a bassa priorità (utilities, pulizie generiche).
+        {withFonti < filtered.length && filtered.length > 0 && (
+          <span className="text-amber-600"> · {filtered.length - withFonti} senza trail fonti: riscansiona.</span>
         )}
       </p>
     </div>

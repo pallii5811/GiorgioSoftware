@@ -1,8 +1,14 @@
 import type { Region } from "@/lib/sanita/discovery";
 import { normalizeWebsite } from "@/lib/sanita/discovery";
+import { pickOfficialWebsite } from "@/lib/sanita/contacts";
 import { findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
+import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
-import { extractCityFromMapsAddress, mapsMatchScore } from "@/lib/sanita/maps-query";
+import {
+  extractCityFromMapsAddress,
+  mapsFacilitySearchName,
+  mapsMatchScore,
+} from "@/lib/sanita/maps-query";
 
 export type WebsiteSource = "maps-card" | "maps-lookup" | "google" | null;
 
@@ -14,6 +20,13 @@ export type WebsiteResolution = {
   source: WebsiteSource;
   googleTried: boolean;
 };
+
+function acceptWebsite(url: string | null | undefined, companyName: string): string | null {
+  if (!url?.trim()) return null;
+  const normalized = normalizeWebsite(url);
+  if (!normalized) return null;
+  return pickOfficialWebsite([normalized], companyName) ?? null;
+}
 
 /**
  * Trova il sito ufficiale di una struttura — come un utente su Google:
@@ -55,32 +68,52 @@ export async function resolveOfficialWebsite(
   }
 
   if (Date.now() < deadline) {
-    const maps = await resolveWebsiteViaMaps(name, city, region, {
-      deadline,
-      maxQueries: 6,
-    });
-    if (maps) {
+    const searchNames = [mapsFacilitySearchName(name), name].filter(
+      (v, i, a) => v && a.indexOf(v) === i
+    );
+    for (const searchName of searchNames) {
+      if (Date.now() >= deadline) break;
+      const maps = await resolveWebsiteViaMaps(searchName, city, region, {
+        deadline,
+        maxQueries: 10,
+      });
+      if (!maps) continue;
       const score = mapsMatchScore(name, maps.name);
-      if (score >= 0) {
-        companyName = maps.name;
-        if (maps.phone) phone = maps.phone;
-        const mapsCity = extractCityFromMapsAddress(maps.address);
-        if (mapsCity) resolvedCity = mapsCity;
-        if (maps.website && score >= 4) {
-          website = normalizeWebsite(maps.website);
+      if (score < 0) continue;
+      companyName = maps.name;
+      if (maps.phone) phone = maps.phone;
+      const mapsCity = extractCityFromMapsAddress(maps.address);
+      if (mapsCity) resolvedCity = mapsCity;
+      if (maps.website && score >= 4) {
+        const w = acceptWebsite(maps.website, name);
+        if (w) {
+          website = w;
           source = "maps-lookup";
+          break;
         }
       }
+      if (!website && score >= 4 && !maps.website) break;
     }
   }
 
   if (!website && Date.now() < deadline) {
     googleTried = true;
     const google = await findOfficialWebsite(companyName, resolvedCity, region);
-    const w = normalizeWebsite(google.website ?? undefined);
+    const w = acceptWebsite(google.website, name);
     if (w) {
       website = w;
       source = "google";
+    }
+  }
+
+  if (!website && Date.now() < deadline) {
+    const guessDeadline = Math.min(deadline, Date.now() + 12_000);
+    const guessed = await probeGuessedOfficialWebsite(companyName, { deadline: guessDeadline });
+    const w = acceptWebsite(guessed, name);
+    if (w) {
+      website = w;
+      source = "google";
+      googleTried = true;
     }
   }
 

@@ -22,17 +22,24 @@ const leads = await prisma.lead.findMany({
   },
 });
 
+import { scoreGareRelevance } from "../src/lib/gare/relevance.ts";
+
 const yearMatch = (e) => e?.match(/ANAC (\d{4})/);
+const dateMatch = (e) => e?.match(/Data aggiudicazione: (\d{4}-\d{2}-\d{2})/);
+const buyerMatch = (e) => e?.match(/Stazione appaltante: ([^·]+)/);
 const items = leads.map((l) => ({
   id: l.id,
   companyName: l.companyName,
   region: l.region,
   meta: {
-    year: Number(yearMatch(l.evidence)?.[1] ?? new Date().getFullYear()),
+    datasetYear: Number(yearMatch(l.evidence)?.[1] ?? new Date().getFullYear()),
     cig: l.tenderCig ?? "?",
     object: l.tenderObject ?? "Appalto pubblico",
-    buyer: null,
+    buyer: buyerMatch(l.evidence)?.[1]?.trim() ?? null,
+    buyerCity: l.city ?? null,
     amount: l.tenderAmount ?? 0,
+    awardDate: dateMatch(l.evidence)?.[1] ? new Date(dateMatch(l.evidence)[1]) : null,
+    relevance: scoreGareRelevance(l.tenderObject ?? "", l.companyName, l.tenderAmount ?? 0),
   },
 }));
 

@@ -15,12 +15,15 @@ import {
   SCAN_BUDGET_MS,
   SCAN_DISCOVERY_SHARE,
   SCAN_DISCOVERY_SKIP_BACKLOG,
+  SCAN_DISCOVERY_MAX_MS,
   SCAN_INITIAL_DISCOVERY_MS,
-  SCAN_LEAD_TIMEOUT_MS,
   SCAN_STREAM_CONCURRENCY,
+  scanRoundDeadline,
+  SCAN_LEAD_MAX_MS,
 } from "@/lib/sanita/scan-config";
 import { packEvidence } from "@/lib/sanita/audit";
 import { ensureSqliteWal } from "@/lib/sanita/db-ready";
+import { dedupeRegionByCompanyName, dedupeRegionByWebsite } from "@/lib/sanita/lead-dedup";
 
 export { SCAN_BUDGET_MS };
 
@@ -50,6 +53,7 @@ export async function buildScanStats(
     discoveredCount: number;
     mapsDiscovered: number;
     mapsCityOffset: number;
+    citiesTotal: number;
     mapsDiscoveryComplete: boolean;
     skippedDiscovery: boolean;
   }
@@ -66,6 +70,7 @@ export async function buildScanStats(
     discovered: extra.discoveredCount,
     mapsDiscovered: extra.mapsDiscovered,
     mapsCityOffset: extra.mapsCityOffset,
+    citiesTotal: extra.citiesTotal,
     mapsDiscoveryComplete: extra.mapsDiscoveryComplete,
     analyzed: counters.analyzed,
     withPolicy: counters.withPolicy,
@@ -103,14 +108,48 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     city = null,
   } = input;
   const cityFilter = city && city.trim() ? { city: city.trim() } : {};
-  const deadline = Date.now() + SCAN_BUDGET_MS;
+
+  const deduped = await dedupeRegionByWebsite(region);
+  const dedupedNames = await dedupeRegionByCompanyName(region);
+  if (deduped > 0 || dedupedNames > 0) {
+    emit("progress", {
+      phase: "analysis",
+      message: `${region} — unificati ${deduped + dedupedNames} duplicati (sito/nome)`,
+      done: 0,
+      total: 0,
+    });
+  }
+
+  const deadline = scanRoundDeadline();
   const regionalAvailable = isRegionalCheckAvailable();
   const regionCities = await getRegionCities(region);
-  const needMoreMapsCities = mapsOffsetIn < regionCities.length;
+  const citiesTotal = regionCities.length;
+  const { getRegionDiscoveryState, saveRegionDiscoveryState } = await import(
+    "@/lib/sanita/discovery-state"
+  );
+  const serverDiscovery = await getRegionDiscoveryState(region);
+  // Continua: usa il massimo tra offset client e server (non perdere progresso Hetzner).
+  const effectiveMapsOffset =
+    continueAnalysis && !freshScan
+      ? Math.max(mapsOffsetIn, serverDiscovery.mapsCityOffset)
+      : freshScan
+        ? 0
+        : mapsOffsetIn;
+  let mapsCityOffset = effectiveMapsOffset;
+  const needMoreMapsCities = mapsCityOffset < citiesTotal;
+  const existingCount = await prisma.lead.count({
+    where: { type: "HEALTHCARE", region, ...cityFilter },
+  });
+  const doneBeforeStart = await prisma.lead.count({
+    where: { type: "HEALTHCARE", region, ...cityFilter, lastScannedAt: { not: null } },
+  });
+  // Continua Campania: deve ancora scoprire comuni Maps se l'offset non è completo.
   const runDiscovery =
-    liveRescan || !continueAnalysis || forceDiscovery || needMoreMapsCities;
+    needMoreMapsCities &&
+    (freshScan || forceDiscovery || continueAnalysis || existingCount === 0);
 
   if (freshScan) {
+    await saveRegionDiscoveryState(region, { mapsCityOffset: 0, mapsDiscoveryComplete: false });
     await prisma.lead.deleteMany({
       where: { type: "HEALTHCARE", region, ...cityFilter },
     });
@@ -138,17 +177,24 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
       },
     });
     emit("progress", {
-      phase: "discovery",
-      message: `Demo live ${region} — 0 analizzati, riscansione in tempo reale…`,
+      phase: "analysis",
+      message: `Riscansione ${region} — ${existingCount} strutture in coda…`,
       done: 0,
-      total: 0,
+      total: existingCount,
     });
   } else if (continueAnalysis) {
     emit("progress", {
-      phase: "discovery",
-      message: `Continua scansione ${region}…`,
-      done: 0,
-      total: 0,
+      phase: "analysis",
+      message: `Continua scansione ${region} (${doneBeforeStart}/${existingCount})…`,
+      done: doneBeforeStart,
+      total: existingCount,
+    });
+  } else if (existingCount > 0) {
+    emit("progress", {
+      phase: "analysis",
+      message: `${region} — avvio analisi su ${existingCount} strutture…`,
+      done: doneBeforeStart,
+      total: existingCount,
     });
   }
 
@@ -159,7 +205,6 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     });
   }
 
-  let mapsCityOffset = mapsOffsetIn;
   let mapsDiscovered = 0;
   let saluteAdded = 0;
   let mapsDiscoveryComplete = !needMoreMapsCities;
@@ -170,18 +215,20 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   const skipDiscoveryForBacklog =
     !liveRescan && continueAnalysis && pendingWithSite >= SCAN_DISCOVERY_SKIP_BACKLOG;
 
-  const discoveryMs =
+  const discoveryMs = Math.min(
     liveRescan || !continueAnalysis
       ? SCAN_INITIAL_DISCOVERY_MS
-      : Math.floor(SCAN_BUDGET_MS * SCAN_DISCOVERY_SHARE);
+      : Math.floor(SCAN_BUDGET_MS * SCAN_DISCOVERY_SHARE),
+    SCAN_DISCOVERY_MAX_MS
+  );
   const discoveryDeadline = Math.min(deadline, Date.now() + discoveryMs);
 
   if (runDiscovery && !skipDiscoveryForBacklog && Date.now() < discoveryDeadline) {
     emit("progress", {
       phase: "discovery",
       message: `Google Maps — scoperta strutture in ${region}…`,
-      done: 0,
-      total: 0,
+      done: doneBeforeStart,
+      total: Math.max(existingCount, doneBeforeStart),
     });
     try {
       const d = await discoverRegionFromMaps(region, { deadline: discoveryDeadline, cityOffset: mapsCityOffset });
@@ -189,14 +236,26 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
       mapsDiscovered = d.mapsDiscovered;
       saluteAdded = d.saluteAdded;
       mapsDiscoveryComplete = d.discoveryComplete;
+      const afterDiscovery = await prisma.lead.count({
+        where: { type: "HEALTHCARE", region, ...cityFilter },
+      });
       emit("progress", {
         phase: "discovery",
-        message: `Maps +${d.mapsDiscovered}${d.saluteAdded ? ` · Min.Salute +${d.saluteAdded}` : ""} (città ${d.mapsCityOffset}/${d.citiesTotal})`,
-        done: 0,
-        total: 0,
+        message: `Maps +${d.mapsDiscovered}${d.saluteAdded ? ` · Min.Salute +${d.saluteAdded}` : ""} (comuni ${d.mapsCityOffset}/${d.citiesTotal})`,
+        done: doneBeforeStart,
+        total: afterDiscovery,
+        mapsCityOffset: d.mapsCityOffset,
+        citiesTotal: d.citiesTotal,
+        mapsDiscoveryComplete: d.discoveryComplete,
       });
     } catch (err) {
       console.error("Maps discovery:", err);
+      emit("progress", {
+        phase: "analysis",
+        message: `Maps: errore scoperta — passo all'analisi strutture già in DB`,
+        done: 0,
+        total: 0,
+      });
     }
   }
 
@@ -245,37 +304,46 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
         });
 
         try {
-          const exhaustive =
-            process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false";
-          const run = () => completeLeadAnalysis(lead, region, counters);
-          if (exhaustive) {
-            await run();
-          } else {
+          const analysis = completeLeadAnalysis(lead, region, counters);
+          if (SCAN_LEAD_MAX_MS > 0) {
             await Promise.race([
-              run(),
+              analysis,
               new Promise<never>((_, reject) =>
                 setTimeout(
-                  () => reject(new Error("timeout analisi struttura")),
-                  SCAN_LEAD_TIMEOUT_MS
+                  () => reject(new Error(`Analisi oltre ${Math.round(SCAN_LEAD_MAX_MS / 60_000)} min`)),
+                  SCAN_LEAD_MAX_MS
                 )
               ),
             ]);
+          } else {
+            await analysis;
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.warn(`Lead ${lead.companyName}: ${msg}`);
-          await prisma.lead.update({
-            where: { id: lead.id },
-            data: {
-              lastScannedAt: new Date(),
-              evidence: packEvidence(
-                "REVIEW",
-                `Analisi non completata in tempo (${msg}). Usa «Continua scansione» per riprovare.`,
-                { mapsLookup: true }
-              ),
-            },
-          });
-          counters.review++;
+          // Timeout per-lead: non deve bloccare l'intera regione.
+          // Motore (Hetzner): segna REVIEW e passa al prossimo lead.
+          // UI/demo: preferiamo riprovare al round successivo per evitare falsi "completato".
+          const isLeadTimeout = /Analisi oltre \d+ min/.test(msg);
+          if (isLeadTimeout && !isScanEngineHost()) return;
+          try {
+            await prisma.lead.update({
+              where: { id: lead.id },
+              data: {
+                lastScannedAt: new Date(),
+                evidence: packEvidence(
+                  "REVIEW",
+                  isLeadTimeout
+                    ? `Timeout analisi (${msg}). Lead messo in REVIEW per non bloccare la scansione; riprova manualmente.`
+                    : `Analisi interrotta (${msg}). Usa «Continua scansione» per riprovare.`,
+                  { mapsLookup: true }
+                ),
+              },
+            });
+            counters.review++;
+          } catch {
+            /* lead assorbito/eliminato da dedup — ignora */
+          }
         }
 
         const fresh = await prisma.lead.findUnique({ where: { id: lead.id } });
@@ -303,10 +371,13 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   await terminateOcrWorker().catch(() => {});
   await closeMapsBrowserPool().catch(() => {});
 
+  await saveRegionDiscoveryState(region, { mapsCityOffset, mapsDiscoveryComplete });
+
   const stats = await buildScanStats(region, cityFilter, counters, {
     discoveredCount,
     mapsDiscovered,
     mapsCityOffset,
+    citiesTotal,
     mapsDiscoveryComplete,
     skippedDiscovery: !runDiscovery,
   });
@@ -317,10 +388,10 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     (saluteAdded > 0 ? `+${saluteAdded} da Min. Salute. ` : "") +
     `Analizzate ${stats.done} (${counters.hot} senza polizza, ${counters.withPolicy} con polizza). ` +
     (stats.complete
-      ? "Scansione completata."
-      : mapsDiscoveryComplete
-        ? `Ancora ${stats.remainingUnscanned} in coda — continua automaticamente.`
-        : `Scoperta Maps in corso (città ${mapsCityOffset}) — continua automaticamente.`);
+      ? `Scansione completata (${citiesTotal}/${citiesTotal} comuni Maps + tutte le strutture analizzate).`
+      : !mapsDiscoveryComplete
+        ? `Comuni Maps ${mapsCityOffset}/${citiesTotal} — clicca «Continua ${region}» per scoprire altre strutture.`
+        : `Ancora ${stats.remainingUnscanned} strutture in coda — continua automaticamente.`);
 
   if (stats.complete) {
     emit("complete", { message, stats });

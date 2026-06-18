@@ -6,7 +6,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { StatusSelect } from "@/components/status-select"
-import { parseEvidenceSections } from "@/lib/sanita/audit"
+import { parseEvidenceSections, policyPdfUrlsForLead } from "@/lib/sanita/audit"
 import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
 import { cn } from "@/lib/utils"
 
@@ -61,6 +61,7 @@ export function LeadDetail({
   const [reminder, setReminder] = useState(lead.reminderAt ? lead.reminderAt.slice(0, 10) : "")
   const [saving, setSaving] = useState(false)
   const evidenceParts = parseEvidenceSections(lead.evidence)
+  const displayDocs = policyPdfUrlsForLead(lead.evidence)
   const scope = classifyGelliScope(lead.companyName, lead.category, lead.osmId)
 
   const save = async () => {
@@ -130,17 +131,17 @@ export function LeadDetail({
         </div>
 
         {/* VERIFICA / FONTI */}
-        {(evidenceParts.body || evidenceParts.fonti || (evidenceParts.docs && evidenceParts.docs.length > 0)) && (
+        {(evidenceParts.body || evidenceParts.fonti || displayDocs.length > 0) && (
           <div className="mb-4 rounded-xl border border-border/60 bg-slate-50/80 p-3">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Verifica automatica</div>
             {evidenceParts.body && (
               <p className="text-sm leading-relaxed text-foreground">{evidenceParts.body}</p>
             )}
-            {evidenceParts.docs && evidenceParts.docs.length > 0 && (
+            {displayDocs.length > 0 && (
               <div className="mt-2">
                 <p className="text-[11px] font-semibold text-slate-600">Documenti/PDF analizzati:</p>
                 <ul className="mt-1 space-y-1 text-[11px]">
-                  {evidenceParts.docs.slice(0, 6).map((u) => (
+                  {displayDocs.slice(0, 6).map((u) => (
                     <li key={u} className="flex items-start gap-2">
                       <ExternalLink className="mt-0.5 h-3 w-3 text-muted-foreground" />
                       <a

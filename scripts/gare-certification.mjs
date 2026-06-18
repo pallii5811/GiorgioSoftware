@@ -10,7 +10,7 @@ const regions = ["Campania", "Veneto"];
 const failures = [];
 
 for (const region of regions) {
-  const { awards, year } = await fetchAnacAwards(region, { max: 20 });
+  const { awards, year, years } = await fetchAnacAwards(region, { max: 20 });
   if (!year || awards.length === 0) {
     failures.push({ name: region, rule: "ANAC_VUOTO", detail: "nessuna aggiudicazione ANAC" });
     continue;
@@ -58,7 +58,7 @@ for (const t of tenders) {
   if (!t.tenderObject || t.tenderObject.length < 10)
     failures.push({ name, rule: "OGGETTO_MANCANTE", detail: "tenderObject vuoto" });
 
-  const relevant = isGareCommerciallyRelevant(t.tenderObject ?? "", t.companyName);
+  const relevant = isGareCommerciallyRelevant(t.tenderObject ?? "", t.companyName, t.tenderAmount ?? 0);
   if (!relevant)
     failures.push({ name, rule: "GARA_NON_RILEVANTE", detail: (t.tenderObject ?? "").slice(0, 80) });
 

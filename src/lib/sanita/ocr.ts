@@ -1,7 +1,13 @@
 import { createWorker, type Worker } from "tesseract.js";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import sharp from "sharp";
+
+const execFileAsync = promisify(execFile);
 
 const OCR_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(OCR_DIR, "../../..");
@@ -32,6 +38,31 @@ function enqueueOcr<T>(fn: () => Promise<T>): Promise<T> {
   const run = ocrChain.then(fn, fn);
   ocrChain = run.catch(() => {});
   return run;
+}
+
+/** 0 = nessun timeout (default). Imposta OCR_JOB_TIMEOUT_MS solo se serve un tetto esplicito. */
+function ocrJobTimeoutMs(): number {
+  const raw = process.env.OCR_JOB_TIMEOUT_MS;
+  if (raw === "0" || raw === "false") return 0;
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
 }
 
 export function isOcrEnabled(): boolean {
@@ -70,7 +101,99 @@ function extractImagesFromPdfCarving(buffer: Buffer): Buffer[] {
   return images;
 }
 
-/** Immagini embedded via pdf-parse (JPEG2000, flate, ecc.). */
+/**
+ * Normalizza un'immagine ENCODED (JPEG/PNG/…) in PNG grayscale pulito per l'OCR.
+ * sharp decodifica correttamente anche JPEG CMYK/progressive che mandano in errore
+ * il lettore jpeg di Tesseract ("internal jpeg error"). Se non è decodificabile → null.
+ */
+async function normalizeEncodedForOcr(buf: Buffer): Promise<Buffer | null> {
+  try {
+    const img = sharp(buf, { failOn: "none", unlimited: true });
+    const meta = await img.metadata();
+    if (!meta.width || !meta.height) return null;
+    if (meta.width < 64 || meta.height < 64) return null;
+    let p = img.flatten({ background: "#ffffff" }).grayscale().normalize();
+    // Upscala le immagini piccole: l'OCR rende molto meglio sopra ~1000px.
+    if (meta.width < 1000) {
+      p = p.resize({ width: Math.min(2200, meta.width * 2), withoutEnlargement: false });
+    }
+    return await p.png().toBuffer();
+  } catch {
+    return null;
+  }
+}
+
+/** Normalizza pixel RAW (da pdf-parse) in PNG grayscale per l'OCR. */
+async function normalizeRawForOcr(
+  data: Buffer,
+  width: number,
+  height: number
+): Promise<Buffer | null> {
+  if (!width || !height) return null;
+  const channels = Math.round(data.length / (width * height));
+  if (channels !== 1 && channels !== 3 && channels !== 4) return null;
+  try {
+    let p = sharp(data, { raw: { width, height, channels: channels as 1 | 3 | 4 } })
+      .flatten({ background: "#ffffff" })
+      .grayscale()
+      .normalize();
+    if (width < 1000) {
+      p = p.resize({ width: Math.min(2200, width * 2), withoutEnlargement: false });
+    }
+    return await p.png().toBuffer();
+  } catch {
+    return null;
+  }
+}
+
+let popplerChecked = false;
+let popplerAvailable = false;
+async function hasPoppler(): Promise<boolean> {
+  if (popplerChecked) return popplerAvailable;
+  popplerChecked = true;
+  try {
+    await execFileAsync("pdftoppm", ["-v"], { timeout: 5_000 });
+    popplerAvailable = true;
+  } catch {
+    popplerAvailable = false;
+  }
+  return popplerAvailable;
+}
+
+/**
+ * GOLD STANDARD: rasterizza ogni pagina PDF in PNG (poppler pdftoppm) a 200 DPI.
+ * Legge TUTTO il contenuto della pagina (testo + immagini), senza dipendere da
+ * JPEG embedded corrotti. Vuoto se poppler non c'è (→ fallback carving/embedded).
+ */
+async function rasterizePdfPages(pdfBuffer: Buffer, maxPages: number): Promise<Buffer[]> {
+  if (!(await hasPoppler())) return [];
+  let dir: string | null = null;
+  try {
+    dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "ocrpdf-"));
+    const inPath = path.join(dir, "in.pdf");
+    const outPrefix = path.join(dir, "page");
+    await fs.promises.writeFile(inPath, pdfBuffer);
+    await execFileAsync(
+      "pdftoppm",
+      ["-png", "-r", "300", "-f", "1", "-l", String(maxPages), "-gray", inPath, outPrefix],
+      { timeout: 120_000 }
+    );
+    const files = (await fs.promises.readdir(dir))
+      .filter((f) => f.startsWith("page") && f.endsWith(".png"))
+      .sort();
+    const buffers: Buffer[] = [];
+    for (const f of files.slice(0, maxPages)) {
+      buffers.push(await fs.promises.readFile(path.join(dir!, f)));
+    }
+    return buffers;
+  } catch {
+    return [];
+  } finally {
+    if (dir) await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Immagini embedded via pdf-parse (JPEG2000, flate, ecc.) → PNG normalizzati. */
 async function extractImagesViaPdfParse(pdfBuffer: Buffer, maxPages: number): Promise<Buffer[]> {
   try {
     const { PDFParse } = await import("pdf-parse");
@@ -90,7 +213,12 @@ async function extractImagesViaPdfParse(pdfBuffer: Buffer, maxPages: number): Pr
         for (const img of page.images ?? []) {
           if (!img?.data?.length) continue;
           if (img.width < 120 || img.height < 120) continue;
-          blobs.push(Buffer.from(img.data));
+          const raw = Buffer.from(img.data);
+          // Prova prima come immagine ENCODED, poi come pixel RAW.
+          const png =
+            (await normalizeEncodedForOcr(raw)) ??
+            (await normalizeRawForOcr(raw, img.width, img.height));
+          if (png) blobs.push(png);
         }
       }
       return blobs;
@@ -114,11 +242,27 @@ function dedupeImages(buffers: Buffer[]): Buffer[] {
   return out;
 }
 
-/** Raccoglie tutte le immagini OCR-able da un PDF scannerizzato. */
+/** Raccoglie tutte le immagini OCR-able da un PDF scannerizzato (PNG puliti). */
 export async function collectPdfImagesForOcr(pdfBuffer: Buffer): Promise<Buffer[]> {
-  const carved = extractImagesFromPdfCarving(pdfBuffer);
+  // 1) Metodo primario: rasterizzazione pagina (poppler). Massima accuratezza,
+  //    nessun JPEG corrotto. Se poppler manca, l'array è vuoto → fallback.
+  const rasterized = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
+  if (rasterized.length > 0) {
+    const cleaned: Buffer[] = [];
+    for (const png of rasterized) {
+      cleaned.push((await normalizeEncodedForOcr(png)) ?? png);
+    }
+    return cleaned.slice(0, MAX_OCR_PAGES);
+  }
+
+  // 2) Fallback: carving + embedded, SEMPRE normalizzati con sharp (no immagini rotte).
+  const carvedClean: Buffer[] = [];
+  for (const carved of extractImagesFromPdfCarving(pdfBuffer)) {
+    const png = await normalizeEncodedForOcr(carved);
+    if (png) carvedClean.push(png);
+  }
   const embedded = await extractImagesViaPdfParse(pdfBuffer, MAX_OCR_PAGES);
-  return dedupeImages([...carved, ...embedded]).slice(0, MAX_OCR_PAGES);
+  return dedupeImages([...carvedClean, ...embedded]).slice(0, MAX_OCR_PAGES);
 }
 
 let ocrHandlersInstalled = false;
@@ -146,9 +290,17 @@ export function installOcrSafetyHandlers(): void {
 
 async function createIsolatedWorker(): Promise<Worker | null> {
   installOcrSafetyHandlers();
-  // Evita "failed to load ./ita.special-words" quando il cwd non è la cache tessdata.
+  // Evita "failed to load ./ita.special-words" — cwd e tessdata devono coincidere.
   if (!process.env.TESSDATA_PREFIX && fs.existsSync(TESS_CACHE)) {
     process.env.TESSDATA_PREFIX = TESS_CACHE;
+  }
+  const prevCwd = process.cwd();
+  if (fs.existsSync(TESS_CACHE)) {
+    try {
+      process.chdir(TESS_CACHE);
+    } catch {
+      /* ignore */
+    }
   }
   const baseOpts = {
     logger: () => {},
@@ -160,10 +312,22 @@ async function createIsolatedWorker(): Promise<Worker | null> {
   for (const lang of ["ita+eng", "ita", "eng"] as const) {
     try {
       const w = await createWorker(lang, 1, baseOpts);
+      if (fs.existsSync(TESS_CACHE)) {
+        try {
+          process.chdir(prevCwd);
+        } catch {
+          /* ignore */
+        }
+      }
       return w;
     } catch {
       /* prova lingua successiva */
     }
+  }
+  try {
+    process.chdir(prevCwd);
+  } catch {
+    /* ignore */
   }
   return null;
 }
@@ -184,27 +348,42 @@ async function recognizeImage(img: Buffer, worker: Worker): Promise<string> {
  * OCR su PDF scannerizzato — worker isolato per job (no crash cross-batch).
  * @returns testo OCR o null
  */
+async function runOcrPdfJob(pdfBuffer: Buffer): Promise<string | null> {
+  const images = await collectPdfImagesForOcr(pdfBuffer);
+  if (images.length === 0) return null;
+
+  const worker = await createIsolatedWorker();
+  if (!worker) return null;
+
+    try {
+      let combined = "";
+      let emptyStreak = 0;
+      for (const img of images) {
+        const text = await recognizeImage(img, worker);
+        if (!text.trim()) {
+          emptyStreak++;
+          // PDF corrotto / solo artefatti JPEG — non macinare ore su immagini vuote.
+          if (emptyStreak >= 6 && !combined.trim()) break;
+          continue;
+        }
+        emptyStreak = 0;
+        combined += text + "\n";
+      }
+    const normalized = combined.replace(/\s+/g, " ").trim();
+    return normalized || null;
+  } finally {
+    await worker.terminate().catch(() => {});
+  }
+}
+
 export async function ocrPdfText(pdfBuffer: Buffer): Promise<string | null> {
   if (!isOcrEnabled()) return null;
 
   return enqueueOcr(async () => {
-    const images = await collectPdfImagesForOcr(pdfBuffer);
-    if (images.length === 0) return null;
-
-    const worker = await createIsolatedWorker();
-    if (!worker) return null;
-
-    try {
-      let combined = "";
-      for (const img of images) {
-        const text = await recognizeImage(img, worker);
-        if (text.trim()) combined += text + "\n";
-      }
-      const normalized = combined.replace(/\s+/g, " ").trim();
-      return normalized || null;
-    } finally {
-      await worker.terminate().catch(() => {});
-    }
+    const job = runOcrPdfJob(pdfBuffer);
+    const ms = ocrJobTimeoutMs();
+    if (ms <= 0) return job.catch(() => null);
+    return withTimeout(job, ms, "OCR PDF").catch(() => null);
   });
 }
 

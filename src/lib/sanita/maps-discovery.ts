@@ -26,7 +26,7 @@ export interface MapsDiscoveryResult {
  * Rispetta un budget tempo: scansiona N città per richiesta.
  */
 /** Comuni processati in parallelo (×N città × M query ≤ MAPS_POOL_SIZE pagine). */
-const CITY_CONCURRENCY = Number(process.env.MAPS_CITY_CONCURRENCY || 4);
+const CITY_CONCURRENCY = Number(process.env.MAPS_CITY_CONCURRENCY || 2);
 /** Budget massimo per singolo comune: evita che una città lenta blocchi il chunk. */
 const CITY_BUDGET_MS = Number(process.env.MAPS_CITY_BUDGET_MS || 55_000);
 

@@ -130,8 +130,11 @@ export async function discoverRegionFromMaps(
       const slice = mapsResult.places
         .slice(i, i + CHUNK)
         .filter((p) => isGelliSubjectStructure(p.name, p.category));
-      await prisma.$transaction(
-        slice.map((p) => {
+      // Transazione interattiva: la logica condizionale (update per id, poi
+      // fallback upsert per osmId) richiede await — NON è esprimibile come array
+      // di PrismaPromise ($transaction([...]) accetta solo promise "pure").
+      await prisma.$transaction(async (tx) => {
+        for (const p of slice) {
           const key = normKey(p.name, p.city);
           const website = normalizeWebsite(p.website ?? undefined);
           const candidate: LeadIdentityFields = {
@@ -142,37 +145,21 @@ export async function discoverRegionFromMaps(
             website,
             phone: p.phone ?? null,
           };
-          const dup =
-            byKey.get(key) ??
-            findMatchingLead(identityIndex, candidate);
-          if (dup) {
-            return prisma.lead.update({
-              where: { id: dup.id },
-              data: {
-                companyName: p.name.length >= dup.companyName.length ? p.name : dup.companyName,
-                city: p.city ?? dup.city,
-                website: website ?? dup.website,
-                phone: p.phone ?? dup.phone,
-                category: p.category,
-              },
-            });
-          }
+          const dup = byKey.get(key) ?? findMatchingLead(identityIndex, candidate);
           const osmId = mapsOsmId(p);
-          const created = {
-            id: osmId,
-            companyName: p.name,
-            city: p.city,
-            osmId,
-            website: website ?? null,
-            phone: p.phone ?? null,
-            region,
-            piva: null,
-            lastScannedAt: null,
-            createdAt: new Date(),
-            leadScore: null,
+          const mergeData = {
+            companyName: p.name.length >= (dup?.companyName?.length ?? 0) ? p.name : dup!.companyName,
+            city: p.city ?? dup?.city,
+            website: website ?? dup?.website,
+            phone: p.phone ?? dup?.phone,
+            category: p.category,
           };
-          registerLead(created);
-          return prisma.lead.upsert({
+          // Merge su record esistente solo se ancora in DB (evita P2025 su id stale in indice).
+          if (dup?.id) {
+            const r = await tx.lead.updateMany({ where: { id: dup.id }, data: mergeData });
+            if (r.count > 0) continue;
+          }
+          await tx.lead.upsert({
             where: { osmId },
             update: {
               companyName: p.name,
@@ -194,16 +181,33 @@ export async function discoverRegionFromMaps(
               status: "NEW",
             },
           });
-        })
-      );
+        }
+      });
+      // Ricarica indice dopo ogni chunk (evita id fittizi gmaps/ in update).
+      const freshChunk = await prisma.lead.findMany({
+        where: { type: "HEALTHCARE", region, osmId: { in: slice.map((p) => mapsOsmId(p)) } },
+        select: {
+          id: true,
+          companyName: true,
+          city: true,
+          osmId: true,
+          website: true,
+          phone: true,
+          piva: true,
+          region: true,
+          lastScannedAt: true,
+          createdAt: true,
+          leadScore: true,
+        },
+      });
+      for (const lead of freshChunk) registerLead(lead);
     }
     // Conteggio solo strutture effettivamente in scope (coerente con UI/progresso)
     mapsDiscovered = mapsResult.places.filter((p) => isGelliSubjectStructure(p.name, p.category)).length;
   }
 
   const newOffset = cityOffset + mapsResult.citiesScanned.length;
-  const discoveryComplete =
-    mapsResult.citiesScanned.length === 0 || newOffset >= mapsResult.citiesTotal;
+  const discoveryComplete = newOffset >= mapsResult.citiesTotal;
 
   return {
     mapsDiscovered,

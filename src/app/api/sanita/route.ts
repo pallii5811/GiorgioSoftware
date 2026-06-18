@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Region } from "@/lib/sanita/discovery";
 import { isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
+import { getRegionDiscoveryState, resetRegionDiscoveryState, saveRegionDiscoveryState } from "@/lib/sanita/discovery-state";
+import fs from "node:fs";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   SCAN_ANALYSIS_CONCURRENCY,
   SCAN_BUDGET_MS,
@@ -16,6 +21,79 @@ import {
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+const execFileAsync = promisify(execFile);
+const RESET_LOCK_PATH = path.join(process.cwd(), ".reset.lock");
+const RESET_LOCK_TTL_MS = 5 * 60_000; // auto-riparazione: lock vecchi = considerati stantii
+
+type ResetLockFile = {
+  startedAt: string;
+  pid: number;
+};
+
+async function resetLockExists(): Promise<boolean> {
+  try {
+    const raw = await fs.promises.readFile(RESET_LOCK_PATH, "utf8").catch(() => "");
+    if (!raw.trim()) return true; // lock legacy/empty: valido ma verrà rimosso da TTL al prossimo reset
+    const parsed = JSON.parse(raw) as Partial<ResetLockFile>;
+    const started = parsed.startedAt ? Date.parse(parsed.startedAt) : NaN;
+    if (!Number.isFinite(started)) return true;
+    const age = Date.now() - started;
+    if (age <= RESET_LOCK_TTL_MS) return true;
+    // Lock stantio (crash/reboot a metà reset): auto-sblocco per evitare deadlock.
+    await fs.promises.unlink(RESET_LOCK_PATH).catch(() => {});
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function acquireResetLock(): Promise<{ ok: true } | { ok: false; message: string }> {
+  // Se esiste un lock stantio, lo rimuove prima di provare.
+  await resetLockExists();
+  try {
+    const payload: ResetLockFile = { startedAt: new Date().toISOString(), pid: process.pid };
+    await fs.promises
+      .open(RESET_LOCK_PATH, "wx")
+      .then(async (f) => {
+        await f.writeFile(JSON.stringify(payload), { encoding: "utf8" });
+        await f.close();
+      });
+    return { ok: true };
+  } catch {
+    return { ok: false, message: "Reset già in corso. Attendi la fine e riprova." };
+  }
+}
+
+async function releaseResetLock(): Promise<void> {
+  await fs.promises.unlink(RESET_LOCK_PATH).catch(() => {});
+}
+
+async function stopPipelineProcesses(): Promise<void> {
+  // Best-effort: ferma pipeline e Chromium (Playwright) per evitare scritture concorrenti su SQLite.
+  await execFileAsync("bash", ["-lc", "pkill -TERM -f hetzner-full-pipeline 2>/dev/null || true"]).catch(
+    () => {}
+  );
+  await execFileAsync(
+    "bash",
+    [
+      "-lc",
+      "pkill -TERM -f chrome-headless-shell 2>/dev/null || true; pkill -TERM -f chromium 2>/dev/null || true",
+    ]
+  ).catch(() => {});
+
+  // Attendi che le pipeline spariscano (evita P2025 durante deleteMany)
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const { stdout } = await execFileAsync("bash", ["-lc", "pgrep -f hetzner-full-pipeline || true"]);
+      if (!stdout.trim()) break;
+    } catch {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
 
 /** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */
 async function proxyGetToEngine(req: Request) {
@@ -40,13 +118,26 @@ async function proxyGetToEngine(req: Request) {
 }
 
 async function regionScanMeta() {
-  const regions = {} as Record<string, { total: number; done: number; pending: number }>;
+  const regions = {} as Record<
+    string,
+    {
+      total: number;
+      done: number;
+      pending: number;
+      discovery: Awaited<ReturnType<typeof getRegionDiscoveryState>>;
+    }
+  >;
   for (const region of ["Veneto", "Campania"] as const) {
     const total = await prisma.lead.count({ where: { type: "HEALTHCARE", region } });
     const done = await prisma.lead.count({
       where: { type: "HEALTHCARE", region, lastScannedAt: { not: null } },
     });
-    regions[region] = { total, done, pending: Math.max(0, total - done) };
+    regions[region] = {
+      total,
+      done,
+      pending: Math.max(0, total - done),
+      discovery: await getRegionDiscoveryState(region),
+    };
   }
   return regions;
 }
@@ -94,6 +185,14 @@ export async function POST(req: Request) {
   const { completeLeadAnalysis, markNoWebsiteReview } = await import("@/lib/sanita/scan-engine");
   const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
   const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
+
+  // Reset in corso: non avviare scansioni concorrenti (evita P2025 / stato incoerente).
+  if (await resetLockExists()) {
+    return NextResponse.json(
+      { success: false, error: "Reset regione in corso. Riprova tra pochi secondi." },
+      { status: 409 }
+    );
+  }
 
   try {
     const body = (await req.json()) as {
@@ -196,6 +295,8 @@ export async function POST(req: Request) {
     });
 
     const complete = remainingUnscanned === 0 && mapsDiscoveryComplete;
+    const citiesTotal = regionCities.length;
+    await saveRegionDiscoveryState(region, { mapsCityOffset, mapsDiscoveryComplete });
 
     return NextResponse.json({
       success: true,
@@ -216,6 +317,7 @@ export async function POST(req: Request) {
         discovered: discoveredCount,
         mapsDiscovered,
         mapsCityOffset,
+        citiesTotal,
         mapsDiscoveryComplete,
         analyzed: counters.analyzed,
         withPolicy: counters.withPolicy,
@@ -239,6 +341,10 @@ export async function POST(req: Request) {
 
 /** Azzera i lead sanitari di una regione (demo cliente: riparte da zero). */
 export async function DELETE(req: Request) {
+  const lock = await acquireResetLock();
+  if (!lock.ok) {
+    return NextResponse.json({ success: false, error: lock.message }, { status: 409 });
+  }
   try {
     const region = new URL(req.url).searchParams.get("region");
     if (!region || !["Veneto", "Campania"].includes(region)) {
@@ -247,6 +353,8 @@ export async function DELETE(req: Request) {
         { status: 400 }
       );
     }
+    await stopPipelineProcesses();
+    resetRegionDiscoveryState(region as "Campania" | "Veneto");
     const res = await prisma.lead.deleteMany({ where: { type: "HEALTHCARE", region } });
     return NextResponse.json({
       success: true,
@@ -255,5 +363,7 @@ export async function DELETE(req: Request) {
     });
   } catch {
     return NextResponse.json({ success: false, error: "Errore durante il reset regione" }, { status: 500 });
+  } finally {
+    await releaseResetLock();
   }
 }

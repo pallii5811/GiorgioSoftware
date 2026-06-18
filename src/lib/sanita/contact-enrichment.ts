@@ -1,5 +1,10 @@
-import { parseContactsFromText, pickOfficialWebsite, type ParsedContacts } from "./contacts";
-import { mapsPrimaryName } from "./maps-query";
+import {
+  parseContactsFromText,
+  pickOfficialWebsite,
+  pickOfficialWebsiteFromHits,
+  type ParsedContacts,
+} from "./contacts";
+import { mapsFacilitySearchName, mapsSubsidiaryName } from "./maps-query";
 import { lookupBusinessOnMaps } from "./playwright-maps";
 import { tavilySearch, type TavilyHit } from "./tavily-client";
 
@@ -17,16 +22,23 @@ export async function enrichContacts(
   region: string,
   opts?: { skipMaps?: boolean }
 ): Promise<ContactEnrichmentResult> {
-  const base = mapsPrimaryName(name).replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "").trim();
+  const base = mapsFacilitySearchName(name).replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "").trim();
   const cityPart = city ? ` ${city}` : "";
+  const subsidiary = mapsSubsidiaryName(name);
 
   const queries = [
     `"${base}"${cityPart} sito ufficiale`,
     `"${base}"${cityPart} ${region} casa di cura sito web`,
     `"${base}"${cityPart} telefono email PEC contatti`,
   ];
+  if (subsidiary && subsidiary !== base) {
+    queries.unshift(`"${subsidiary}"${cityPart} sito ufficiale`);
+    queries.unshift(`${subsidiary}${cityPart} casa di cura clinica`);
+  }
 
-  const hits = (await Promise.all(queries.map((q) => tavilySearch(q, { maxResults: 5 })))).flat();
+  const hits = (
+    await Promise.all(queries.map((q) => tavilySearch(q, { maxResults: 6, depth: "advanced" })))
+  ).flat();
   let contacts: ParsedContacts = { emails: [], pec: null, phones: [], website: null };
   let sourceUrls: string[] = [];
   let checked = false;
@@ -35,10 +47,12 @@ export async function enrichContacts(
   if (hits.length > 0) {
     const text = hits.map((h) => `${h.content} ${h.url}`).join("\n");
     const parsed = parseContactsFromText(text);
-    const fromHits = pickOfficialWebsite(
-      hits.map((h) => h.url).filter(Boolean),
-      name
-    );
+    const fromHits =
+      pickOfficialWebsiteFromHits(hits, name) ||
+      pickOfficialWebsite(
+        hits.map((h) => h.url).filter(Boolean),
+        name
+      );
     contacts = { ...parsed, website: fromHits || parsed.website };
     sourceUrls = hits.map((h) => h.url).filter(Boolean);
     checked = true;
@@ -65,13 +79,24 @@ export async function findOfficialWebsite(
   city: string | null,
   region: string
 ): Promise<{ website: string | null; sourceUrls: string[] }> {
-  const base = mapsPrimaryName(name).replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "").trim();
+  const base = mapsFacilitySearchName(name).replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "").trim();
   const cityPart = city ? ` ${city}` : "";
-  const q = `"${base}"${cityPart} ${region} sito ufficiale casa di cura`;
-  const hits: TavilyHit[] = await tavilySearch(q, { maxResults: 6 });
+  const subsidiary = mapsSubsidiaryName(name);
+  const queries = [
+    `"${base}"${cityPart} sito ufficiale`,
+    `${base}${cityPart} ${region} casa di cura clinica rsa`,
+    `${base}${cityPart} sito web`,
+  ];
+  if (subsidiary && subsidiary !== base) {
+    queries.unshift(`"${subsidiary}"${cityPart} sito ufficiale`);
+  }
+  const hits: TavilyHit[] = (
+    await Promise.all(queries.map((q) => tavilySearch(q, { maxResults: 6, depth: "advanced" })))
+  ).flat();
   const urls = hits.map((h) => h.url).filter(Boolean);
   return {
-    website: pickOfficialWebsite(urls, name),
+    website:
+      pickOfficialWebsiteFromHits(hits, name) || pickOfficialWebsite(urls, name),
     sourceUrls: urls,
   };
 }

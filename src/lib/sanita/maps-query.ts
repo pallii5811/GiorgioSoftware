@@ -1,3 +1,23 @@
+/** Nome operativo dopo " - " (es. "Cdic Villa Esther" da "Pineta Grande - Cdic Villa Esther"). */
+export function mapsSubsidiaryName(companyName: string): string | null {
+  const parts = companyName.split(/\s+-\s+/);
+  if (parts.length < 2) return null;
+  const sub = parts
+    .slice(1)
+    .join(" - ")
+    .replace(/\bcdic\b/gi, "casa di cura")
+    .replace(/\s+/g, " ")
+    .trim();
+  return sub.length > 4 ? sub : null;
+}
+
+/** Nome da usare per ricerca sito/Maps — preferisce la sede operativa se presente. */
+export function mapsFacilitySearchName(companyName: string): string {
+  const sub = mapsSubsidiaryName(companyName);
+  if (sub && !/^casa di cura$/i.test(sub)) return sub;
+  return mapsPrimaryName(companyName);
+}
+
 /** Normalizza il nome struttura per ricerche Maps (Min. Salute usa nomi lunghi con filiali). */
 export function mapsPrimaryName(companyName: string): string {
   const raw = companyName.trim();
@@ -8,10 +28,22 @@ export function mapsPrimaryName(companyName: string): string {
 export function mapsNameVariants(companyName: string): string[] {
   const raw = companyName.trim();
   const beforeDash = mapsPrimaryName(raw);
+  const subsidiary = mapsSubsidiaryName(raw);
   const out: string[] = [];
-  if (beforeDash.length > 3) out.push(beforeDash);
-  if (raw !== beforeDash) out.push(raw);
-  const seen = new Set(out);
+  const seen = new Set<string>();
+
+  if (subsidiary) {
+    out.push(subsidiary);
+    seen.add(subsidiary);
+  }
+  if (beforeDash.length > 3 && !seen.has(beforeDash)) {
+    out.push(beforeDash);
+    seen.add(beforeDash);
+  }
+  if (raw !== beforeDash && !seen.has(raw)) {
+    out.push(raw);
+    seen.add(raw);
+  }
 
   const cleaned = raw
     .replace(/\s+-\s+.*$/, "")
@@ -23,11 +55,12 @@ export function mapsNameVariants(companyName: string): string[] {
     seen.add(cleaned);
   }
 
-  const tokens = cleaned
+  const tokenSource = subsidiary || cleaned;
+  const tokens = tokenSource
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !["casa", "cura", "clinica", "ospedale", "centro"].includes(w));
+    .filter((w) => w.length > 2 && !["casa", "cura", "clinica", "ospedale", "centro", "cdic"].includes(w));
   if (tokens.length >= 2) {
     const tokenName = tokens.slice(0, 3).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     if (!seen.has(tokenName)) {
@@ -39,15 +72,24 @@ export function mapsNameVariants(companyName: string): string[] {
   return out;
 }
 
-/** Punteggio match Maps — evita filiali errate (es. Villa Esther vs Pineta Grande). */
+/** Punteggio match Maps — evita filiali errate ma accetta sede operativa locale. */
 export function mapsMatchScore(companyName: string, cardName: string): number {
   const primary = mapsPrimaryName(companyName);
-  const subsidiary = companyName.includes(" - ") ? companyName.split(/\s+-\s+/).slice(1).join(" - ") : "";
+  const subsidiary = mapsSubsidiaryName(companyName) ?? "";
+  const primaryMatch = mapsNamesMatch(primary, cardName);
+  const fullMatch = mapsNamesMatch(companyName, cardName);
+  const subMatch = subsidiary ? mapsNamesMatch(subsidiary, cardName) : false;
+
   let score = 0;
-  if (mapsNamesMatch(primary, cardName)) score += 10;
-  else if (mapsNamesMatch(companyName, cardName)) score += 5;
+  if (primaryMatch) score += 10;
+  else if (subMatch) score += 8;
+  else if (fullMatch) score += 5;
   else return -1;
-  if (subsidiary && mapsNamesMatch(subsidiary, cardName) && !mapsNamesMatch(primary, cardName)) score -= 12;
+
+  // Penalizza solo match sul gruppo quando la scheda è chiaramente un'altra sede del gruppo
+  if (primaryMatch && subsidiary && subMatch && !mapsNamesMatch(primary, cardName)) {
+    score -= 2;
+  }
   return score;
 }
 
