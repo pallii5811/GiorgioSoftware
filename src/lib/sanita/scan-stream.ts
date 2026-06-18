@@ -121,14 +121,17 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   }
 
   try {
-  const deduped = await dedupeRegionByWebsite(region);
-  if (deduped > 0) {
-    emit("progress", {
-      phase: "analysis",
-      message: `${region} — unificati ${deduped} duplicati (stesso sito web)`,
-      done: 0,
-      total: 0,
-    });
+  // Dedup solo all'avvio (non «Continua»): evita che 15→12 durante scansione live.
+  if (!continueAnalysis && !liveRescan) {
+    const deduped = await dedupeRegionByWebsite(region);
+    if (deduped > 0) {
+      emit("progress", {
+        phase: "analysis",
+        message: `${region} — unificati ${deduped} duplicati (stesso sito web)`,
+        done: 0,
+        total: 0,
+      });
+    }
   }
 
   const deadline = scanRoundDeadline();

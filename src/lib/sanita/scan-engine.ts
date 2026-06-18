@@ -11,7 +11,6 @@ import { crawlSite } from "@/lib/sanita/crawler";
 import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
-import { absorbWebsiteDuplicates } from "@/lib/sanita/lead-dedup";
 import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
 import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, type AuditSources } from "@/lib/sanita/audit";
@@ -121,9 +120,6 @@ export async function analyzeLead(
   }
 
   if (!website) return;
-
-  const canonicalId = await absorbWebsiteDuplicates(lead.id, website, lead.region);
-  if (canonicalId !== lead.id) return;
 
   const crawl = await crawlSite(website);
   counters.analyzed++;
@@ -404,8 +400,6 @@ export async function analyzeRegional(
   }
 
   if (website) {
-    const canonicalId = await absorbWebsiteDuplicates(lead.id, website, region);
-    if (canonicalId !== lead.id) return;
     await prisma.lead.update({
       where: { id: lead.id },
       data: {

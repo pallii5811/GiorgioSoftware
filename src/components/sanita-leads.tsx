@@ -195,10 +195,6 @@ export function SanitaLeads() {
   }
 
   const rescanOneLead = async (l: Lead) => {
-    if (isScanning) {
-      toast.error("Attendi la fine della scansione regionale in corso")
-      return
-    }
     const toastId = toast.loading(`Riscansione ${l.companyName}…`)
     try {
       const res = await fetch("/api/sanita/rescan", {
@@ -1258,25 +1254,29 @@ export function SanitaLeads() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                         {verdictBadge(l)}
-                        {l.lastScannedAt && verdictOf(l) === "PUBLISHED" && (
-                          <div className="mt-1 text-[10px] text-emerald-700">Polizza certificata sul sito</div>
-                        )}
-                        {parseEvidenceSections(l.evidence).body && (
-                          <div className="mt-1 max-w-[260px] truncate text-[10px] text-muted-foreground" title={parseEvidenceSections(l.evidence).body ?? ""}>
-                            {parseEvidenceSections(l.evidence).body}
-                          </div>
-                        )}
                         {verdictOf(l) === "REVIEW" && l.lastScannedAt && (
                           <div className="mt-1.5">
                             <button
                               type="button"
                               onClick={() => void rescanOneLead(l)}
                               disabled={isScanning}
-                              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                              title={isScanning ? "Disponibile quando finisce la scansione live" : "Rianalizza questa struttura"}
+                              className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <RotateCcw className="h-3 w-3" />
+                              <RotateCcw className="h-3.5 w-3.5" />
                               Rianalizza
                             </button>
+                            {isScanning && (
+                              <div className="mt-0.5 text-[10px] text-amber-800">Attendi fine scansione live</div>
+                            )}
+                          </div>
+                        )}
+                        {l.lastScannedAt && verdictOf(l) === "PUBLISHED" && (
+                          <div className="mt-1 text-[10px] text-emerald-700">Polizza certificata sul sito</div>
+                        )}
+                        {parseEvidenceSections(l.evidence).body && (
+                          <div className="mt-1 max-w-[260px] truncate text-[10px] text-muted-foreground" title={parseEvidenceSections(l.evidence).body ?? ""}>
+                            {parseEvidenceSections(l.evidence).body}
                           </div>
                         )}
                         {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && (
@@ -1338,14 +1338,15 @@ export function SanitaLeads() {
                           {l.lastScannedAt && (
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-                              title="Riscansiona questa struttura"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 shrink-0 gap-1 px-2 text-[10px] font-semibold"
+                              title={isScanning ? "Disponibile quando finisce la scansione live" : "Riscansiona questa struttura"}
                               disabled={isScanning}
                               onClick={() => void rescanOneLead(l)}
                             >
-                              <RotateCcw className="h-3.5 w-3.5" />
+                              <RotateCcw className="h-3 w-3" />
+                              Rianalizza
                             </Button>
                           )}
                         </div>

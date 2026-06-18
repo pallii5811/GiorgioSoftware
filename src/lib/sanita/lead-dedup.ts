@@ -254,7 +254,9 @@ async function consolidateDuplicateGroup(
 ): Promise<number> {
   if (group.length <= 1) return 0;
 
-  const keep = pickCanonicalLead(group);
+  // Mai tenere una scheda vuota e cancellare una già analizzata.
+  const scanned = group.filter((l) => l.lastScannedAt);
+  const keep = scanned.length > 0 ? pickCanonicalLead(scanned) : pickCanonicalLead(group);
   await mergeBestScanOntoKeeper(keep.id, group);
 
   let removed = 0;
@@ -282,7 +284,8 @@ export async function absorbWebsiteDuplicates(
   const group = peers.filter((p) => websiteHostKey(p.website) === host);
   if (group.length <= 1) return leadId;
 
-  const keep = pickCanonicalLead(group);
+  const scanned = group.filter((p) => p.lastScannedAt);
+  const keep = scanned.length > 0 ? pickCanonicalLead(scanned) : pickCanonicalLead(group);
   await mergeBestScanOntoKeeper(keep.id, group);
   for (const loser of group) {
     if (loser.id === keep.id) continue;
