@@ -5,6 +5,7 @@ cd /opt/leadsniper
 export DATABASE_URL='file:/opt/leadsniper/prisma/dev.db'
 
 echo "[rebuild] start $(date -u +%H:%M:%S)"
+rm -rf .scan-locks
 if npm run build > /opt/leadsniper/build.log 2>&1; then
   echo "[rebuild] build OK, restart pm2"
   pm2 restart leadsniper-ui --update-env

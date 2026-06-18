@@ -1,84 +1,14 @@
-import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { websiteHostKey } from "@/lib/sanita/lead-dedup";
 
 const execFileAsync = promisify(execFile);
 
 export const LIVE_SCAN_LOCK_PATH = path.join(process.cwd(), ".live-scan.lock");
-export const SCAN_LOCK_DIR = path.join(process.cwd(), ".scan-locks");
 const LIVE_SCAN_LOCK_TTL_MS = 6 * 60 * 60_000;
 
 type LiveScanLock = { region: string; pid: number; startedAt: string };
-
-function lockPathFor(key: string): string {
-  return path.join(SCAN_LOCK_DIR, `${key.replace(/[^a-zA-Z0-9._-]/g, "_")}.lock`);
-}
-
-/** Lock file presente (analisi in corso su questo lead o host). */
-export function isAnalysisLockHeld(key: string): boolean {
-  try {
-    const p = lockPathFor(key);
-    if (!fs.existsSync(p)) return false;
-    const stat = fs.statSync(p);
-    // Lock stantio > 2h: considerato abbandonato.
-    if (Date.now() - stat.mtimeMs > 2 * 60 * 60_000) {
-      fs.unlinkSync(p);
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isLeadUnderAnalysis(leadId: string, website?: string | null): boolean {
-  if (isAnalysisLockHeld(leadId)) return true;
-  const host = websiteHostKey(website);
-  return host ? isAnalysisLockHeld(`host:${host}`) : false;
-}
-
-async function acquireLock(key: string, maxWaitMs = 60_000): Promise<() => Promise<void>> {
-  await fsPromises.mkdir(SCAN_LOCK_DIR, { recursive: true });
-  const p = lockPathFor(key);
-  const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    try {
-      await fsPromises.writeFile(p, `${process.pid}\n${new Date().toISOString()}`, { flag: "wx" });
-      return async () => {
-        await fsPromises.unlink(p).catch(() => {});
-      };
-    } catch {
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  throw new Error(`Timeout lock analisi (${key})`);
-}
-
-/** Serializza analisi per lead + host (evita dedup che cancella record in crawl). */
-export async function withLeadAnalysisLock<T>(
-  leadId: string,
-  website: string | null | undefined,
-  fn: () => Promise<T>
-): Promise<T> {
-  const keys = [leadId];
-  const host = websiteHostKey(website);
-  if (host) keys.push(`host:${host}`);
-
-  const releases: Array<() => Promise<void>> = [];
-  try {
-    for (const key of keys) {
-      releases.push(await acquireLock(key));
-    }
-    return await fn();
-  } finally {
-    for (const release of releases.reverse()) {
-      await release();
-    }
-  }
-}
 
 /** Ferma solo la pipeline batch — NON killare Chromium (serve a Playwright della UI). */
 export async function stopBatchPipeline(): Promise<void> {
@@ -116,6 +46,8 @@ export async function isLiveScanLockActive(): Promise<boolean> {
 /** Blocca il watchdog batch finché la UI esegue scansione live. */
 export async function acquireLiveScanLock(region: string): Promise<void> {
   await stopBatchPipeline();
+  // Lock analisi legacy (rimossi) — pulizia per evitare REVIEW falsi dopo deploy/restart.
+  await fsPromises.rm(path.join(process.cwd(), ".scan-locks"), { recursive: true, force: true }).catch(() => {});
   const payload: LiveScanLock = { region, pid: process.pid, startedAt: new Date().toISOString() };
   await fsPromises.writeFile(LIVE_SCAN_LOCK_PATH, JSON.stringify(payload), "utf8");
 }
