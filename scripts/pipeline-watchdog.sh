@@ -58,7 +58,7 @@ while true; do
     echo "[$(ts)] reset lock present, waiting" | tee -a "$WDLOG"
     sleep 2
   done
-  # Scansione live dalla UI: un solo motore sul DB — termina eventuali pipeline già avviate.
+  # Scansione live dalla UI: ferma solo la pipeline batch, NON Chromium (Playwright UI).
   while [ -f "$LIVE_SCAN_LOCK" ]; do
     if [ "$(find "$LIVE_SCAN_LOCK" -mmin +360 2>/dev/null | wc -l)" -gt 0 ]; then
       echo "[$(ts)] stale live-scan lock detected, removing" | tee -a "$WDLOG"
@@ -66,8 +66,6 @@ while true; do
       break
     fi
     pkill -9 -f hetzner-full-pipeline 2>/dev/null || true
-    pkill -9 -f chrome-headless-shell 2>/dev/null || true
-    pkill -9 -f chromium 2>/dev/null || true
     echo "[$(ts)] live UI scan active, waiting" | tee -a "$WDLOG"
     sleep 5
   done

@@ -80,15 +80,11 @@ export async function withLeadAnalysisLock<T>(
   }
 }
 
-/** Ferma la pipeline batch — evita doppio motore sullo stesso SQLite. */
+/** Ferma solo la pipeline batch — NON killare Chromium (serve a Playwright della UI). */
 export async function stopBatchPipeline(): Promise<void> {
   await execFileAsync("bash", ["-lc", "pkill -9 -f hetzner-full-pipeline 2>/dev/null || true"]).catch(
     () => {}
   );
-  await execFileAsync("bash", [
-    "-lc",
-    "pkill -9 -f chrome-headless-shell 2>/dev/null || true; pkill -9 -f chromium 2>/dev/null || true",
-  ]).catch(() => {});
 
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
