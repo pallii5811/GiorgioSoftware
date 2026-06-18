@@ -12,6 +12,7 @@ import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
 import { absorbWebsiteDuplicates } from "@/lib/sanita/lead-dedup";
+import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
 import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, type AuditSources } from "@/lib/sanita/audit";
 import { isSiteUnderMaintenance } from "@/lib/sanita/website";
@@ -663,8 +664,9 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
     try {
       await analyzeLead({ ...lead, region, osmId: lead.osmId }, counters);
     } catch (err) {
-      console.error(`  [completeLeadAnalysis] analyzeLead failed for ${lead.companyName}:`, err instanceof Error ? err.message : err);
-      // Marca come REVIEW con errore — non lasciare lead bloccati
+      const msg = err instanceof Error ? err.message : String(err);
+      if (isTransientAnalysisFailure(msg)) throw err;
+      console.error(`  [completeLeadAnalysis] analyzeLead failed for ${lead.companyName}:`, msg);
       await prisma.lead.update({
         where: { id: lead.id },
         data: {
@@ -694,7 +696,9 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
     try {
       await analyzeRegional(again, region, counters);
     } catch (err) {
-      console.error(`  [completeLeadAnalysis] analyzeRegional failed for ${lead.companyName}:`, err instanceof Error ? err.message : err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (isTransientAnalysisFailure(msg)) throw err;
+      console.error(`  [completeLeadAnalysis] analyzeRegional failed for ${lead.companyName}:`, msg);
       await prisma.lead.update({
         where: { id: lead.id },
         data: {

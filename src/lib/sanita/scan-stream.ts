@@ -26,20 +26,11 @@ import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
 import { ensureSqliteWal } from "@/lib/sanita/db-ready";
 import { dedupeRegionByWebsite } from "@/lib/sanita/lead-dedup";
 import { acquireLiveScanLock, releaseLiveScanLock, stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
+import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
 
 export { SCAN_BUDGET_MS };
 
-/** Errore infrastruttura (lock, browser, rete) — non è un verdetto Gelli. */
-function isTransientAnalysisFailure(msg: string): boolean {
-  return (
-    /Timeout lock analisi/i.test(msg) ||
-    /Analisi oltre \d+ min/i.test(msg) ||
-    /Target (page|context|browser).*closed/i.test(msg) ||
-    /Browser has been closed/i.test(msg) ||
-    /Execution context was destroyed/i.test(msg) ||
-    /ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(msg)
-  );
-}
+const MAX_TRANSIENT_RETRIES = 3;
 
 export type ScanStreamInput = {
   region: Region;
@@ -295,6 +286,8 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     where: { type: "HEALTHCARE", region, ...cityFilter, lastScannedAt: { not: null } },
   });
 
+  const transientRetries = new Map<string, number>();
+
   emit("progress", {
     phase: "analysis",
     message: "Crawl sito per sito (dalla scheda Maps)…",
@@ -342,9 +335,24 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.warn(`Lead ${lead.companyName}: ${msg}`);
-          // Timeout per-lead: non deve bloccare l'intera regione.
-          // Motore (Hetzner): segna REVIEW e passa al prossimo lead.
-          // UI/demo: preferiamo riprovare al round successivo per evitare falsi "completato".
+
+          // Errore tecnico: NON segnare come analizzato — rimetti in coda e continua la regione.
+          if (isTransientAnalysisFailure(msg)) {
+            const attempt = (transientRetries.get(lead.id) ?? 0) + 1;
+            transientRetries.set(lead.id, attempt);
+            if (attempt < MAX_TRANSIENT_RETRIES) {
+              emit("progress", {
+                phase: "analysis",
+                message: `Errore tecnico su ${lead.companyName} — ripasso ${attempt}/${MAX_TRANSIENT_RETRIES}`,
+                processingName: lead.companyName,
+                done: doneBefore,
+                total: discoveredCount,
+              });
+              await new Promise((r) => setTimeout(r, 1500));
+              return;
+            }
+          }
+
           const isLeadTimeout = /Analisi oltre \d+ min/.test(msg);
           if (isLeadTimeout && !isScanEngineHost()) return;
           try {
@@ -356,7 +364,9 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
                   "REVIEW",
                   isLeadTimeout
                     ? `Timeout analisi (${msg}). Lead messo in REVIEW per non bloccare la scansione; riprova manualmente.`
-                    : `Analisi interrotta (${msg}). Usa «Rianalizza» sulla riga per riprovare.`,
+                    : isTransientAnalysisFailure(msg)
+                      ? `Analisi non completata dopo ${MAX_TRANSIENT_RETRIES} tentativi (${msg}). Usa «Rianalizza».`
+                      : `Analisi interrotta (${msg}). Usa «Rianalizza» sulla riga per riprovare.`,
                   { mapsLookup: true }
                 ),
               },
