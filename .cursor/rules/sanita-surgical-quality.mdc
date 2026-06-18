@@ -1,0 +1,38 @@
+---
+description: Motore Sanità — qualità chirurgica obbligatoria (zero regressioni)
+alwaysApply: true
+---
+
+# Sanità — protocollo chirurgico (OBBLIGATORIO)
+
+L'utente chiede sempre qualità massima, diff minimo, zero rotture. Non interpretare mai come "fix rapido".
+
+## Prima di scrivere codice
+
+1. Elencare **catena effetti**: file toccati → chi li chiama → DB/UI/Hetzner/Vercel.
+2. Elencare **cosa può rompersi** (conteggio lead, dedup, lock, crawl, verdetto Gelli).
+3. **Non toccare** `crawler.ts`, `policy-verify.ts`, `detector.ts` salvo richiesta esplicita.
+
+## Durante il fix
+
+- **Una causa, una patch** — niente "mentre ci sono…".
+- Diff minimo; niente refactor non richiesti.
+
+## Dopo deploy (prima di dire "ok")
+
+Verificare con prove, non con supposizioni:
+
+- Hetzner: sorgente + rebuild effettivo.
+- Contatore **solo sale** (mai 15→12).
+- Nessun `Timeout lock analisi` su lead nuovi.
+- Casi di riferimento se possibile: Villa Dei Pini (PUBLISHED), Villa dei Fiori (PUBLISHED), Sant'Anna Medical (HOT).
+
+## Vietato
+
+- Dire "fixato" / "dovrebbe andare" / "100% sicuro" senza prova end-to-end.
+- Deploy multipli a raffica senza verifica tra uno e l'altro.
+- Mettere in bocca all'utente richieste di velocità che non ha fatto.
+
+## Se non hai provato
+
+Dire chiaramente: **"non ancora verificato end-to-end"** e cosa manca.
