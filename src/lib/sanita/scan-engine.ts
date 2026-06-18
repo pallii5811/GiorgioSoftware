@@ -12,7 +12,6 @@ import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
 import { absorbWebsiteDuplicates } from "@/lib/sanita/lead-dedup";
-import { withLeadAnalysisLock } from "@/lib/sanita/scan-coordinator";
 import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, type AuditSources } from "@/lib/sanita/audit";
 import { isSiteUnderMaintenance } from "@/lib/sanita/website";
@@ -656,7 +655,6 @@ export async function markNoWebsiteReview(
 
 /** Pipeline per lead Maps: crawl sito dalla scheda → verdetto Gelli. */
 export async function completeLeadAnalysis(lead: Lead, region: Region, counters: ScanCounters) {
-  return withLeadAnalysisLock(lead.id, lead.website, async () => {
   const fresh = await prisma.lead.findUnique({ where: { id: lead.id } });
   if (!fresh || fresh.lastScannedAt) return;
   lead = fresh;
@@ -727,5 +725,4 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
     },
   });
   counters.review++;
-  });
 }

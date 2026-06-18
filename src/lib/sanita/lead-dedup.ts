@@ -5,7 +5,6 @@ import {
   pickBestScannedLead,
   shouldMergeScanIntoKeeper,
 } from "@/lib/sanita/lead-dedup-merge";
-import { isLeadUnderAnalysis } from "@/lib/sanita/scan-coordinator";
 
 export type LeadIdentityFields = {
   id: string;
@@ -261,7 +260,6 @@ async function consolidateDuplicateGroup(
   let removed = 0;
   for (const loser of group) {
     if (loser.id === keep.id) continue;
-    if (isLeadUnderAnalysis(loser.id, loser.website)) continue;
     await prisma.lead.delete({ where: { id: loser.id } }).catch(() => {});
     removed++;
   }
@@ -288,7 +286,6 @@ export async function absorbWebsiteDuplicates(
   await mergeBestScanOntoKeeper(keep.id, group);
   for (const loser of group) {
     if (loser.id === keep.id) continue;
-    if (isLeadUnderAnalysis(loser.id, loser.website)) continue;
     await prisma.lead.delete({ where: { id: loser.id } }).catch(() => {});
   }
   return keep.id;
