@@ -60,7 +60,8 @@ while true; do
   done
   # Scansione live dalla UI: ferma solo la pipeline batch, NON Chromium (Playwright UI).
   while [ -f "$LIVE_SCAN_LOCK" ]; do
-    if [ "$(find "$LIVE_SCAN_LOCK" -mmin +360 2>/dev/null | wc -l)" -gt 0 ]; then
+    # Lock stantio: round SSE max ~60 min; oltre 65 min senza scan attivo → sblocca pipeline.
+    if [ "$(find "$LIVE_SCAN_LOCK" -mmin +65 2>/dev/null | wc -l)" -gt 0 ]; then
       echo "[$(ts)] stale live-scan lock detected, removing" | tee -a "$WDLOG"
       rm -f "$LIVE_SCAN_LOCK" || true
       break

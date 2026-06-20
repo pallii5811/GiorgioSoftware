@@ -5,7 +5,7 @@ import {
   type MapsLookupOptions,
   type MapsPlace,
 } from "./playwright-maps";
-import { getRegionCities, HEALTHCARE_MAP_QUERIES } from "./region-cities";
+import { getRegionCities, HEALTHCARE_MAP_QUERIES, isMapsSignificantCity } from "./region-cities";
 
 export type { MapsPlace };
 
@@ -16,26 +16,25 @@ function mapsOsmId(place: MapsPlace): string {
 
 export interface MapsDiscoveryResult {
   places: MapsPlace[];
+  /** Comuni la cui scansione Maps è considerata affidabile (offset avanza solo su questi). */
   citiesScanned: string[];
   queriesRun: number;
   citiesTotal: number;
 }
 
-/**
- * Scoperta strutture via Google Maps (motore MIRAX).
- * Rispetta un budget tempo: scansiona N città per richiesta.
- */
-/** Comuni processati in parallelo (×N città × M query ≤ MAPS_POOL_SIZE pagine). */
-const CITY_CONCURRENCY = Number(process.env.MAPS_CITY_CONCURRENCY || 2);
-/** Budget massimo per singolo comune: evita che una città lenta blocchi il chunk. */
+/** Comuni processati in parallelo — 1 evita rate-limit Google su sessioni condivise. */
+const CITY_CONCURRENCY = Number(process.env.MAPS_CITY_CONCURRENCY || 1);
+/** Budget massimo per singolo comune. */
 const CITY_BUDGET_MS = Number(process.env.MAPS_CITY_BUDGET_MS || 55_000);
+/** Pausa tra query sullo stesso comune. */
+const QUERY_GAP_MS = Number(process.env.MAPS_QUERY_GAP_MS || 900);
 
 export async function discoverFromMaps(
   region: Region,
   opts: { deadline: number; maxPerCity?: number; cityOffset?: number; maxCities?: number }
 ): Promise<MapsDiscoveryResult> {
   const cities = await getRegionCities(region);
-  const maxPerCity = opts.maxPerCity ?? 12;
+  const maxPerCity = opts.maxPerCity ?? 50;
   const maxCities = opts.maxCities ?? 999;
   const offset = opts.cityOffset ?? 0;
   const places: MapsPlace[] = [];
@@ -48,21 +47,57 @@ export async function discoverFromMaps(
 
   async function scanCity(city: string) {
     const cityDeadline = Math.min(opts.deadline, Date.now() + CITY_BUDGET_MS);
-    const batches = await Promise.all(
-      HEALTHCARE_MAP_QUERIES.map((category) =>
-        scrapeMapsCategoryCity(category, city, maxPerCity, cityDeadline).catch(() => [])
-      )
-    );
-    queriesRun += HEALTHCARE_MAP_QUERIES.length;
-    citiesScanned.push(city);
-    for (const batch of batches) {
+    let totalResults = 0;
+    let queriesAttempted = 0;
+
+    for (let qi = 0; qi < HEALTHCARE_MAP_QUERIES.length; qi++) {
+      const category = HEALTHCARE_MAP_QUERIES[qi];
+      if (Date.now() >= cityDeadline) break;
+      queriesAttempted++;
+      queriesRun++;
+
+      let batch: MapsPlace[] = [];
+      try {
+        // MIRAX: ogni query su sessione pulita — altrimenti RSA/poliambulatorio → 0 dopo "casa di cura"
+        batch = await scrapeMapsCategoryCity(category, city, maxPerCity, cityDeadline, {
+          freshPage: true,
+        });
+        if (batch.length === 0 && isMapsSignificantCity(region, city)) {
+          await new Promise((r) => setTimeout(r, QUERY_GAP_MS));
+          batch = await scrapeMapsCategoryCity(category, city, maxPerCity, cityDeadline, {
+            freshPage: true,
+          });
+        }
+      } catch (err) {
+        console.warn(
+          `Maps ${city}/${category}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+        continue;
+      }
+
+      totalResults += batch.length;
       for (const p of batch) {
         const k = mapsOsmId(p);
         if (seen.has(k)) continue;
         seen.add(k);
         places.push(p);
       }
+
+      if (Date.now() < cityDeadline) {
+        await new Promise((r) => setTimeout(r, QUERY_GAP_MS));
+      }
     }
+
+    if (queriesAttempted === 0) return;
+
+    // Comune importante con 0 risultati = scraper fallito, NON segnare come "fatto".
+    if (isMapsSignificantCity(region, city) && totalResults === 0) {
+      console.warn(`Maps: ${city} — 0 risultati su comune significativo, rimesso in coda`);
+      return;
+    }
+
+    citiesScanned.push(city);
   }
 
   const workers = Array.from({ length: CITY_CONCURRENCY }, async () => {

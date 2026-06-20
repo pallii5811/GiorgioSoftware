@@ -117,8 +117,10 @@ const SELF_INSURANCE = [
   /auto[\s-]?assicuraz/i,
   /autoritenzione/i,
   /ritenzione\s+del\s+rischio/i,
+  /assunzione\s+diretta\s+del\s+rischio/i,
+  /misura\s+analoga\s+(?:alle\s+)?coperture\s+assicurativ/i,
   /gestione\s+diretta\s+(?:del\s+rischio|dei\s+sinistri|dei\s+rischi)/i,
-  /fondo\s+(?:rischi|di\s+autoassicurazione)/i,
+  /fondo\s+(?:rischi|di\s+autoassicurazione|riserva\s+sinistri)/i,
 ];
 
 function isGeneraliFalsePositive(text: string, index: number): boolean {
@@ -130,6 +132,18 @@ function isGeneraliFalsePositive(text: string, index: number): boolean {
   );
 }
 
+function isRejectedInsurerName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return /^(alcuna|nessuna|nessun|eventuale|la|il|lo|le|una|un|del|della|di|che|non|ma|per)$/i.test(n);
+}
+
+function sanitizeInsurerCapture(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const name = raw.trim().replace(/\s+/g, " ");
+  if (name.length < 3 || isRejectedInsurerName(name)) return null;
+  return name;
+}
+
 function findInsurer(text: string): string | null {
   // AM Trust — molte varianti su siti reali
   if (/AM\s*TRUST|AmTrust|Am\s+Trust|AM[\s\-_]*TRUST\s*(?:ASSICURAZIONI|ITALIA|INTERNATIONAL|EUROPE|CLINICS)?/i.test(text)) return "AmTrust";
@@ -138,6 +152,9 @@ function findInsurer(text: string): string | null {
     const re = new RegExp(`\\b${insurer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
     const m = re.exec(text);
     if (!m) continue;
+    if (insurer.toLowerCase() === "cattolica" && /universit[aà]\s+cattolic/i.test(text.slice(Math.max(0, m.index - 40), m.index + 60))) {
+      continue;
+    }
     if (insurer.toLowerCase() === "generali" && isGeneraliFalsePositive(text, m.index)) continue;
     return insurer;
   }
@@ -145,11 +162,17 @@ function findInsurer(text: string): string | null {
   const free = text.match(
     /compagnia\s+(?:di\s+)?assicurazion[ei]\s*[:\s]+([A-Z][A-Za-z0-9\s.&'()/\-]{3,80}?)(?:\s+N\.?\s*Polizza|\s+Scadenza|\s+Massimal|\s+SIR\b|\s+Polizza\s+n|$)/i
   );
-  if (free?.[1]) return free[1].trim().replace(/\s+/g, " ");
+  if (free?.[1]) {
+    const captured = sanitizeInsurerCapture(free[1]);
+    if (captured) return captured;
+  }
   const free2 = text.match(
     /compagnia\s+(?:di\s+)?assicurazione\s+([A-Z][A-Za-z0-9\s.&'()/\-]{3,80}?)(?:\s+N\.?\s*Polizza|\s+Scadenza|\s+Massimal|\s+SIR\b|$)/i
   );
-  if (free2?.[1]) return free2[1].trim().replace(/\s+/g, " ");
+  if (free2?.[1]) {
+    const captured = sanitizeInsurerCapture(free2[1]);
+    if (captured) return captured;
+  }
   // "stipulata con X" / "polizza ... con X"
   const stipulata = text.match(
     /(?:stipulat[aoe]|sottoscritt[aoe]|contratt[aoe])\s+(?:con\s+(?:la\s+)?)?([A-Z][A-Za-z0-9\s.&'()/\-]{3,60}?)(?:\s+(?:N\.?\s*Polizza|n\.|polizza|scadenz|massimal))/i
@@ -414,17 +437,25 @@ export function isParmRcInsuranceDisclosure(text: string): boolean {
 export function hasArt10RcOrSelfInsurancePublication(text: string): boolean {
   const t = text.replace(/\s+/g, " ");
   if (isParmRcInsuranceDisclosure(t)) return true;
-  const selfInsured = /autoassicuraz|auto[\s-]?assicuraz|ritenzione\s+del\s+rischio|gestione\s+diretta\s+(?:del\s+rischio|dei\s+sinistri|dei\s+rischi)/i.test(
-    t
-  );
+
+  const inInsuranceSection =
+    /posizione\s+assicurativa|descrizione\s+della\s+posizione\s+assicurativa/i.test(t);
+  const selfRiskDeclared =
+    /autoassicuraz|auto[\s-]?assicuraz|ritenzione\s+del\s+rischio|assunzione\s+diretta\s+del\s+rischio|misura\s+analoga\s+(?:alle\s+)?coperture\s+assicurativ|gestione\s+diretta\s+(?:del\s+rischio|dei\s+sinistri|dei\s+rischi)/i.test(
+      t
+    );
+  const rcContext =
+    /art\.?\s*10|legge\s+gelli|legge\s*24|responsabilit[aà]\s+civile|\bRCT\b|\bRCO\b|copertura\s+assicurativa|polizza|risk\s+management|\bparm\b/i.test(
+      t
+    );
+
+  if (inInsuranceSection && selfRiskDeclared && rcContext) return true;
+
+  const selfInsured = selfRiskDeclared;
   const rcPolicy =
     /art\.?\s*10.{0,80}(?:gelli|legge\s*24|n\.?\s*24)/i.test(t) &&
     /polizza\s+n\.?|copertura\s+assicurativa|responsabilit[aà]\s+civile/i.test(t);
-  if (selfInsured) {
-    return /art\.?\s*10|legge\s+gelli|legge\s*24|responsabilit[aà]\s+civile|\bRCT\b|\bRCO\b|copertura\s+assicurativa|polizza/i.test(
-      t
-    );
-  }
+  if (selfInsured) return rcContext;
   return rcPolicy;
 }
 
@@ -518,9 +549,9 @@ export function analyzePolicy(text: string): PolicyAnalysis {
     (appendixPolicy && Boolean(policyNumber && expiry));
 
   const company =
+    (selfInsured ? "Autoassicurazione / gestione diretta del rischio" : null) ||
     insurer ||
-    (rcDeclaredOnPage ? findInsurer(clean) : null) ||
-    (selfInsured ? "Autoassicurazione / gestione diretta del rischio" : null);
+    (rcDeclaredOnPage ? findInsurer(clean) : null);
 
   // Art. 10 Legge Gelli richiede la pubblicazione della polizza AGGIORNATA.
   // Se la data di scadenza è passata da più di 1 anno, la polizza trovata

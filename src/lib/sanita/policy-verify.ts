@@ -8,7 +8,13 @@ import {
   isParmRcInsuranceDisclosure,
   type PolicyAnalysis,
 } from "@/lib/sanita/detector";
-import { companyNameOnSite, crawlDepthSufficient, validateSiteIdentity } from "@/lib/sanita/site-identity";
+import {
+  companyNameOnSite,
+  crawlDepthSufficient,
+  crawlHostMatchesWebsite,
+  validateSiteIdentity,
+} from "@/lib/sanita/site-identity";
+import { hostBrandMatchesName } from "@/lib/sanita/contacts";
 import { isPolicyPublicationUrl } from "@/lib/sanita/crawler";
 import type { CrawlResult } from "@/lib/sanita/crawler";
 import type { Verdict } from "@/lib/sanita/verdict";
@@ -254,6 +260,17 @@ export function reconcilePolicyVerdict(
   const analysis = deepScanCrawlForPolicy(crawl);
   if (analysis.policyFound) {
     const enriched = enrichPublishedAnalysis(analysis, crawl);
+    if (ctx?.website) {
+      const hostMatch = crawlHostMatchesWebsite(ctx.website, crawl);
+      if (!hostMatch.ok) {
+        return {
+          verdict: "REVIEW",
+          analysis: { ...enriched, policyFound: false },
+          adjusted: true,
+          note: `${hostMatch.reason} — polizza non attribuibile al sito della struttura.`,
+        };
+      }
+    }
     if (!publicationIsCertain(enriched, crawl) && !softPublicationCertain(enriched, crawl)) {
       const note = crawl.policyPdfUrl
         ? "PDF presente ma dati polizza RC insufficienti — verifica manuale."
@@ -289,7 +306,14 @@ export function reconcilePolicyVerdict(
     gates.push("PDF scannerizzato non decodificabile — OCR insufficiente");
   }
   if (!crawl.policyExhaustive) {
-    gates.push(`crawl incompleto (${crawl.policyPdfsRead}/${crawl.policyPdfsQueued} PDF)`);
+    const htmlOnlyOk =
+      crawl.foundRelevantPage &&
+      crawl.policyPdfsQueued === 0 &&
+      crawl.pagesVisited.length >= 8 &&
+      !crawl.needsOcrReview;
+    if (!htmlOnlyOk) {
+      gates.push(`crawl incompleto (${crawl.policyPdfsRead}/${crawl.policyPdfsQueued} PDF)`);
+    }
   }
 
   // Sempre: Maps può associare il sito dell'ente padre (es. fapc.it) alla singola RSA.
@@ -298,11 +322,18 @@ export function reconcilePolicyVerdict(
     if (
       ctx.mapsVerified &&
       crawl.foundRelevantPage &&
-      crawl.policyExhaustive &&
       !crawl.needsOcrReview &&
-      companyNameOnSite(ctx.companyName, policyTextFromCrawl(crawl))
+      (companyNameOnSite(ctx.companyName, policyTextFromCrawl(crawl)) ||
+        hostBrandMatchesName(ctx.companyName, ctx.website))
     ) {
-      identity = { ok: true, reason: "Sito da Google Maps + Trasparenza visitata" };
+      identity = { ok: true, reason: "Sito Maps + brand coerente con struttura" };
+    } else if (
+      crawl.foundRelevantPage &&
+      crawl.pagesVisited.length >= 15 &&
+      !crawl.needsOcrReview &&
+      hostBrandMatchesName(ctx.companyName, ctx.website)
+    ) {
+      identity = { ok: true, reason: "Trasparenza visitata + dominio coerente col nome" };
     } else {
       identity = validateSiteIdentity(ctx.companyName, ctx.website, crawl, ctx.city);
     }

@@ -12,7 +12,7 @@ import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
 import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
-import { mergeContacts, pickBestPhone } from "@/lib/sanita/contacts";
+import { mergeContacts, pickBestPhone, pickOfficialWebsite } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, type AuditSources } from "@/lib/sanita/audit";
 import { isSiteUnderMaintenance } from "@/lib/sanita/website";
 import { verdictFromSite, verdictFromRegional } from "@/lib/sanita/verdict";
@@ -83,7 +83,9 @@ export async function analyzeLead(
   counters: Pick<ScanCounters, "analyzed" | "withPolicy" | "hot" | "review">
 ) {
   const audit: AuditSources = { mapsLookup: true };
-  let website: string | null = lead.website ? normalizeWebsite(lead.website) : null;
+  const mapsWebsite = lead.website ? normalizeWebsite(lead.website) : null;
+  let website: string | null =
+    mapsWebsite && pickOfficialWebsite([mapsWebsite], lead.companyName) ? mapsWebsite : null;
   let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && website);
 
   if (!website) {
@@ -97,9 +99,13 @@ export async function analyzeLead(
     if (resolved.source === "google") audit.googleSearch = true;
     if (resolved.source === "maps-card" || resolved.source === "maps-lookup") audit.mapsLookup = true;
 
-    website = resolved.website;
+    website =
+      resolved.website && pickOfficialWebsite([resolved.website], lead.companyName)
+        ? resolved.website
+        : null;
     mapsVerified =
-      resolved.source === "maps-card" || resolved.source === "maps-lookup";
+      Boolean(website) &&
+      (resolved.source === "maps-card" || resolved.source === "maps-lookup");
 
     lead = {
       ...lead,
@@ -195,7 +201,7 @@ export async function analyzeLead(
   });
   const reconciled = reconcilePolicyVerdict(crawl, analysis, verdict, {
     companyName: lead.companyName,
-    website,
+    website: mapsWebsite ?? website,
     city: lead.city,
     category: lead.category,
     osmId: lead.osmId,
@@ -347,6 +353,11 @@ export async function analyzeRegional(
   let website = lead.website;
   let mapsAlready = false;
   let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && lead.website);
+  if (website) {
+    const v = normalizeWebsite(website);
+    website = v && pickOfficialWebsite([v], lead.companyName) ? v : null;
+    mapsVerified = mapsVerified && Boolean(website);
+  }
 
   if (!website) {
     const maps = await resolveWebsiteViaMaps(lead.companyName, lead.city, region, {
@@ -397,6 +408,12 @@ export async function analyzeRegional(
       website = normalizeWebsite(guessed);
       audit.googleSearch = true;
     }
+  }
+
+  if (website) {
+    const v = normalizeWebsite(website);
+    website = v && pickOfficialWebsite([v], lead.companyName) ? v : null;
+    mapsVerified = mapsVerified && Boolean(website);
   }
 
   if (website) {
@@ -653,6 +670,34 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
   const fresh = await prisma.lead.findUnique({ where: { id: lead.id } });
   if (!fresh || fresh.lastScannedAt) return;
   lead = fresh;
+
+  if (!lead.website) {
+    const resolved = await resolveOfficialWebsite(lead.companyName, lead.city, region, {
+      deadline: Date.now() + 120_000,
+      mapsCardWebsite: lead.website,
+      mapsCardTrusted: Boolean(lead.osmId?.startsWith("gmaps/")),
+    });
+    if (resolved.website) {
+      const website =
+        pickOfficialWebsite([resolved.website], lead.companyName) ?? resolved.website;
+      lead = {
+        ...lead,
+        companyName: resolved.companyName,
+        city: resolved.city ?? lead.city,
+        phone: resolved.phone ?? lead.phone,
+        website,
+      };
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          companyName: resolved.companyName,
+          website,
+          city: lead.city,
+          phone: lead.phone,
+        },
+      });
+    }
+  }
 
   if (lead.website) {
     try {

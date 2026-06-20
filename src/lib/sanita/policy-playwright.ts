@@ -6,7 +6,8 @@ import {
 } from "@/lib/sanita/crawler";
 import { extractPageText } from "@/lib/sanita/extract-embedded";
 import { analyzePolicy, isGelliComplianceReportOnly } from "@/lib/sanita/detector";
-import { isParkedOrForSalePage } from "@/lib/sanita/website";
+import { isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
+import { PLAYWRIGHT_POLICY_MAX_MS, PLAYWRIGHT_POLICY_MAX_URLS } from "@/lib/sanita/scan-config";
 
 const POLICY_PATH =
   /trasparen|documenti|amministrazione|polizz|assicuraz|gelli|responsabilit|societa-trasparente|note-legali|legal/i;
@@ -79,6 +80,32 @@ export async function enrichCrawlWithPlaywright(
   crawl: CrawlResult
 ): Promise<CrawlResult> {
   if (!needsPlaywrightPolicyPass(crawl)) return crawl;
+  const maxMs = PLAYWRIGHT_POLICY_MAX_MS;
+  let aborted = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (maxMs > 0) {
+    timer = setTimeout(() => {
+      aborted = true;
+    }, maxMs);
+  }
+  try {
+    const result = await enrichCrawlWithPlaywrightInner(baseUrl, crawl, () => aborted);
+    if (aborted && !result.policyPdfAnalysis?.policyFound) return crawl;
+    return result;
+  } catch {
+    return crawl;
+  } finally {
+    if (timer) clearTimeout(timer);
+    aborted = true;
+  }
+}
+
+async function enrichCrawlWithPlaywrightInner(
+  baseUrl: string,
+  crawl: CrawlResult,
+  isAborted: () => boolean = () => false
+): Promise<CrawlResult> {
+  if (!needsPlaywrightPolicyPass(crawl)) return crawl;
 
   const { launchMapsBrowser } = await import("@/lib/sanita/playwright-maps");
   const { browser, context, page } = await launchMapsBrowser();
@@ -102,7 +129,9 @@ export async function enrichCrawlWithPlaywright(
     }
     urls.add(baseUrl);
 
-    for (const url of urls) {
+    const urlList = [...urls].slice(0, PLAYWRIGHT_POLICY_MAX_URLS);
+    for (const url of urlList) {
+      if (isAborted()) break;
       try {
         await page
           .goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 })
@@ -144,6 +173,7 @@ export async function enrichCrawlWithPlaywright(
           .catch(() => "");
         const text = innerText.length >= 30 ? innerText : extractText(html);
         if (!text || text.length < 30) continue;
+        if (isSiteUnderMaintenance(text)) continue;
 
         extraPages.push(url);
         combined = `${combined} \n ${text}`.slice(0, 64_000);
@@ -152,8 +182,8 @@ export async function enrichCrawlWithPlaywright(
           pageCountsAsPolicyRelevant(url, text) ||
           (POLICY_PATH.test(url) && analyzePolicy(text).policyFound);
 
-        // Trasparenza: raccogli TUTTI i PDF (PARM/PARS spesso senza testo RC in pagina).
-        if (POLICY_PATH.test(url)) {
+        // Trasparenza: raccogli PDF solo se la pagina ha contenuto istituzionale reale.
+        if (POLICY_PATH.test(url) && !isSiteUnderMaintenance(text)) {
           foundRelevantPage = true;
           for (const pdf of pdfsFromHtml(html, url)) pdfUrls.add(pdf);
         }
@@ -176,6 +206,8 @@ export async function enrichCrawlWithPlaywright(
 
   if (extraPages.length === 0 && pdfUrls.size === 0) return crawl;
 
+  if (isAborted()) return crawl;
+
   // Leggi PDF trovati via browser (import lazy dal crawler)
   const { fetchPdfTextWithRetry, sortPdfQueue } = await import("@/lib/sanita/crawler");
   const MAX_PLAYWRIGHT_PDFS = Number.MAX_SAFE_INTEGER;
@@ -186,6 +218,7 @@ export async function enrichCrawlWithPlaywright(
   let policyPdfUrl = crawl.policyPdfUrl;
 
   for (const pdfUrl of sortPdfQueue(pdfUrls).slice(0, MAX_PLAYWRIGHT_PDFS)) {
+    if (isAborted()) break;
     const { text, needsOcr } = await fetchPdfTextWithRetry(pdfUrl, { forceOcr: true });
     policyPdfsRead++;
     extraPages.push(pdfUrl);

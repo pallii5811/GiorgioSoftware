@@ -95,6 +95,17 @@ function testDetector() {
   assert(r6.policyFound === false, "Caso 6: solo Gelli senza dati → non policyFound");
   console.log("  ✓ Caso 6: solo riferimento Gelli senza dati → non policyFound");
 
+  // Caso 6b: PARM — assunzione diretta del rischio (Minerva-style)
+  const text6b = `
+    PIANO ANNUALE DI RISK MANAGEMENT legge 24/2017
+    DESCRIZIONE DELLA POSIZIONE ASSICURATIVA
+    La Casa di Cura ha istituito una misura analoga alle coperture assicurative,
+    con assunzione diretta del rischio, prevedendo fondo rischio e fondo riserva sinistri.
+  `;
+  const r6b = analyzePolicy(text6b);
+  assert(r6b.policyFound === true, "Caso 6b: assunzione diretta PARM = policyFound true");
+  console.log("  ✓ Caso 6b: assunzione diretta del rischio in PARM riconosciuta");
+
   // Caso 7: Villa Fiorita / Berkshire — massimale RC non fondo dotazione
   const text7 = `
     Polizza N° 2026RCG00376 Berkshire Hathaway International Insurance Limited
@@ -385,18 +396,61 @@ function testFalsePositiveGates() {
   assert(fioriRec.verdict === "PUBLISHED", `Villa dei Fiori PARM → PUBLISHED (era ${fioriRec.verdict})`);
   console.log("  ✓ Villa dei Fiori PARM AmTrust → PUBLISHED");
 
+  const crossHostRec = reconcilePolicyVerdict(
+    {
+      ok: true,
+      text: "Polizza RC Generali massimale 5.000.000",
+      policyText: "Polizza RC Generali",
+      pagesVisited: ["https://www.villadeipini.com/site/"],
+      policyPdfUrl: "https://villadeipini.com/villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf",
+      foundRelevantPage: true,
+      policyExhaustive: true,
+      needsOcrReview: false,
+      policyPdfsQueued: 1,
+      policyPdfsRead: 1,
+      policyPdfAnalysis: analyzePolicy("Polizza RC Generali massimale 5.000.000 scadenza 31/12/2026"),
+    },
+    analyzePolicy("Polizza RC Generali massimale 5.000.000 scadenza 31/12/2026"),
+    "REVIEW",
+    { companyName: "Casa di Riposo Alfonso Rubilli", website: "http://www.casadiriposorubilli.it/", city: "Avellino" }
+  );
+  assert(crossHostRec.verdict !== "PUBLISHED", `cross-host Rubilli/Pini → non PUBLISHED (era ${crossHostRec.verdict})`);
+  console.log(`  ✓ Gate host reconcile cross-struttura → ${crossHostRec.verdict}`);
+
   console.log("  ANTI FALSI PUBLISHED: TUTTI I TEST PASSATI ✓");
 }
 
 async function testSiteIdentity() {
   console.log("\n=== TEST 1d: SITE IDENTITY ===");
-  const { companyNameOnSite } = await import("../src/lib/sanita/site-identity.ts");
+  const { companyNameOnSite, crawlHostMatchesWebsite } = await import("../src/lib/sanita/site-identity.ts");
   const okPini = companyNameOnSite(
     "Casa Di Cura Privata Villa Dei Pini S.p.A.",
     "Benvenuti alla Villa Dei Pini casa di cura ad Avellino"
   );
   assert(okPini, "Villa Dei Pini deve essere riconosciuta sul sito");
   console.log("  ✓ Villa Dei Pini riconosciuta sul testo sito");
+
+  const crossHostCrawl = {
+    ok: true,
+    pagesVisited: ["https://www.villadeipini.com/site/"],
+    policyPdfUrl: "https://villadeipini.com/villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf",
+    text: "",
+    policyText: "",
+  };
+  const blocked = crawlHostMatchesWebsite("http://www.casadiriposorubilli.it/", crossHostCrawl);
+  assert(!blocked.ok, "Rubilli con crawl/PDF Pini deve essere bloccato");
+  console.log("  ✓ Gate host: PDF cross-struttura → bloccato");
+
+  const twinCrawl = {
+    ok: true,
+    pagesVisited: ["https://www.nepheocare.com/trasparenza"],
+    policyPdfUrl: "https://www.nepheocare.com/polizza.pdf",
+    text: "",
+    policyText: "",
+  };
+  assert(crawlHostMatchesWebsite("https://www.nepheocare.it/", twinCrawl).ok, "TLD gemello .it/.com ok");
+  console.log("  ✓ Gate host: stesso brand .it/.com → permesso");
+
   console.log("  SITE IDENTITY: TUTTI I TEST PASSATI ✓");
 }
 

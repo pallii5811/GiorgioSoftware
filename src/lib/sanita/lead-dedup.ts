@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isBlockedWebsiteHost } from "@/lib/sanita/website";
+import { mapsNamesMatch } from "@/lib/sanita/maps-query";
 import {
   buildScanMergePayload,
   pickBestScannedLead,
@@ -155,9 +156,49 @@ export function findMatchingLead<T extends LeadIdentityFields>(
 ): T | undefined {
   for (const key of leadIdentityKeys(candidate)) {
     const hit = index.get(key);
-    if (hit && hit.id !== candidate.id) return hit;
+    if (!hit || hit.id === candidate.id) continue;
+    const weakKey =
+      key.startsWith("piva|") || key.startsWith("phone|") || key.startsWith("site|");
+    if (weakKey) {
+      if (candidate.osmId && hit.osmId) {
+        if (candidate.osmId !== hit.osmId) continue;
+      } else if (candidate.osmId || hit.osmId) {
+        continue;
+      }
+      const cHost = websiteHostKey(candidate.website);
+      const hHost = websiteHostKey(hit.website);
+      if (cHost && hHost && cHost !== hHost) continue;
+      if (key.startsWith("site|") && !mapsNamesMatch(candidate.companyName, hit.companyName)) {
+        continue;
+      }
+    }
+    return hit;
   }
   return undefined;
+}
+
+/** Azzera analisi se Maps aggiorna il sito su host diverso (evita evidence stale). */
+export function scanFieldsIfWebsiteHostChanged(
+  prev: { website?: string | null; lastScannedAt?: Date | null } | null | undefined,
+  nextWebsite: string | null | undefined
+): Record<string, null> {
+  if (!prev?.lastScannedAt || !nextWebsite) return {};
+  const oldH = websiteHostKey(prev.website);
+  const newH = websiteHostKey(nextWebsite);
+  if (!oldH || !newH || oldH === newH) return {};
+  return {
+    lastScannedAt: null,
+    evidence: null,
+    policyFound: null,
+    policyCompany: null,
+    policyMassimale: null,
+    policyNumber: null,
+    policyExpiry: null,
+    confidence: null,
+    websiteReachable: null,
+    pagesVisited: null,
+    leadScore: null,
+  };
 }
 
 const DEDUP_SELECT = {
@@ -207,6 +248,9 @@ async function mergeBestScanOntoKeeper(
 
   const best = pickBestScannedLead(group);
   if (!best?.lastScannedAt || !shouldMergeScanIntoKeeper(keeper, best)) return;
+  const bHost = websiteHostKey(best.website);
+  const kHost = websiteHostKey(keeper.website);
+  if (bHost && kHost && bHost !== kHost) return;
 
   const full = await prisma.lead.findUnique({
     where: { id: best.id },

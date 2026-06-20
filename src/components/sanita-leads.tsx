@@ -243,7 +243,8 @@ export function SanitaLeads() {
     })
     const toastId = toast.loading(label)
     let round = 0
-    const maxRounds = 80
+    // Campania: ~550 comuni Maps → molte riconnessioni SSE automatiche.
+    const maxRounds = body.region === "Campania" ? 280 : 80
 
     try {
       await fetchLeads({ silent: true })
@@ -474,7 +475,7 @@ export function SanitaLeads() {
   }
 
   const visibleLeads = useMemo(
-    () => leads.filter((l) => l.lastScannedAt != null || l.evidence?.trim()),
+    () => leads.filter((l) => l.lastScannedAt != null || l.evidence?.trim() || Boolean(l.website?.trim())),
     [leads]
   )
 

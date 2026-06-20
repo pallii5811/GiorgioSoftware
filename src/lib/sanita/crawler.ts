@@ -494,7 +494,7 @@ function isNonPolicyDocumentPdf(url: string): boolean {
   const h = url.toLowerCase();
   // Se il nome file contiene keyword assicurative, NON escludere mai (priorità policy).
   if (/polizz|assicuraz|rcg\d|responsabilit|rc[-_]|appendice|rinnovo/i.test(h)) return false;
-  return /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|bilancio|xbrl|privacy|gdpr|modulo[\-_]|regolamento|organigramma|costi[\-_]?contabilizzat|conto[\-_]?economico|stato[\-_]?patrimoniale|relazione[\-_]?(?:annuale|finanziaria|gestione|sindaci|revisore)/i.test(
+  return /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|bilancio|xbrl|privacy|gdpr|modulo[\-_]|regolamento|organigramma|costi[\-_]?contabilizzat|conto[\-_]?economico|stato[\-_]?patrimoniale|relazione[\-_]?(?:annuale|finanziaria|gestione|sindaci|revisore)|\bcv[-_.]|curriculum[\-_]?vitae/i.test(
     h
   );
 }

@@ -10,7 +10,7 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-async function proxyRescanToEngine(id: string): Promise<Response | null> {
+async function proxyRescanToEngine(id: string, website?: string): Promise<Response | null> {
   const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
     (v, i, a) => v && a.indexOf(v) === i
   );
@@ -19,7 +19,7 @@ async function proxyRescanToEngine(id: string): Promise<Response | null> {
       const upstream = await fetch(`${base}/api/sanita/rescan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, ...(website ? { website } : {}) }),
       });
       if (upstream.ok) return upstream;
     } catch {
@@ -30,9 +30,9 @@ async function proxyRescanToEngine(id: string): Promise<Response | null> {
 }
 
 export async function POST(req: Request) {
-  let body: { id?: string };
+  let body: { id?: string; website?: string };
   try {
-    body = (await req.json()) as { id?: string };
+    body = (await req.json()) as { id?: string; website?: string };
   } catch {
     return NextResponse.json({ success: false, error: "Richiesta non valida" }, { status: 400 });
   }
@@ -42,8 +42,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: "id mancante" }, { status: 400 });
   }
 
+  const websiteIn = typeof body.website === "string" ? body.website.trim() : "";
+
   if (isVercelUiHost()) {
-    const proxied = await proxyRescanToEngine(id);
+    const proxied = await proxyRescanToEngine(id, websiteIn || undefined);
     if (!proxied) {
       return NextResponse.json(
         { success: false, error: "Motore scansione Hetzner non raggiungibile" },
@@ -63,25 +65,33 @@ export async function POST(req: Request) {
   const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
 
   try {
+    const { normalizeWebsite } = await import("@/lib/sanita/discovery");
+    const resetData = {
+      lastScannedAt: null,
+      evidence: null,
+      policyFound: false,
+      policyCompany: null,
+      policyMassimale: null,
+      policyNumber: null,
+      policyExpiry: null,
+      confidence: null,
+      websiteReachable: null,
+      pagesVisited: 0,
+      leadScore: 0,
+      ...(websiteIn ? { website: normalizeWebsite(websiteIn) ?? websiteIn } : {}),
+    };
     await prisma.lead.update({
       where: { id },
-      data: {
-        lastScannedAt: null,
-        evidence: null,
-        policyFound: false,
-        policyCompany: null,
-        policyMassimale: null,
-        policyNumber: null,
-        policyExpiry: null,
-        confidence: null,
-        websiteReachable: null,
-        pagesVisited: 0,
-        leadScore: 0,
-      },
+      data: resetData,
     });
 
+    const freshLead = await prisma.lead.findUnique({ where: { id } });
+    if (!freshLead) {
+      return NextResponse.json({ success: false, error: "Lead non trovato" }, { status: 404 });
+    }
+
     const counters = { analyzed: 0, withPolicy: 0, hot: 0, review: 0 };
-    await analyzeLead(lead, counters);
+    await analyzeLead(freshLead, counters);
     const fresh = await prisma.lead.findUnique({ where: { id } });
     if (!fresh) {
       return NextResponse.json({ success: false, error: "Lead non trovato dopo scansione" }, { status: 500 });

@@ -1,7 +1,7 @@
 /** Validazione e normalizzazione URL sito istituzionale. */
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\./i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\.|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.it$/i;
 
 /** Host di parking / marketplace domini — non sono siti istituzionali. */
 const PARKED_HOST =
@@ -50,7 +50,7 @@ export function isSiteUnderMaintenance(text: string): boolean {
   const t = text.replace(/\s+/g, " ").trim();
   if (t.length < 30) return false;
   const maintenance =
-    /sito\s+(?:web\s+)?in\s+manutenzione|under\s+construction|coming\s+soon|temporaneamente\s+(?:non\s+)?disponibile|sito\s+in\s+aggiornamento/i.test(
+    /sito\s+(?:web\s+)?in\s+(?:manutenzione|costruzione)|under\s+construction|coming\s+soon|temporaneamente\s+(?:non\s+)?disponibile|sito\s+in\s+aggiornamento|sar[aà]\s+presto\s+disponibile/i.test(
       t
     );
   if (!maintenance) return false;

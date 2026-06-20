@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import sharp from "sharp";
+import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,13 +41,15 @@ function enqueueOcr<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** 0 = nessun timeout (default). Imposta OCR_JOB_TIMEOUT_MS solo se serve un tetto esplicito. */
+/** 0 = nessun timeout. Su Hetzner: 10 min per job OCR (blocchi tecnici, non crawl lungo). */
 function ocrJobTimeoutMs(): number {
   const raw = process.env.OCR_JOB_TIMEOUT_MS;
   if (raw === "0" || raw === "false") return 0;
-  if (!raw) return 0;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return isScanEngineHost() ? 600_000 : 0;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

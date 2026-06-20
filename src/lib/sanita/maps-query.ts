@@ -11,11 +11,36 @@ export function mapsSubsidiaryName(companyName: string): string | null {
   return sub.length > 4 ? sub : null;
 }
 
-/** Nome da usare per ricerca sito/Maps — preferisce la sede operativa se presente. */
+/** Brand tra apici nel nome Min. Salute (es. 'Meluccio', 'Clinica S.Antimo'). */
+export function mapsQuotedBrand(companyName: string): string | null {
+  const m = companyName.match(/['"]([^'"]{3,})['"]/);
+  if (!m?.[1]) return null;
+  const brand = m[1]
+    .replace(/\b(s\.?p\.?a\.?|s\.?r\.?l\.?)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return brand.length >= 3 ? brand : null;
+}
+
+/** Rimuove prefissi operatore/gruppo Min. Salute (es. Tiepido, Ios -). */
+export function stripOperatorPrefix(name: string): string {
+  return name
+    .replace(/^(?:tiepido|ios|cdm|cdis|fondazione)\s+/i, "")
+    .replace(/^ex\s+/i, "")
+    .trim();
+}
+
+/** Nome da usare per ricerca sito/Maps — preferisce brand tra apici o sede operativa. */
 export function mapsFacilitySearchName(companyName: string): string {
+  const quoted = mapsQuotedBrand(companyName);
+  if (quoted && !/^casa di cura$/i.test(quoted)) return quoted;
   const sub = mapsSubsidiaryName(companyName);
-  if (sub && !/^casa di cura$/i.test(sub)) return sub;
-  return mapsPrimaryName(companyName);
+  if (sub && !/^casa di cura$/i.test(sub)) {
+    const q = mapsQuotedBrand(sub);
+    if (q) return q;
+    return stripOperatorPrefix(sub);
+  }
+  return stripOperatorPrefix(mapsPrimaryName(companyName));
 }
 
 /** Normalizza il nome struttura per ricerche Maps (Min. Salute usa nomi lunghi con filiali). */
@@ -29,12 +54,23 @@ export function mapsNameVariants(companyName: string): string[] {
   const raw = companyName.trim();
   const beforeDash = mapsPrimaryName(raw);
   const subsidiary = mapsSubsidiaryName(raw);
+  const quoted = mapsQuotedBrand(raw);
   const out: string[] = [];
   const seen = new Set<string>();
 
+  const add = (s: string) => {
+    const v = stripOperatorPrefix(s.replace(/\s+/g, " ").trim());
+    if (v.length > 3 && !seen.has(v)) {
+      out.push(v);
+      seen.add(v);
+    }
+  };
+
+  if (quoted) add(quoted);
   if (subsidiary) {
-    out.push(subsidiary);
-    seen.add(subsidiary);
+    add(subsidiary);
+    const sq = mapsQuotedBrand(subsidiary);
+    if (sq) add(sq);
   }
   if (beforeDash.length > 3 && !seen.has(beforeDash)) {
     out.push(beforeDash);

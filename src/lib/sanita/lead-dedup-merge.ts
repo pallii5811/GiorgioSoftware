@@ -1,5 +1,5 @@
 import type { LeadIdentityFields } from "@/lib/sanita/lead-dedup";
-import { pickCanonicalLead } from "@/lib/sanita/lead-dedup";
+import { pickCanonicalLead, websiteHostKey } from "@/lib/sanita/lead-dedup";
 
 function evidenceQualityScore(evidence: string | null | undefined): number {
   if (!evidence) return 0;
@@ -23,6 +23,9 @@ export function shouldMergeScanIntoKeeper(
   donor: LeadIdentityFields
 ): boolean {
   if (!donor.lastScannedAt) return false;
+  const dHost = websiteHostKey(donor.website);
+  const kHost = websiteHostKey(keeper.website);
+  if (dHost && kHost && dHost !== kHost) return false;
   if (!keeper.lastScannedAt) return true;
 
   const dEv = evidenceQualityScore(donor.evidence);

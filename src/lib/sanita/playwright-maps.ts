@@ -19,7 +19,7 @@ export interface MapsPlace {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-const MAPS_POOL_SIZE = Number(process.env.MAPS_POOL_SIZE || 12);
+const MAPS_POOL_SIZE = Number(process.env.MAPS_POOL_SIZE || 4);
 let sharedBrowser: Browser | null = null;
 let sharedContext: BrowserContext | null = null;
 let poolInit: Promise<void> | null = null;
@@ -69,10 +69,16 @@ export async function closeMapsBrowserPool(): Promise<void> {
 }
 
 export async function launchMapsBrowser(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
-  const browser = await chromium.launch({
+  const launch = chromium.launch({
     headless: true,
     args: ["--lang=it-IT", "--disable-blink-features=AutomationControlled", "--no-default-browser-check"],
   });
+  const browser = await Promise.race([
+    launch,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Playwright launch timeout (RAM/processo)")), 90_000)
+    ),
+  ]);
   const context = await browser.newContext({
     locale: "it-IT",
     timezoneId: "Europe/Rome",
@@ -183,15 +189,23 @@ export async function extractWebsiteFromPanel(page: Page): Promise<string | null
   return null;
 }
 
-import { isGelliSubjectStructure } from "./gelli-scope";
+import { isGelliSubjectStructure, isAssistentialOnlyStructure } from "./gelli-scope";
 
 function composeQuery(category: string, city: string): string {
   return `${category} ${city}`;
 }
 
+/** In discovery per-comune la query Maps è già geo-ancorata: non scartare RSA/cliniche in comuni limitrofi. */
+function addressMatchesSearchCity(_address: string | null, _city: string): boolean {
+  return true;
+}
+
 /** True se la scheda Maps è una struttura soggetta art. 10 Gelli (polizza obbligatoria). */
 export function isHealthcarePlace(name: string, panelCategory: string | null): boolean {
-  return isGelliSubjectStructure(name, panelCategory);
+  return (
+    isGelliSubjectStructure(name, panelCategory) &&
+    !isAssistentialOnlyStructure(name, panelCategory)
+  );
 }
 
 /** Categoria dichiarata sul pannello dettaglio Maps (es. "Casa di cura"). */
@@ -207,25 +221,46 @@ async function extractCategoryFromPanel(page: Page): Promise<string | null> {
   }
 }
 
-async function searchMaps(page: Page, query: string, expectedCity: string, warm = false): Promise<void> {
+async function resetMapsSearchPage(page: Page): Promise<void> {
+  await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => {});
+  await page.waitForTimeout(400);
+}
+
+async function extractSingleMapsPlace(page: Page, city: string, category: string): Promise<MapsPlace | null> {
+  const singleName = await page.locator("h1.DUwDvf").first().textContent({ timeout: 2500 }).catch(() => null);
+  if (!singleName?.trim()) return null;
+  const placeName = singleName.trim();
+  const panelCategory = (await extractCategoryFromPanel(page)) || category;
+  if (!isHealthcarePlace(placeName, panelCategory)) return null;
+  const address = await page
+    .locator('button[data-item-id="address"]')
+    .first()
+    .textContent({ timeout: 1500 })
+    .catch(() => null);
+  if (address && city && !addressMatchesSearchCity(address, city)) return null;
+  return {
+    name: placeName,
+    address: address?.trim() || null,
+    phone: await extractPhoneFromPanel(page),
+    website: normalizeOfficialWebsite(await extractWebsiteFromPanel(page)),
+    city,
+    category: panelCategory,
+  };
+}
+
+async function searchMaps(page: Page, query: string, _expectedCity: string): Promise<void> {
   const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}?hl=it&gl=it&entry=ttu`;
 
-  if (warm) {
-    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
-    await page.waitForTimeout(900);
-    await handleMapsConsent(page);
-    await page.keyboard.press("Escape").catch(() => {});
-    await page.waitForTimeout(600);
-    return;
-  }
-
-  // Navigazione diretta all'URL di ricerca (query+città già nell'URL): molto più
-  // veloce del riempimento manuale della searchbox (no waits da 5s+3s per query).
   await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1200);
   await handleMapsConsent(page);
   await page.keyboard.press("Escape").catch(() => {});
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(900);
+  // Attendi feed o pannello singolo (MIRAX)
+  await Promise.race([
+    page.locator('div[role="feed"]').first().waitFor({ state: "visible", timeout: 10_000 }),
+    page.locator("h1.DUwDvf").first().waitFor({ state: "visible", timeout: 10_000 }),
+  ]).catch(() => {});
 }
 
 async function pickFromMapsResults(
@@ -327,7 +362,7 @@ export async function lookupBusinessOnMaps(
 
     for (const { query, loc } of queries) {
       if (opts?.deadline && Date.now() >= opts.deadline) break;
-      await searchMaps(page, query, loc, Boolean(sharedBrowser));
+      await searchMaps(page, query, loc);
       const hit = await pickFromMapsResults(page, name, loc);
       if (!hit) continue;
       if (hit.website) return hit;
@@ -347,7 +382,8 @@ export async function scrapeMapsCategoryCity(
   category: string,
   city: string,
   maxResults: number,
-  deadline?: number
+  deadline?: number,
+  opts?: { freshPage?: boolean }
 ): Promise<MapsPlace[]> {
   const query = composeQuery(category, city);
   const results: MapsPlace[] = [];
@@ -355,14 +391,20 @@ export async function scrapeMapsCategoryCity(
   const page = await acquireMapsPage();
 
   try {
-    await searchMaps(page, query, city, Boolean(sharedBrowser));
+    if (opts?.freshPage) await resetMapsSearchPage(page);
+    await searchMaps(page, query, city);
 
     const feed = page.locator('div[role="feed"]').first();
-    // Comuni piccoli spesso non hanno feed: timeout breve per non sprecare il budget.
     const hasFeed = await feed
       .waitFor({ state: "visible", timeout: 12_000 })
       .then(() => true)
       .catch(() => false);
+
+    if (!hasFeed) {
+      const single = await extractSingleMapsPlace(page, city, category);
+      if (single) results.push(single);
+      return results;
+    }
 
     // Scroll per caricare href unici (virtualizzazione MIRAX)
     const seenHrefs = new Set<string>();
@@ -412,7 +454,7 @@ export async function scrapeMapsCategoryCity(
       const address = await page.locator('button[data-item-id="address"]').first().textContent({ timeout: 1500 }).catch(() => null);
 
       // Integrità città (MIRAX)
-      if (address && city && !address.toLowerCase().includes(city.toLowerCase())) continue;
+      if (address && city && !addressMatchesSearchCity(address, city)) continue;
 
       // Solo strutture sanitarie: Maps mischia immobiliari/hotel/ristoranti nei risultati.
       const panelCategory = await extractCategoryFromPanel(page);

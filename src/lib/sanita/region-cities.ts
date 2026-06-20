@@ -31,6 +31,12 @@ function loadFullComuni(): Record<string, string[]> {
   return fullComuniCache!;
 }
 
+/** Comuni dove 0 risultati Maps su tutte le query = probabile errore scraper (non "comune vuoto"). */
+export function isMapsSignificantCity(region: Region, city: string): boolean {
+  const norm = city.trim().toLowerCase();
+  return (CAPOLUOGHI[region] ?? []).some((c) => c.toLowerCase() === norm);
+}
+
 /** Comuni da scansionare su Google Maps: TUTTI i comuni ISTAT + Min. Salute + capoluoghi. */
 export async function getRegionCities(region: Region): Promise<string[]> {
   const set = new Set<string>(CAPOLUOGHI[region]);
@@ -51,6 +57,6 @@ export async function getRegionCities(region: Region): Promise<string[]> {
 // dei target Gelli. Le accreditate Min. Salute coprono le case di cura per nome.
 export const HEALTHCARE_MAP_QUERIES = [
   "casa di cura",
-  "RSA casa di riposo",
-  "poliambulatorio clinica privata",
+  "clinica privata",
+  "poliambulatorio privato",
 ] as const;

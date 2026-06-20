@@ -44,13 +44,19 @@ export const SCAN_INITIAL_DISCOVERY_MS = envInt("SCAN_INITIAL_DISCOVERY_MS", 75_
 /** Tetto discovery per round — evita sessioni bloccate ore su Maps. */
 export const SCAN_DISCOVERY_MAX_MS = envInt("SCAN_DISCOVERY_MAX_MS", 90_000);
 
+/** Chunk discovery per round su Hetzner (riconnessioni SSE ~5 min). */
+export const SCAN_DISCOVERY_CHUNK_MS = envInt(
+  "SCAN_DISCOVERY_CHUNK_MS",
+  isScanEngineHost() ? 5 * 60_000 : 90_000
+);
+
 /** Su Hetzner nessun limite di round — accuratezza prima di tutto. */
 export function scanRoundDeadline(): number {
   if (isScanEngineHost()) return Number.MAX_SAFE_INTEGER;
   return Date.now() + SCAN_BUDGET_MS;
 }
 
-/** 0 = nessun limite per-lead. Default: illimitato su scan engine, 8 min su Vercel/demo. */
+/** 0 = nessun limite per-lead (crawl lunghi ok). Default: illimitato su scan engine, 8 min su Vercel/demo. */
 export const SCAN_LEAD_MAX_MS = (() => {
   const raw = process.env.SCAN_LEAD_MAX_MS;
   if (raw === "0") return 0;
@@ -59,4 +65,33 @@ export const SCAN_LEAD_MAX_MS = (() => {
     if (Number.isFinite(n) && n >= 0) return n;
   }
   return isScanEngineHost() ? 0 : 8 * 60_000;
+})();
+
+/**
+ * Watchdog anti-blocco su Hetzner quando SCAN_LEAD_MAX_MS=0.
+ * Non tronca crawl legittimi (NefroCenter ~11 min ok) — salta lead impantanati (Chrome/OCR).
+ * 0 = disabilitato esplicitamente.
+ */
+export const SCAN_LEAD_STALL_MS = (() => {
+  const raw = process.env.SCAN_LEAD_STALL_MS;
+  if (raw === "0") return 0;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return isScanEngineHost() ? 35 * 60_000 : 0;
+})();
+
+/** Tetto URL visitate nel pass Playwright post-crawl (evita ore su siti enormi). */
+export const PLAYWRIGHT_POLICY_MAX_URLS = envInt("PLAYWRIGHT_POLICY_MAX_URLS", 16);
+
+/** Tetto solo sul pass Playwright post-crawl (non limita il BFS HTML/PDF). 0 = illimitato. */
+export const PLAYWRIGHT_POLICY_MAX_MS = (() => {
+  const raw = process.env.PLAYWRIGHT_POLICY_MAX_MS;
+  if (raw === "0") return 0;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return isScanEngineHost() ? 20 * 60_000 : 12 * 60_000;
 })();

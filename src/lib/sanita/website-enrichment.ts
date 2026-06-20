@@ -1,11 +1,9 @@
 import { prisma, ensureSqliteWal } from "@/lib/sanita/db-ready";
-import { findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
+import { resolveOfficialWebsite } from "@/lib/sanita/resolve-website";
+import { pickOfficialWebsite } from "@/lib/sanita/contacts";
 import type { Region } from "@/lib/sanita/discovery";
 import { normalizeWebsite } from "@/lib/sanita/discovery";
-import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
-import { mapsMatchScore } from "@/lib/sanita/maps-query";
 import { closeMapsBrowserPool } from "@/lib/sanita/playwright-maps";
-import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
 
 export type EnrichProgress = {
   done: number;
@@ -36,33 +34,16 @@ export async function enrichLeadWebsite(
   opts?: { perLeadMs?: number; maxQueries?: number }
 ): Promise<{ found: boolean; website: string | null }> {
   const region = lead.region as Region;
-  let website: string | null = null;
-  let phone = lead.phone;
-  let city = lead.city;
-
-  // Budget per-lead: evita hang sui lead realmente senza sito (esauriscono tutte le query).
-  const deadline = Date.now() + (opts?.perLeadMs ?? 45_000);
-  const maps = await resolveWebsiteViaMaps(lead.companyName, city, region, {
-    deadline,
-    maxQueries: opts?.maxQueries ?? 4,
+  const perLeadMs = opts?.perLeadMs ?? 90_000;
+  const resolved = await resolveOfficialWebsite(lead.companyName, lead.city, region, {
+    deadline: Date.now() + perLeadMs,
   });
-  if (maps) {
-    const score = mapsMatchScore(lead.companyName, maps.name);
-    if (score >= 0) {
-      if (!phone && maps.phone) phone = maps.phone;
-      const mapsCity = extractCityFromMapsAddress(maps.address);
-      if (mapsCity) city = mapsCity;
-      // Sito SOLO dal pannello Maps della struttura matchata — niente URL inventati.
-      if (maps.website && score >= 5) {
-        website = normalizeWebsite(maps.website);
-      }
-    }
-  }
-
-  if (!website) {
-    const tav = await findOfficialWebsite(lead.companyName, city, region);
-    website = normalizeWebsite(tav.website ?? undefined);
-  }
+  const website = resolved.website
+    ? pickOfficialWebsite([normalizeWebsite(resolved.website)!], lead.companyName) ??
+      normalizeWebsite(resolved.website)
+    : null;
+  const phone = resolved.phone ?? lead.phone;
+  const city = resolved.city ?? lead.city;
 
   if (website || phone !== lead.phone || city !== lead.city) {
     await writeWithRetry(() =>

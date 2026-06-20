@@ -5,14 +5,15 @@ import { isGelliComplianceReportPdf } from "./detector";
 function isPolicySourceUrl(url: string): boolean {
   const u = url.toLowerCase();
   return (
-    /amministrazione-trasparente|societa-trasparente|\/trasparen|\/polizz|\/assicuraz|responsabilit[aà]-civile|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico|art\.?\s*10|legge[\-_]?gelli/i.test(
+    /amministrazione-trasparente|societa-trasparente|\/trasparen|\/polizz|\/assicuraz|responsabilit[aà]-civile|gestione[\-_]?del[\-_]?rischio|rischio[\-_]?clinico|art\.?\s*10|legge[\-_]?gelli|note-legali|dati-assicuraz/i.test(
       u
     )
   );
 }
 
+/** Solo sezioni Trasparenza istituzionali — non note-legali (etichetta evidence). */
 function isTransparencyUrl(url: string): boolean {
-  return isPolicySourceUrl(url);
+  return /amministrazione-trasparente|societa-trasparente|\/trasparen/i.test(url.toLowerCase());
 }
 
 export interface AuditSources {

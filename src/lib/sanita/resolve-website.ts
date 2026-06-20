@@ -28,6 +28,12 @@ function acceptWebsite(url: string | null | undefined, companyName: string): str
   return pickOfficialWebsite([normalized], companyName) ?? null;
 }
 
+/** Sito da scheda Maps con match nome — solo blocca social/directory, non rigetta acronimi (Ge.P.O.S. → gepos.it). */
+function acceptMapsWebsite(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  return normalizeWebsite(url);
+}
+
 /**
  * Trova il sito ufficiale di una struttura — come un utente su Google:
  * 1) scheda Maps (se già nota dalla scoperta)
@@ -84,15 +90,15 @@ export async function resolveOfficialWebsite(
       if (maps.phone) phone = maps.phone;
       const mapsCity = extractCityFromMapsAddress(maps.address);
       if (mapsCity) resolvedCity = mapsCity;
-      if (maps.website && score >= 4) {
-        const w = acceptWebsite(maps.website, name);
+      if (maps.website && score >= 3) {
+        const w = acceptMapsWebsite(maps.website);
         if (w) {
           website = w;
           source = "maps-lookup";
           break;
         }
       }
-      if (!website && score >= 4 && !maps.website) break;
+      if (!website && score >= 3 && !maps.website) break;
     }
   }
 

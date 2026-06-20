@@ -2,6 +2,73 @@ import type { CrawlResult } from "@/lib/sanita/crawler";
 import { mapsNameVariants, mapsNamesMatch } from "@/lib/sanita/maps-query";
 import { isBlockedWebsiteHost, isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
 
+function hostKey(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    if (!host || isBlockedWebsiteHost(host)) return null;
+    return host;
+  } catch {
+    return null;
+  }
+}
+
+/** Stesso brand su .it/.com (es. nepheocare.it ↔ nepheocare.com) — non gruppi ospedalieri distinti. */
+function hostsSameBrandTld(hostA: string, hostB: string): boolean {
+  if (hostA === hostB) return true;
+  const dotA = hostA.lastIndexOf(".");
+  const dotB = hostB.lastIndexOf(".");
+  if (dotA <= 0 || dotB <= 0) return false;
+  const labelA = hostA.slice(0, dotA).replace(/-/g, "");
+  const labelB = hostB.slice(0, dotB).replace(/-/g, "");
+  if (labelA.length < 5 || labelA !== labelB) return false;
+  const tldA = hostA.slice(dotA + 1);
+  const tldB = hostB.slice(dotB + 1);
+  return (
+    (tldA === "it" || tldA === "com") &&
+    (tldB === "it" || tldB === "com") &&
+    tldA !== tldB
+  );
+}
+
+function hostCompatibleWithWebsite(website: string, actualHost: string | null): boolean {
+  const expected = hostKey(website);
+  if (!expected || !actualHost) return false;
+  return expected === actualHost || hostsSameBrandTld(expected, actualHost);
+}
+
+/** Il crawl (e il PDF polizza) devono essere sul dominio del sito Maps (o TLD gemello stesso brand). */
+export function crawlHostMatchesWebsite(
+  website: string,
+  crawl: CrawlResult
+): SiteIdentityResult {
+  if (!hostKey(website)) return { ok: false, reason: "URL sito non valido" };
+
+  if (crawl.pagesVisited.length > 0) {
+    const actual = hostKey(crawl.pagesVisited[0]);
+    if (actual && !hostCompatibleWithWebsite(website, actual)) {
+      return {
+        ok: false,
+        reason: `Crawl eseguito su dominio diverso (${actual} ≠ ${hostKey(website)})`,
+      };
+    }
+  }
+
+  const pdfUrl = crawl.policyPdfUrl;
+  if (pdfUrl) {
+    const pdfHost = hostKey(pdfUrl);
+    const expected = hostKey(website);
+    if (pdfHost && expected && !hostCompatibleWithWebsite(website, pdfHost)) {
+      return {
+        ok: false,
+        reason: `PDF polizza su dominio diverso (${pdfHost} ≠ ${expected})`,
+      };
+    }
+  }
+
+  return { ok: true, reason: "Host crawl coerente con sito struttura" };
+}
+
 const PUBLIC_ENTITY = /\b(asl|aulss|ausl|distretto|presidio|poliambulatorio|ospedale\s+pubblico)\b/i;
 const PRIVATE_ENTITY = /\b(casa di cura|clinica|rsa|riposo|privat|s\.?p\.?a\.?|s\.?r\.?l\.?)\b/i;
 /** Siti di fondazioni/enti che gestiscono più strutture — Maps spesso mette l'URL padre. */

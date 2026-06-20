@@ -110,18 +110,38 @@ export function parseContactsFromText(text: string): ParsedContacts {
 }
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|asl|aulss|soresa|^rita\.(com|it|org|net)$/i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|asl|aulss|soresa|^rita\.(com|it|org|net)$|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.it$/i;
+
+/** Acronimo da sigle puntate (es. G.e.P.O.S. → gepos). */
+function dottedAcronym(companyName: string): string | null {
+  const m = companyName.match(/\b((?:[A-Za-zÀ-ÿ]\.){2,}[A-Za-zÀ-ÿ]\.?)\b/);
+  if (!m?.[1]) return null;
+  const acr = m[1].replace(/\./g, "").toLowerCase();
+  return acr.length >= 3 ? acr : null;
+}
 
 function nameTokens(companyName: string): string[] {
+  const STOP = new Set([
+    "casa", "cura", "clinica", "ospedale", "centro", "medico", "medica",
+    "san", "santa", "santo", "di", "de", "del", "della", "privata", "privato",
+    "spa", "srl", "societa", "onlus", "coop", "dei", "degli",
+    "geriatrico", "geriatrica", "residenza", "sanitaria", "assistenziale",
+    "albergo", "anziani", "riposo", "riabilitativo", "polispecialistico", "accreditato",
+  ]);
   const seen = new Set<string>();
   const out: string[] = [];
+  const acr = dottedAcronym(companyName);
+  if (acr && acr.length >= 4 && !seen.has(acr)) {
+    seen.add(acr);
+    out.push(acr);
+  }
   for (const variant of mapsNameVariants(companyName)) {
     for (const t of variant
       .toLowerCase()
       .replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?/gi, "")
       .replace(/[^a-zàèéìòù0-9]+/g, " ")
       .split(/\s+/)) {
-      if (t.length > 3 && !seen.has(t)) {
+      if (t.length > 3 && !STOP.has(t) && !seen.has(t)) {
         seen.add(t);
         out.push(t);
       }
@@ -198,6 +218,38 @@ function scoreWebsiteUrl(raw: string, companyName: string, content = ""): { url:
   }
 }
 
+/** Il dominio deve contenere un token distintivo del nome struttura (evita «centro» → villafelice). */
+export function hostBrandMatchesName(companyName: string, url: string): boolean {
+  let hostC: string;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    hostC = host.replace(/[^a-z0-9]/g, "");
+  } catch {
+    return false;
+  }
+  for (const t of nameTokens(companyName)) {
+    const tc = t.replace(/[^a-z0-9]/g, "");
+    if (tc.length >= 4 && hostC.includes(tc.slice(0, Math.min(tc.length, 10)))) return true;
+  }
+  const acr = dottedAcronym(companyName);
+  if (acr && acr.length >= 4 && hostC.includes(acr)) return true;
+  const sub = mapsSubsidiaryName(companyName);
+  if (sub) {
+    for (const w of sub
+      .toLowerCase()
+      .replace(/[^a-zàèéìòù0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((x) => x.length > 4)) {
+      const tc = w.replace(/[^a-z0-9]/g, "");
+      if (tc.length >= 5 && hostC.includes(tc)) return true;
+    }
+  }
+  if (/s\.?\s*rita|santa\s*rita/i.test(companyName) && /santarita|clinicasantarita/.test(hostC)) {
+    return true;
+  }
+  return false;
+}
+
 /** Sceglie il sito istituzionale più probabile tra gli URL Tavily/snippet. */
 export function pickOfficialWebsite(urls: string[], companyName: string): string | null {
   let best: { url: string; score: number } | null = null;
@@ -209,7 +261,7 @@ export function pickOfficialWebsite(urls: string[], companyName: string): string
   if (!best) return null;
   const tokens = nameTokens(companyName);
   if (tokens.length === 0) return best.score >= 1 ? best.url : null;
-  return best.score >= 5 ? best.url : null;
+  return best.score >= 5 && hostBrandMatchesName(companyName, best.url) ? best.url : null;
 }
 
 /** Come pickOfficialWebsite ma usa anche il testo degli snippet Tavily (Google web). */
