@@ -34,6 +34,26 @@ export type ScanCounters = {
 export const CRAWL_CONCURRENCY = 10;
 export const REGIONAL_CONCURRENCY = 6;
 
+/** Sito già salvato in DB (reenrich/Maps): non rigettare con pickOfficialWebsite (Ge.P.O.S. → gepos.it). */
+function trustStoredWebsite(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const v = normalizeWebsite(raw);
+  if (!v) return null;
+  try {
+    if (isBlockedWebsiteHost(new URL(v).hostname.replace(/^www\./i, ""))) return null;
+  } catch {
+    return null;
+  }
+  return v;
+}
+
+function acceptDiscoveredWebsite(raw: string | null | undefined, companyName: string): string | null {
+  if (!raw?.trim()) return null;
+  const v = normalizeWebsite(raw);
+  if (!v) return null;
+  return pickOfficialWebsite([v], companyName) ? v : null;
+}
+
 /** HOT/REVIEW: mai campi polizza in UI/DB. Solo PUBLISHED con polizza confermata. */
 function policyDbFields(
   verdict: Verdict,
@@ -350,70 +370,69 @@ export async function analyzeRegional(
   let phone = lead.phone;
   let email = lead.email;
   let pec = lead.pec;
-  let website = lead.website;
+  const storedWebsite = trustStoredWebsite(lead.website);
+  let website = storedWebsite;
   let mapsAlready = false;
-  let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && lead.website);
-  if (website) {
-    const v = normalizeWebsite(website);
-    website = v && pickOfficialWebsite([v], lead.companyName) ? v : null;
-    mapsVerified = mapsVerified && Boolean(website);
-  }
+  let mapsVerified = Boolean(lead.osmId?.startsWith("gmaps/") && storedWebsite);
 
   if (!website) {
-    const maps = await resolveWebsiteViaMaps(lead.companyName, lead.city, region, {
-      deadline: Date.now() + 120_000,
-      maxQueries: 6,
-    });
-    if (maps) {
-      mapsAlready = true;
-      audit.mapsLookup = true;
-      if (!phone && maps.phone) phone = maps.phone;
-      const mapsCity = extractCityFromMapsAddress(maps.address);
-      if (mapsCity) lead = { ...lead, city: mapsCity };
-      if (maps.website) website = normalizeWebsite(maps.website);
-      if (maps.website && website) mapsVerified = true;
+    if (lead.website) {
+      website = acceptDiscoveredWebsite(lead.website, lead.companyName);
+      mapsVerified = mapsVerified && Boolean(website);
+    }
+
+    if (!website) {
+      const maps = await resolveWebsiteViaMaps(lead.companyName, lead.city, region, {
+        deadline: Date.now() + 120_000,
+        maxQueries: 6,
+      });
+      if (maps) {
+        mapsAlready = true;
+        audit.mapsLookup = true;
+        if (!phone && maps.phone) phone = maps.phone;
+        const mapsCity = extractCityFromMapsAddress(maps.address);
+        if (mapsCity) lead = { ...lead, city: mapsCity };
+        if (maps.website) {
+          website = trustStoredWebsite(maps.website) ?? acceptDiscoveredWebsite(maps.website, lead.companyName);
+        }
+        if (maps.website && website) mapsVerified = true;
+      }
+    }
+
+    if (!website) {
+      const google = await findOfficialWebsite(lead.companyName, lead.city, region);
+      const w = normalizeWebsite(google.website ?? undefined);
+      if (w) {
+        website = acceptDiscoveredWebsite(w, lead.companyName);
+        audit.googleSearch = true;
+        audit.contactUrls = [...(audit.contactUrls ?? []), ...google.sourceUrls];
+      }
+    }
+
+    if (!website) {
+      const guessed = await probeGuessedOfficialWebsite(lead.companyName);
+      if (guessed) {
+        website = acceptDiscoveredWebsite(guessed, lead.companyName);
+        audit.googleSearch = true;
+      }
     }
   }
 
-  // Google/Tavily prima del guess dominio — molti siti non sono su Maps ma compaiono su Google.
-  if (!website || !phone || !email) {
+  // Google/Tavily per telefono/email — non sostituire sito già fidato in DB.
+  if (!phone || !email) {
     const enriched = await enrichContacts(lead.companyName, lead.city, region, {
-      skipMaps: mapsAlready,
+      skipMaps: Boolean(storedWebsite) || mapsAlready,
     });
     if (enriched.checked) {
       const m = mergeContacts({ phone, email, pec, website }, enriched.contacts, region);
       phone = m.phone;
       email = m.email;
       pec = m.pec;
-      if (!website && m.website) website = m.website;
+      if (!website && m.website) website = acceptDiscoveredWebsite(m.website, lead.companyName);
       audit.contactSearch = true;
       audit.contactUrls = enriched.sourceUrls;
       audit.googleSearch = true;
     }
-  }
-
-  if (!website) {
-    const google = await findOfficialWebsite(lead.companyName, lead.city, region);
-    const w = normalizeWebsite(google.website ?? undefined);
-    if (w) {
-      website = w;
-      audit.googleSearch = true;
-      audit.contactUrls = [...(audit.contactUrls ?? []), ...google.sourceUrls];
-    }
-  }
-
-  if (!website) {
-    const guessed = await probeGuessedOfficialWebsite(lead.companyName);
-    if (guessed) {
-      website = normalizeWebsite(guessed);
-      audit.googleSearch = true;
-    }
-  }
-
-  if (website) {
-    const v = normalizeWebsite(website);
-    website = v && pickOfficialWebsite([v], lead.companyName) ? v : null;
-    mapsVerified = mapsVerified && Boolean(website);
   }
 
   if (website) {
@@ -679,7 +698,9 @@ export async function completeLeadAnalysis(lead: Lead, region: Region, counters:
     });
     if (resolved.website) {
       const website =
-        pickOfficialWebsite([resolved.website], lead.companyName) ?? resolved.website;
+        trustStoredWebsite(resolved.website) ??
+        acceptDiscoveredWebsite(resolved.website, lead.companyName) ??
+        normalizeWebsite(resolved.website);
       lead = {
         ...lead,
         companyName: resolved.companyName,
