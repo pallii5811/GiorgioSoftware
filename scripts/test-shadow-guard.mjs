@@ -8,6 +8,7 @@ function baseEnv(over = {}) {
   return {
     SHADOW_MODE: "true",
     SHADOW_DATABASE_ID: "giorgio-shadow-20260718",
+    SHADOW_RUN_ID: "shadow-guard-test",
     SHADOW_ALLOW_DB_WRITE: "true",
     DISABLE_EMAILS: "true",
     DISABLE_WEBHOOKS: "true",

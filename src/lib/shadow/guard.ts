@@ -53,6 +53,11 @@ export function assertShadowSafeOrThrow(env: NodeJS.ProcessEnv = process.env): S
     return { ok: false, reason: "SHADOW_DATABASE_ID is required" };
   }
 
+  const runId = (env.SHADOW_RUN_ID || "").trim();
+  if (!runId) {
+    return { ok: false, reason: "SHADOW_RUN_ID is required" };
+  }
+
   const url = normalizeUrl(env.DATABASE_URL || "");
   if (!url) {
     return { ok: false, reason: "DATABASE_URL is required" };
