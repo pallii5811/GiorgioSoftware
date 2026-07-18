@@ -114,7 +114,7 @@ async function normalizeEncodedForOcr(buf: Buffer): Promise<Buffer | null> {
     const img = sharp(buf, { failOn: "none", unlimited: true });
     const meta = await img.metadata();
     if (!meta.width || !meta.height) return null;
-    if (meta.width < 64 || meta.height < 64) return null;
+    if (meta.width < 32 || meta.height < 32) return null;
     let p = img.flatten({ background: "#ffffff" }).grayscale().normalize();
     // Upscala le immagini piccole: l'OCR rende molto meglio sopra ~1000px.
     if (meta.width < 1000) {
@@ -132,7 +132,7 @@ async function normalizeRawForOcr(
   width: number,
   height: number
 ): Promise<Buffer | null> {
-  if (!width || !height) return null;
+  if (!width || !height || width < 32 || height < 32) return null;
   const channels = Math.round(data.length / (width * height));
   if (channels !== 1 && channels !== 3 && channels !== 4) return null;
   try {
@@ -276,7 +276,11 @@ export function installOcrSafetyHandlers(): void {
   ocrHandlersInstalled = true;
   const swallow = (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
-    if (/tesseract|traineddata|fetch failed|read image|special-words/i.test(msg)) {
+    if (
+      /tesseract|traineddata|fetch failed|read image|special-words|too small to scale|image too small|leptonica|pix.*scale/i.test(
+        msg
+      )
+    ) {
       console.warn(`  [OCR] ${msg.slice(0, 100)}`);
       return true;
     }
@@ -338,9 +342,12 @@ async function createIsolatedWorker(): Promise<Worker | null> {
 /** OCR su buffer immagine singolo — worker dedicato, sempre terminato. */
 async function recognizeImage(img: Buffer, worker: Worker): Promise<string> {
   try {
+    const safe = (await normalizeEncodedForOcr(img)) ?? img;
+    const meta = await sharp(safe, { failOn: "none" }).metadata();
+    if (!meta.width || !meta.height || meta.width < 32 || meta.height < 32) return "";
     const {
       data: { text },
-    } = await worker.recognize(img);
+    } = await worker.recognize(safe);
     return text ?? "";
   } catch {
     return "";

@@ -8,6 +8,12 @@ export function mapsSubsidiaryName(companyName: string): string | null {
     .replace(/\bcdic\b/gi, "casa di cura")
     .replace(/\s+/g, " ")
     .trim();
+  // Scarta suffissi legali puri (es. "S.r.l..", "S.p.A.") — non sono nomi di sede operativa.
+  const withoutLegal = sub
+    .replace(/\b(s\.?p\.?a\.?|s\.?r\.?l\.?s?\.?|societ[aà][^-]*)\b/gi, "")
+    .replace(/[.\s]+/g, " ")
+    .trim();
+  if (withoutLegal.length <= 3) return null;
   return sub.length > 4 ? sub : null;
 }
 
@@ -196,7 +202,9 @@ export function mapsNamesMatch(expected: string, found: string): boolean {
   const a = norm(expected);
   const b = norm(found);
   if (!a || !b) return false;
-  if (a.includes(b.slice(0, 10)) || b.includes(a.slice(0, 10))) return true;
+  // Prefix-include solo se la stringa più corta è significativa (evita "s r l" ⊂ "tecnoedil s r l showroom").
+  if (a.length >= 6 && b.includes(a.slice(0, Math.min(a.length, 10)))) return true;
+  if (b.length >= 6 && a.includes(b.slice(0, Math.min(b.length, 10)))) return true;
 
   const stop = new Set(["casa", "cura", "clinica", "ospedale", "centro", "villa", "cdic", "spa", "srl", "di", "de"]);
   const tokens = (s: string) => s.split(/\s+/).filter((w) => w.length > 2 && !stop.has(w));

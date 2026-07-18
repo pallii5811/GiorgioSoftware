@@ -110,6 +110,24 @@ function domainCandidates(tokens: string[], companyName: string): string[] {
     push("casadicurasanfrancesco");
     push("clinicasanfrancesco");
   }
+  if (/guarino/i.test(companyName)) push("guarinolab");
+  if (/clinicalios|clinica\s+ios\b/i.test(companyName)) push("clinicalios");
+  if (/clinica[\s-]*salus|salus\s*-\s*laboratorio/i.test(companyName)) {
+    push("clinicasalus");
+    push("saluslaboratorioanalisi");
+  }
+  if (/laboratorio/i.test(companyName) && tokens.length > 0) {
+    const core = tokens.filter((t) => !/^(laboratorio|analisi|cliniche|clinica|serino)$/i.test(t));
+    if (core[0]) {
+      push(`${core[0]}lab`);
+      push(`lab${core[0]}`);
+      push(`laboratorio${core[0]}`);
+    }
+  }
+  if (tokens.includes("villa") && tokens.includes("fiori")) {
+    push("villadeifioriacerra");
+    push("villadeifiori");
+  }
   if (tokens.includes("rita")) {
     push("casadicurarita");
     push("clinicarita");
@@ -140,7 +158,7 @@ async function probeUrl(url: string): Promise<string | null> {
   for (const method of ["HEAD", "GET"] as const) {
     try {
       const res = await externalFetch(normalized, { method, timeoutMs: PROBE_TIMEOUT_MS });
-      if (res.ok || res.status === 405 || res.status === 403 || (res.status >= 200 && res.status < 400))
+      if (res.ok || res.status === 405 || (res.status >= 200 && res.status < 400))
         return normalized;
     } catch {
       /* try next */

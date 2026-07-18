@@ -8,14 +8,14 @@ import { Badge } from "@/components/ui/badge"
 import {
   Stethoscope, Search, Loader2, AlertTriangle, CheckCircle2, MapPin, Globe,
   Phone, HelpCircle, Building2, ShieldAlert, ShieldCheck, ShieldQuestion,
-  Filter, X, RefreshCw, Mail, ExternalLink, Download, Copy, Flame, Hash,
-  Info, Zap, FileSearch, RotateCcw,
+  Filter, X, RefreshCw, Download, Flame, FileSearch, ExternalLink,
+  Info, Zap, RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
   deriveVerdict, VERDICT_META, type Verdict,
 } from "@/lib/sanita/verdict"
-import { parseEvidenceSections, policyPdfUrlsForLead } from "@/lib/sanita/audit"
+import { parseEvidenceSections, policyPdfUrlsForLead, isHotPublishedExpiredEvidence, expiredDaysFromEvidence, policyHtmlSourceForLead } from "@/lib/sanita/audit"
 import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
 import { LeadDetail } from "@/components/lead-detail"
@@ -458,10 +458,75 @@ export function SanitaLeads() {
 
   const policyDocLinks = (l: Lead) => policyPdfUrlsForLead(l.evidence)
 
-  const policyHtmlSource = (l: Lead): string | null => {
-    const { fonti } = parseEvidenceSections(l.evidence)
-    const m = fonti?.match(/fonte polizza HTML:\s*(https?:\/\/\S+)/i)
-    return m?.[1] ?? null
+  const isHotPublishedExpired = (l: Lead) =>
+    verdictOf(l) === "HOT" && isHotPublishedExpiredEvidence(l.evidence)
+
+  const policyRcCell = (l: Lead) => {
+    const v = verdictOf(l)
+    const hotExpired = isHotPublishedExpired(l)
+    const hasPolicyMeta = Boolean(l.policyCompany || l.policyExpiry || l.policyMassimale)
+    const show =
+      (v === "PUBLISHED" && hasPolicyMeta) ||
+      (hotExpired && (hasPolicyMeta || Boolean(l.evidence)))
+
+    if (!show) return <span className="text-muted-foreground">—</span>
+
+    const docs = policyDocLinks(l)
+    const htmlSrc = policyHtmlSourceForLead(l.evidence)
+    const daysFromEvidence = expiredDaysFromEvidence(l.evidence)
+
+    return (
+      <div className="space-y-1">
+        {l.policyCompany ? (
+          <div className="line-clamp-2 font-medium leading-snug">{l.policyCompany}</div>
+        ) : hotExpired ? (
+          <div className="text-[10px] italic text-muted-foreground">Compagnia nel documento</div>
+        ) : null}
+        {l.policyMassimale && (
+          <div className="text-[10px] text-muted-foreground">Massimale {l.policyMassimale}</div>
+        )}
+        {l.policyExpiry ? (
+          <div className="text-[10px]">{expiryCell(l)}</div>
+        ) : daysFromEvidence != null ? (
+          <div className="text-[10px] font-semibold text-red-600">Scaduta da {daysFromEvidence} gg</div>
+        ) : null}
+        {docs.map((u) => (
+          <a
+            key={u}
+            href={u}
+            target="_blank"
+            rel="noreferrer"
+            title={u}
+            className="flex items-center gap-1 text-[10px] font-medium text-primary hover:underline"
+          >
+            <FileSearch className="h-3 w-3 shrink-0" />
+            <span className="truncate">{docLabel(u)}</span>
+            <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+          </a>
+        ))}
+        {docs.length === 0 && htmlSrc && (
+          <a
+            href={htmlSrc}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+          >
+            <FileSearch className="h-3 w-3 shrink-0" />
+            <span className="truncate">Fonte polizza (web)</span>
+            <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+          </a>
+        )}
+        {hotExpired && docs.length === 0 && !htmlSrc && (
+          <button
+            type="button"
+            onClick={() => setDetail(l)}
+            className="text-[10px] text-primary hover:underline"
+          >
+            Apri scheda per fonte
+          </button>
+        )}
+      </div>
+    )
   }
 
   const docLabel = (url: string) => {
@@ -598,12 +663,9 @@ export function SanitaLeads() {
     const m = VERDICT_UI[v]
     const Icon = m.icon
     return (
-      <div className="space-y-0.5">
-        <Badge className={cn("flex w-fit items-center gap-1 border", m.cls)}>
-          <Icon className="h-3 w-3" /> {m.label}
-        </Badge>
-        <p className="max-w-[220px] text-[10px] leading-snug text-muted-foreground">{m.subtitle}</p>
-      </div>
+      <Badge className={cn("flex w-fit items-center gap-1 border text-[10px]", m.cls)}>
+        <Icon className="h-3 w-3 shrink-0" /> {m.label}
+      </Badge>
     )
   }
 
@@ -658,12 +720,17 @@ export function SanitaLeads() {
     }
     if (v === "HOT") {
       const d = l.policyExpiry ? daysUntil(l.policyExpiry) : null
-      const isObsolete = d != null && d < -365
-      if (isObsolete) {
+      const daysSince = d != null ? -d : null
+      const isObsolete = daysSince != null && daysSince > 365
+      const publishedButExpired =
+        isObsolete ||
+        /polizza\s+rc\s+pubblicata|polizza\s+pubblicata|pubblicata\s+sul\s+sito/i.test(l.evidence ?? "")
+      const exp = l.policyExpiry ? ` · scadenza ${formatDate(l.policyExpiry)}` : ""
+      if (publishedButExpired) {
         return (
           <div className="space-y-1">
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700"><Zap className="h-3 w-3" />Polizza scaduta sul sito — irregolarità certa</span>
-            <span className="block text-[10px] text-muted-foreground">Art. 10 Legge Gelli violato — lead prioritario assoluto</span>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700"><Zap className="h-3 w-3" />Polizza pubblicata ma scaduta{exp}</span>
+            <span className="block text-[10px] text-muted-foreground">Art. 10 — sito non aggiornato; lead prioritario rinnovo/adeguamento</span>
           </div>
         )
       }
@@ -764,6 +831,39 @@ export function SanitaLeads() {
     return r.ok ? r.reason : `Fuori scope: ${r.reason}`
   }
 
+  /** Una riga per la tabella — dettaglio completo nella scheda lead. */
+  const strategyLine = (l: Lead) => {
+    const v = verdictOf(l)
+    if (!v) return l.website ? "Sito presente — da analizzare" : "Nessun sito — verifica manuale"
+    if (v === "PUBLISHED") {
+      const d = l.policyExpiry ? daysUntil(l.policyExpiry) : null
+      const daysSince = d != null ? -d : null
+      const isObsolete = daysSince != null && daysSince > 365
+      if (d != null && d < 0 && !isObsolete) return "Polizza scaduta — contatto urgente"
+      if (isObsolete) return "Data polizza molto vecchia — verifica aggiornamento"
+      return "Già coperta — opportunità rinnovo"
+    }
+    if (v === "HOT") {
+      const d = l.policyExpiry ? daysUntil(l.policyExpiry) : null
+      const daysSince = d != null ? -d : null
+      const publishedButExpired =
+        isHotPublishedExpired(l) &&
+        ((daysSince != null && daysSince > 365) ||
+          /polizza\s+rc\s+pubblicata|polizza\s+pubblicata\s+sul\s+sito/i.test(l.evidence ?? ""))
+      if (publishedButExpired) return "Pubblicata ma scaduta — lead prioritario"
+      if (/non\s+pubblicat|assenza\s+pubblicazione/i.test(l.evidence ?? ""))
+        return "Polizza RC non trovata in Trasparenza — priorità commerciale"
+      return "Irregolare Art. 10 — priorità commerciale"
+    }
+    if (/manutenzione/i.test(l.evidence ?? "")) return "Sito in manutenzione — verifica manuale"
+    if (l.website && l.websiteReachable === false) return "Sito trovato — bloccato dal server, crawl via browser"
+    if (l.website && l.websiteReachable !== false) return "Analisi non conclusiva — controllo manuale"
+    return "Sito assente — ricerca Maps/Google in corso"
+  }
+
+  const contactExtras = (l: Lead) =>
+    [l.email, l.pec, l.piva].filter(Boolean).length
+
   const KPIS = [
     {
       key: "total",
@@ -782,59 +882,89 @@ export function SanitaLeads() {
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* HEADER — gerarchia: titolo → dati → scansioni per regione */}
+      <div className="space-y-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <span className="brand-gradient grid h-9 w-9 place-items-center rounded-xl text-white">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <span className="brand-gradient grid h-9 w-9 place-items-center rounded-xl text-white shadow-sm">
               <Stethoscope className="h-5 w-5" />
             </span>
             Motore Sanità · Legge Gelli
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Identifica le strutture sanitarie private soggette alla Legge Gelli (art. 10) e verifica
-            la pubblicazione della polizza RC sul sito istituzionale.
-            Usa <strong>Scansiona</strong> per avviare l&apos;analisi regionale o <strong>Carica salvati</strong> per i risultati già presenti.
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Trova strutture private, verifica se la polizza RC è pubblicata online (Art.&nbsp;10) e classifica i lead per priorità commerciale.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={exportCsv} disabled={isScanning} className="h-10">
-            <Download className="h-4 w-4" /> Esporta CSV
-          </Button>
-          <Button variant="outline" onClick={() => void fetchLeads()} disabled={isScanning} className="h-10">
-            <RefreshCw className="h-4 w-4" /> Carica salvati
-          </Button>
-          <Button
-            onClick={() => startRegionScan("Veneto")}
-            disabled={isScanning}
-            className="h-10 bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md"
-          >
-            {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-              <><Search className="h-4 w-4" /> Scansiona <span className="ml-1 font-bold">Veneto</span></>
-            )}
-          </Button>
-          <Button variant="outline" onClick={() => continueRegionScan("Veneto")} disabled={isScanning} className="h-10">
-            Continua Veneto
-          </Button>
-          <Button variant="outline" onClick={() => resetRegionScan("Veneto")} disabled={isScanning} className="h-10">
-            Reset Veneto
-          </Button>
-          <Button
-            onClick={() => startRegionScan("Campania")}
-            disabled={isScanning}
-            className="h-10 bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md"
-          >
-            {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-              <><Search className="h-4 w-4" /> Scansiona <span className="ml-1 font-bold">Campania</span></>
-            )}
-          </Button>
-          <Button variant="outline" onClick={() => continueRegionScan("Campania")} disabled={isScanning} className="h-10">
-            Continua Campania
-          </Button>
-          <Button variant="outline" onClick={() => resetRegionScan("Campania")} disabled={isScanning} className="h-10">
-            Reset Campania
-          </Button>
-        </div>
+
+        <Card className="border-border/60 shadow-sm">
+          <CardContent className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dati</p>
+                <p className="text-[11px] text-muted-foreground">Esporta o ricarica dal database</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={exportCsv} disabled={isScanning}>
+                  <Download className="h-4 w-4" /> Esporta CSV
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => void fetchLeads()} disabled={isScanning}>
+                  <RefreshCw className="h-4 w-4" /> Carica salvati
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Scansione territoriale
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(["Veneto", "Campania"] as const).map((region) => (
+                  <div
+                    key={region}
+                    className="rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/20 p-4"
+                  >
+                    <p className="text-sm font-semibold text-foreground">{region}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {regionStats[region].done}/{regionStats[region].total} strutture analizzate
+                    </p>
+                    <Button
+                      onClick={() => startRegionScan(region)}
+                      disabled={isScanning}
+                      className="mt-3 h-10 w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm hover:from-indigo-700 hover:to-violet-700"
+                    >
+                      {isScanning && activeScan?.region === region ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                      Scansiona {region}
+                    </Button>
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 flex-1 text-xs"
+                        onClick={() => continueRegionScan(region)}
+                        disabled={isScanning}
+                      >
+                        Continua
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 flex-1 text-xs text-muted-foreground"
+                        onClick={() => resetRegionScan(region)}
+                        disabled={isScanning}
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Stato scansione — sempre chiaro quale regione e quanto manca */}
@@ -1053,6 +1183,9 @@ export function SanitaLeads() {
       {/* TOOLBAR FILTRI */}
       <Card className="ring-soft border-border/60">
         <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+          <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground lg:w-24">
+            Filtra
+          </p>
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1174,39 +1307,41 @@ export function SanitaLeads() {
                 : "Nessun risultato per i filtri selezionati."}
             </div>
           ) : (
-            <div className="scrollbar-thin overflow-x-auto">
-              <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Priorità</th>
-                    <th className="px-4 py-3 font-medium">Struttura</th>
-                    <th className="px-4 py-3 font-medium">Motivo in lista</th>
-                    <th className="px-4 py-3 font-medium">Contatti</th>
-                    <th className="px-4 py-3 font-medium">Verdetto Gelli</th>
-                    <th className="px-4 py-3 font-medium">Compagnia / Massimale</th>
-                    <th className="px-4 py-3 font-medium">Scadenza</th>
-                    <th className="px-4 py-3 font-medium">Strategia</th>
-                    <th className="px-4 py-3 font-medium">Stato</th>
+                  <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="px-3 py-2.5 font-medium">Struttura</th>
+                    <th className="px-3 py-2.5 font-medium">Contatti</th>
+                    <th className="px-3 py-2.5 font-medium">Verdetto Gelli</th>
+                    <th className="px-3 py-2.5 font-medium">Polizza RC</th>
+                    <th className="px-3 py-2.5 font-medium">Stato</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isScanning && processingName && (
                     <tr className="border-b border-indigo-200 bg-indigo-50/60">
-                      <td colSpan={9} className="px-4 py-3">
-                        <div className="flex items-center gap-3 text-sm text-indigo-900">
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                          <div>
+                      <td colSpan={5} className="px-3 py-2.5">
+                        <div className="flex items-center gap-2 text-xs text-indigo-900">
+                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                          <span>
                             <span className="font-medium">Analisi in corso — </span>
                             {processingName}
-                            <p className="text-[10px] text-indigo-700/80">
-                              Maps · sito web · sezione Trasparenza · portali ASL/Ministero
-                            </p>
-                          </div>
+                          </span>
                         </div>
                       </td>
                     </tr>
                   )}
-                  {filtered.map((l) => (
+                  {filtered.map((l) => {
+                    const v = verdictOf(l)
+                    const docs = policyDocLinks(l)
+                    return (
                     <tr
                       key={l.id}
                       className={cn(
@@ -1214,134 +1349,102 @@ export function SanitaLeads() {
                         freshLeadIds.has(l.id) && "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200"
                       )}
                     >
-                      <td className="px-4 py-3 align-top">
-                        <div className="flex flex-col items-start gap-1">
-                          <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold tabular-nums", scoreMeta(l.leadScore).cls)}>
-                            <Flame className="h-3 w-3" /> {l.leadScore ?? 0}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">{scoreMeta(l.leadScore).label}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <button onClick={() => setDetail(l)} className="text-left font-medium hover:text-primary hover:underline">{l.companyName}</button>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{l.category || "Struttura"}</span>
-                          {l.city && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{l.city}</span>}
-                          <Badge variant="outline" className="text-[10px]">{l.region}</Badge>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <div className="max-w-[220px] text-xs text-muted-foreground" title={scopeReason(l)}>
-                          {scopeReason(l)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <div className="flex flex-col gap-1 text-xs">
-                          {l.website ? (
-                            <a href={l.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                              <Globe className="h-3 w-3" /> {hostname(l.website)} <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-muted-foreground"><Globe className="h-3 w-3" /> nessun sito</span>
-                          )}
-                          {l.phone && <a href={`tel:${l.phone}`} className="inline-flex w-fit items-center gap-1 text-foreground hover:text-primary"><Phone className="h-3 w-3" /> {l.phone}</a>}
-                          {l.email && <a href={`mailto:${l.email}`} className="inline-flex w-fit items-center gap-1 text-foreground hover:text-primary"><Mail className="h-3 w-3" /> {l.email}</a>}
-                          {l.pec && <a href={`mailto:${l.pec}`} title="PEC - posta certificata" className="inline-flex w-fit items-center gap-1 text-violet-700 hover:underline"><Mail className="h-3 w-3" /> {l.pec}<span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700">PEC</span></a>}
-                          {l.piva && <button onClick={() => copyText(l.piva!, "P.IVA copiata")} className="inline-flex w-fit items-center gap-1 text-muted-foreground hover:text-foreground"><Hash className="h-3 w-3" /> P.IVA {l.piva}<Copy className="h-3 w-3" /></button>}
-                          {!l.website && !l.phone && !l.email && !l.pec && <span className="text-muted-foreground">nessun contatto</span>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                        {verdictBadge(l)}
-                        {verdictOf(l) === "REVIEW" && l.lastScannedAt && (
-                          <div className="mt-1.5">
-                            <button
-                              type="button"
-                              onClick={() => void rescanOneLead(l)}
-                              disabled={isScanning}
-                              title={isScanning ? "Disponibile quando finisce la scansione live" : "Rianalizza questa struttura"}
-                              className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <RotateCcw className="h-3.5 w-3.5" />
-                              Rianalizza
-                            </button>
-                            {isScanning && (
-                              <div className="mt-0.5 text-[10px] text-amber-800">Attendi fine scansione live</div>
+                      <td className="px-3 py-2.5 align-top">
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={cn(
+                              "mt-0.5 inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                              scoreMeta(l.leadScore).cls
                             )}
-                          </div>
-                        )}
-                        {l.lastScannedAt && verdictOf(l) === "PUBLISHED" && (
-                          <div className="mt-1 text-[10px] text-emerald-700">Polizza certificata sul sito</div>
-                        )}
-                        {parseEvidenceSections(l.evidence).body && (
-                          <div className="mt-1 max-w-[260px] truncate text-[10px] text-muted-foreground" title={parseEvidenceSections(l.evidence).body ?? ""}>
-                            {parseEvidenceSections(l.evidence).body}
-                          </div>
-                        )}
-                        {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && (
-                          <div className="mt-1 text-[10px] font-medium text-amber-700">
-                            PDF polizza RC mancante —{" "}
+                            title={scoreMeta(l.leadScore).label}
+                          >
+                            <Flame className="h-2.5 w-2.5" />
+                            {l.leadScore ?? 0}
+                          </span>
+                          <div className="min-w-0">
                             <button
-                              type="button"
-                              onClick={() => void rescanOneLead(l)}
-                              disabled={isScanning}
-                              className="font-semibold text-primary underline hover:no-underline"
+                              onClick={() => setDetail(l)}
+                              className="block w-full truncate text-left text-sm font-medium hover:text-primary hover:underline"
+                              title={l.companyName}
                             >
-                              riscansiona
+                              {l.companyName}
                             </button>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                              {l.city && (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <MapPin className="h-2.5 w-2.5" />
+                                  {l.city}
+                                </span>
+                              )}
+                              <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                                {l.region}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground" title={scopeReason(l)}>
+                              {scopeReason(l)}
+                            </p>
                           </div>
-                        )}
-                        {verdictOf(l) === "PUBLISHED" && policyDocLinks(l).length === 0 && policyHtmlSource(l) && (
-                          <div className="mt-1.5">
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 align-top">
+                        <div className="space-y-0.5 text-[11px]">
+                          {l.website ? (
                             <a
-                              href={policyHtmlSource(l)!}
+                              href={l.website}
                               target="_blank"
                               rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex max-w-[260px] items-center gap-1 text-[10px] text-primary hover:underline"
+                              className="flex items-center gap-1 truncate text-primary hover:underline"
+                              title={l.website}
                             >
-                              <FileSearch className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Fonte polizza (pagina web)</span>
-                              <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+                              <Globe className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{hostname(l.website)}</span>
                             </a>
-                          </div>
-                        )}
-                        {policyDocLinks(l).length > 0 && (
-                          <div className="mt-1.5 space-y-0.5">
-                            <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">
-                              {verdictOf(l) === "PUBLISHED" ? "Fonte polizza" : "Documenti analizzati"}
-                            </div>
-                            {policyDocLinks(l).slice(0, 3).map((u) => (
-                              <a
-                                key={u}
-                                href={u}
-                                target="_blank"
-                                rel="noreferrer"
-                                title={u}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex max-w-[260px] items-center gap-1 text-[10px] text-primary hover:underline"
-                              >
-                                <FileSearch className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{docLabel(u)}</span>
-                                <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                        {parseEvidenceSections(l.evidence).fonti && (
-                          <div className="mt-0.5 max-w-[260px] truncate text-[9px] text-slate-500" title={parseEvidenceSections(l.evidence).fonti ?? ""}>
-                            {parseEvidenceSections(l.evidence).fonti}
-                          </div>
-                        )}
-                          </div>
+                          ) : (
+                            <span className="flex items-center gap-1 text-muted-foreground">
+                              <Globe className="h-3 w-3" /> nessun sito
+                            </span>
+                          )}
+                          {l.phone && (
+                            <a href={`tel:${l.phone}`} className="flex items-center gap-1 truncate hover:text-primary">
+                              <Phone className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{l.phone}</span>
+                            </a>
+                          )}
+                          {contactExtras(l) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setDetail(l)}
+                              className="text-[10px] text-primary hover:underline"
+                            >
+                              +{contactExtras(l)} altri contatti
+                            </button>
+                          )}
+                          {!l.website && !l.phone && contactExtras(l) === 0 && (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 align-top">
+                        <div className="space-y-1">
+                          {verdictBadge(l)}
+                          <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
+                            {strategyLine(l)}
+                          </p>
+                          {(!isHotPublishedExpired(l) && (docs.length > 0 || parseEvidenceSections(l.evidence).body)) && (
+                            <button
+                              type="button"
+                              onClick={() => setDetail(l)}
+                              className="text-[10px] text-primary hover:underline"
+                            >
+                              {docs.length > 0 ? `${docs.length} documento/i` : "Vedi evidenza"}
+                            </button>
+                          )}
                           {l.lastScannedAt && (
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="h-7 shrink-0 gap-1 px-2 text-[10px] font-semibold"
+                              className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground"
                               title={isScanning ? "Disponibile quando finisce la scansione live" : "Riscansiona questa struttura"}
                               disabled={isScanning}
                               onClick={() => void rescanOneLead(l)}
@@ -1352,30 +1455,16 @@ export function SanitaLeads() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-top">
-                        <div>
-                          {verdictOf(l) === "PUBLISHED" && l.policyCompany ? (
-                            l.policyCompany
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </div>
-                        {verdictOf(l) === "PUBLISHED" && l.policyMassimale && (
-                          <div className="text-xs text-muted-foreground">Massimale {l.policyMassimale}</div>
-                        )}
+                      <td className="px-3 py-2.5 align-top text-[11px]">
+                        {policyRcCell(l)}
                       </td>
-                      <td className="px-4 py-3 align-top">{expiryCell(l)}</td>
-                      <td className="px-4 py-3 align-top">
-                        {strategy(l)}
-                      </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-2.5 align-top">
                         <StatusSelect id={l.id} value={l.status} onChanged={(s) => updateStatus(l.id, s)} />
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
-            </div>
           )}
         </CardContent>
       </Card>

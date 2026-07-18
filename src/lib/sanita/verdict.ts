@@ -91,7 +91,8 @@ export function finalizeVerdict(input: FinalizeVerdictInput): {
   evidenceBody: string;
   downgraded: boolean;
 } {
-  let { verdict, evidenceBody } = input;
+  const verdict = input.verdict;
+  const evidenceBody = input.evidenceBody;
   if (verdict !== "HOT") return { verdict, evidenceBody, downgraded: false };
 
   if (!input.website?.trim()) {

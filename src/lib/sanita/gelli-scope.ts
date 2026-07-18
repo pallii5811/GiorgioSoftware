@@ -31,7 +31,7 @@ const HARD_EXCLUDE =
 
 /** Uffici ASL/ULSS pubblici — non case di cura private. */
 const PUBLIC_HEALTH_OFFICE =
-  /\bdistretto\b|\bulss\b.*distretto|distretto\s+sanit|azienda\s+sanitaria\s+locale|presidio\s+ospedaliero\s+pubblic|ospedale\s+pubblico|direzione\s+generale\s+asl|dipartimento\s+di\s+prevenzione/i;
+  /\bdistretto\b|\bulss\b.*distretto|distretto\s+sanit|azienda\s+sanitaria\s+locale|presidio\s+ospedaliero(?!\s+privat)|presidio\s+ospedaliero\s+pubblic|ospedale\s+pubblico|ospedale\s+civile|guardia\s+medica|direzione\s+generale\s+asl|dipartimento\s+di\s+prevenzione|^asl\b|\basl\s+[a-z0-9]{1,4}\b|\basl\s*\(|ex\s+manicomio|aslnapoli|aslcaserta|aslbn\b|presidio\s+ospedaliero\s+san\s+|azienda\s+ospedaliera|\baorn\b|\baou\b|irccs\s+pubblic/i;
 
 /** Terme wellness / consultori pubblici — fuori scope broker RC strutture private. */
 const WELLNESS_NON_GELLI =
@@ -41,6 +41,12 @@ export type GelliScopeResult = {
   ok: boolean;
   reason: string;
 };
+
+const ASSISTENTIAL_ONLY =
+  /casa\s+di\s+riposo|residenza\s+assistenz|residenza\s+per\s+anziani|casa\s+albergo|casa\s+alloggio|casa\s+protetta|\brsa\b|nursing\s+home|alloggio\s+per\s+anziani/i;
+
+const CLINICAL_SIGNAL =
+  /casa\s+di\s+cura|clinica\b|ospedal|policlinic|day\s+hospital|centro\s+medic|laboratorio|diagnostic|accreditat|riabilit|fisioterap|sanitaria\s+assistenziale|presidio\s+ospedalier/i;
 
 export function classifyGelliScope(
   companyName: string,
@@ -60,6 +66,13 @@ export function classifyGelliScope(
   if (WELLNESS_NON_GELLI.test(hay)) return { ok: false, reason: "Terme/consultorio fuori scope" };
   if (SOLO_PROFESSIONISTA_O_FUORI_SCOPE.test(hay)) {
     return { ok: false, reason: "Professionista singolo / farmacia — non struttura Gelli" };
+  }
+  if (
+    !isMinSaluteAccredited(osmId) &&
+    ASSISTENTIAL_ONLY.test(hay) &&
+    !CLINICAL_SIGNAL.test(hay)
+  ) {
+    return { ok: false, reason: "RSA/residenza solo assistenziale — fuori target art. 10" };
   }
 
   const cat = category?.trim() ?? "";
@@ -87,12 +100,6 @@ export function isGelliSubjectStructure(
 ): boolean {
   return classifyGelliScope(companyName, category, osmId).ok;
 }
-
-const ASSISTENTIAL_ONLY =
-  /casa\s+di\s+riposo|residenza\s+assistenz|residenza\s+per\s+anziani|casa\s+albergo|casa\s+alloggio|casa\s+protetta|\brsa\b|nursing\s+home|alloggio\s+per\s+anziani/i;
-
-const CLINICAL_SIGNAL =
-  /casa\s+di\s+cura|clinica\b|ospedal|policlinic|day\s+hospital|centro\s+medic|laboratorio|diagnostic|accreditat|riabilit|fisioterap|sanitaria\s+assistenziale|presidio\s+ospedalier/i;
 
 /**
  * RSA / residenza puramente assistenziale — non certificare HOT automatico:

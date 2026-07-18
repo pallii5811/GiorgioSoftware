@@ -6,7 +6,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { StatusSelect } from "@/components/status-select"
-import { parseEvidenceSections, policyPdfUrlsForLead } from "@/lib/sanita/audit"
+import { parseEvidenceSections, policyPdfUrlsForLead, policyHtmlSourceForLead } from "@/lib/sanita/audit"
 import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
 import { cn } from "@/lib/utils"
 

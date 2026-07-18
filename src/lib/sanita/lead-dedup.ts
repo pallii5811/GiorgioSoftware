@@ -9,11 +9,13 @@ import {
 
 export type LeadIdentityFields = {
   id: string;
-  region: string;
+  region?: string | null;
   companyName: string;
   city?: string | null;
   website?: string | null;
   phone?: string | null;
+  email?: string | null;
+  pec?: string | null;
   piva?: string | null;
   osmId?: string | null;
   lastScannedAt?: Date | null;
@@ -157,22 +159,30 @@ export function findMatchingLead<T extends LeadIdentityFields>(
   for (const key of leadIdentityKeys(candidate)) {
     const hit = index.get(key);
     if (!hit || hit.id === candidate.id) continue;
-    const weakKey =
-      key.startsWith("piva|") || key.startsWith("phone|") || key.startsWith("site|");
-    if (weakKey) {
-      if (candidate.osmId && hit.osmId) {
-        if (candidate.osmId !== hit.osmId) continue;
-      } else if (candidate.osmId || hit.osmId) {
-        continue;
-      }
-      const cHost = websiteHostKey(candidate.website);
-      const hHost = websiteHostKey(hit.website);
-      if (cHost && hHost && cHost !== hHost) continue;
-      if (key.startsWith("site|") && !mapsNamesMatch(candidate.companyName, hit.companyName)) {
-        continue;
-      }
+
+    // Stessa P.IVA o stesso sito+P.IVA → stessa entità legale anche con pin Maps diversi.
+    if (key.startsWith("piva|") || key.startsWith("site-piva|")) {
+      return hit;
     }
-    return hit;
+
+    const cHost = websiteHostKey(candidate.website);
+    const hHost = websiteHostKey(hit.website);
+    const sameHost = Boolean(cHost && hHost && cHost === hHost);
+
+    // Stesso dominio + nome compatibile → un pin Maps, non dieci schede.
+    if (key.startsWith("site|") && sameHost && mapsNamesMatch(candidate.companyName, hit.companyName)) {
+      return hit;
+    }
+
+    // Stesso telefono + stesso sito → merge anche con osmId diverso.
+    if ((key.startsWith("site-phone|") || key.startsWith("phone|")) && sameHost) {
+      return hit;
+    }
+
+    // Stesso osmId (pin Maps identico).
+    if (candidate.osmId && hit.osmId && candidate.osmId === hit.osmId) {
+      return hit;
+    }
   }
   return undefined;
 }
@@ -276,7 +286,10 @@ async function mergeBestScanOntoKeeper(
 
   await prisma.lead.update({
     where: { id: keepId },
-    data: buildScanMergePayload(keeper, full),
+    data: buildScanMergePayload(keeper, {
+      ...full,
+      lastScannedAt: full.lastScannedAt,
+    }),
   });
 }
 
