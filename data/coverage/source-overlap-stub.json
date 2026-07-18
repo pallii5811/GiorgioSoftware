@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-07-18T17:12:58.405Z",
+  "status": "STRUCTURAL_ONLY",
+  "note": "Populated after real multi-source ingest. No silent drops permitted.",
+  "multiSource": 0,
+  "singleSource": 0,
+  "newFromSource": {},
+  "provincesUnderrepresented": [],
+  "categoriesUnderrepresented": [],
+  "failedSources": [],
+  "possibleGaps": [
+    "ASL/ULSS non ancora ledger individuali",
+    "Allegati decreti regionali non ingestiti",
+    "Portali regionali gare oltre ANAC non riconciliati"
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "region": "campania",
+  "engine": "gare",
+  "generatedAt": "2026-07-18T17:12:58.403Z",
+  "status": "INCOMPLETE",
+  "completed": false,
+  "disclaimer": "Non è dichiarata copertura completa. Sono contabilizzati solo i record delle fonti/versioni processate.",
+  "sources": [
+    {
+      "id": "anac-bdncp-ocds",
+      "name": "ANAC BDNCP / OCDS (data.open-contracting.org)",
+      "versionOrDate": null,
+      "pagesExpected": null,
+      "pagesProcessed": 0,
+      "attachmentsExpected": null,
+      "attachmentsProcessed": 0,
+      "rawRecords": 0,
+      "parsedRecords": 0,
+      "uniqueRecords": 0,
+      "duplicates": 0,
+      "exclusions": 0,
+      "unresolved": 0,
+      "failures": 0,
+      "checkpoint": null,
+      "finalStatus": "NOT_RUN"
+    },
+    {
+      "id": "soresa-campania",
+      "name": "SORESA / e-procurement Campania",
+      "versionOrDate": null,
+      "pagesExpected": null,
+      "pagesProcessed": 0,
+      "attachmentsExpected": null,
+      "attachmentsProcessed": 0,
+      "rawRecords": 0,
+      "parsedRecords": 0,
+      "uniqueRecords": 0,
+      "duplicates": 0,
+      "exclusions": 0,
+      "unresolved": 0,
+      "failures": 0,
+      "checkpoint": null,
+      "finalStatus": "NOT_RUN"
+    }
+  ],
+  "totals": {
+    "rawRecords": 0,
+    "parsedRecords": 0,
+    "uniqueRecords": 0,
+    "duplicates": 0,
+    "exclusions": 0,
+    "unresolved": 0,
+    "failures": 0
+  },
+  "categories": {
+    "included": [],
+    "duplicateReconciled": [],
+    "excludedWithReason": [],
+    "unresolved": [],
+    "technicalError": []
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "generatedAt": "2026-07-18T19:10:42.111Z",
+  "dryRun": true,
+  "currentEvidenceVersion": 2,
+  "currentVerdictVersion": 2,
+  "byRegion": {
+    "Campania": {
+      "total": 124,
+      "HOT": 1,
+      "PUBLISHED": 0,
+      "REVIEW": 0,
+      "unscanned": 123,
+      "legacy": 124,
+      "legacyHot": 1,
+      "legacyPublished": 0,
+      "missingIdentityMarker": 124,
+      "missingCompletenessHint": 124,
+      "missingEvidenceVersion": 124,
+      "rescanRequiredCount": 1,
+      "rescanRequiredSample": [
+        {
+          "id": "cmqe0c93p002t42xru4jnmgmd",
+          "companyName": "Villa Dei Pini Casa di Cura Privata S.p.a.",
+          "verdict": "HOT"
+        }
+      ]
+    },
+    "Veneto": {
+      "total": 295,
+      "HOT": 41,
+      "PUBLISHED": 26,
+      "REVIEW": 5,
+      "unscanned": 223,
+      "legacy": 295,
+      "legacyHot": 41,
+      "legacyPublished": 26,
+      "missingIdentityMarker": 295,
+      "missingCompletenessHint": 294,
+      "missingEvidenceVersion": 295,
+      "rescanRequiredCount": 67,
+      "rescanRequiredSample": [
+        {
+          "id": "cmq7yi2s800isvjo6oap9mdrq",
+          "companyName": "Centro Servizi Residenziali per Anziani",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2mt00c3vjo6t4y31lnh",
+          "companyName": "Villa Serena",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2o600ehvjo6luvbfun1",
+          "companyName": "Centro Medico Veneto",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2mx00chvjo6mrbrm2pz",
+          "companyName": "Ceis Treviso",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2q700gkvjo6985ltltd",
+          "companyName": "Albergo Parco Fortuna",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2mx00cgvjo6zi2slzag",
+          "companyName": "Basilica dei Santi Giovanni e Paolo",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2rk00ipvjo6flj61fk1",
+          "companyName": "CASA STUDENTESCA SAN FRANCESCO - CENTRO DON VECCHI 9",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2rc00hxvjo63w9casr1",
+          "companyName": "CEMS srl",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2rg00ibvjo6dtfh62lj",
+          "companyName": "Casa Madre Teresa",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2rg00idvjo69mm3919t",
+          "companyName": "Casa Mia Casier",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi4en00juvjo64m3mflhq",
+          "companyName": "Casa di Cura Eretenia",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi4en00jtvjo6o9cwvisx",
+          "companyName": "Casa di Cura Privata Parco dei Tigli",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2p800fovjo611ncjogp",
+          "companyName": "Casa di Riposo Anni Sereni",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2ny00dhvjo6c95llvzb",
+          "companyName": "Casa di Riposo Domenico Cardo",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2ri00ijvjo6luur6ywv",
+          "companyName": "Casa di Riposo Dr. Umberto ed Alice Tassoni",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2ra00hrvjo6bzhwnex5",
+          "companyName": "Casa di Riposo I.P.A.B. La Pieve - Servizi Assistenziali",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi2rb00hsvjo6h414zgtl",
+          "companyName": "Casa di Riposo di Trissino",
+          "verdict": "HOT"
+        },
+        {
+          "id": "cmq7yi4em00jovjo6pnaoszlt",
+          "companyName": "Casa di cura Sileno e Anna Rizzola S.p.A.",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2r600hevjo6mfx3nwqc",
+          "companyName": "Casa di riposo e soggiorno Don Vittorio Allegri",
+          "verdict": "PUBLISHED"
+        },
+        {
+          "id": "cmq7yi2my00clvjo6smxohve7",
+          "companyName": "Centro Atlante Verona - Medicina e Fisioterapia",
+          "verdict": "HOT"
+        }
+      ]
+    }
+  }
+}
