@@ -6,6 +6,8 @@ import {
   isVercelUiHost,
 } from "@/lib/sanita/scan-engine-url";
 import { isFreshTenderLead, parseTenderAwardDateObj } from "@/lib/gare/display";
+import { isInActionableSalesQueue } from "@/lib/sanita/actionable-queue";
+import { isLegacyLead } from "@/lib/sanita/evidence-version";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -89,7 +91,29 @@ export async function GET(req: Request) {
       if (db !== da) return db - da;
       return (b.leadScore ?? 0) - (a.leadScore ?? 0);
     });
-    return NextResponse.json({ success: true, data: fresh, hiddenStale: leads.length - fresh.length });
+    const includeAll =
+      url.searchParams.get("includeAll") === "1" ||
+      url.searchParams.get("actionable") === "0";
+    const requireActionable =
+      process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0" &&
+      url.searchParams.get("actionable") !== "0";
+    const actionableOnly =
+      url.searchParams.get("actionable") === "1" || (requireActionable && !includeAll);
+    const data = actionableOnly
+      ? fresh.filter((l) => isInActionableSalesQueue(l) && !isLegacyLead(l.evidence))
+      : fresh.map((l) => ({
+          ...l,
+          _actionable: isInActionableSalesQueue(l),
+          _legacy: isLegacyLead(l.evidence),
+          _queueStatus: isInActionableSalesQueue(l) ? "CURRENT" : "RESCAN_REQUIRED",
+        }));
+    return NextResponse.json({
+      success: true,
+      data,
+      hiddenStale: leads.length - fresh.length,
+      actionableCount: fresh.filter((l) => isInActionableSalesQueue(l)).length,
+      filteredDefault: actionableOnly,
+    });
   } catch {
     return NextResponse.json({ success: false, error: "Errore durante il recupero delle gare" }, { status: 500 });
   }

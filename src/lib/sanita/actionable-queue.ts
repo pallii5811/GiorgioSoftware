@@ -1,0 +1,74 @@
+/**
+ * Filtro coda commerciale — backend gate.
+ * Default sicuro: ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE=true
+ */
+import { isActionableEvidence, isLegacyLead } from "@/lib/sanita/evidence-version";
+import { readVerdictToken } from "@/lib/sanita/verdict";
+import { parseEvidenceJson } from "@/lib/evidence/contract";
+
+export function requireCurrentEvidence(): boolean {
+  const raw = process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE;
+  if (raw === "0" || raw === "false") return false;
+  return true; // default sicuro
+}
+
+export type ActionableLeadLike = {
+  type?: string | null;
+  evidence?: string | null;
+  category?: string | null;
+  leadScore?: number | null;
+  lastScannedAt?: Date | string | null;
+};
+
+/**
+ * Coda commerciale certificata: solo evidence corrente, no REVIEW, no legacy.
+ */
+export function isInActionableSalesQueue(lead: ActionableLeadLike): boolean {
+  if (!requireCurrentEvidence()) {
+    const v = readVerdictToken(lead.evidence);
+    if (v === "REVIEW") return false;
+    return true;
+  }
+
+  if (isLegacyLead(lead.evidence)) return false;
+  if (!isActionableEvidence(lead.evidence)) return false;
+
+  const v = readVerdictToken(lead.evidence);
+  if (v === "REVIEW") return false;
+  if (v !== "HOT" && v !== "PUBLISHED" && lead.type !== "TENDER") return false;
+
+  const payload = parseEvidenceJson<{ commercialTier?: string }>(lead.evidence);
+  if (payload?.commercialTier === "NOT_ACTIONABLE" || payload?.commercialTier === "LOW") {
+    return false;
+  }
+
+  if (lead.type === "TENDER") {
+    const cat = (lead.category || "").toUpperCase();
+    if (cat && cat !== "GARE_HIGH" && cat !== "GARE_MEDIUM") return false;
+  }
+
+  return true;
+}
+
+/**
+ * Vista cliente default: nasconde HOT/PUB legacy e REVIEW;
+ * lascia i pending (non scansionati) per la pipeline operativa.
+ */
+export function passesDefaultClientQueueGate(lead: ActionableLeadLike): boolean {
+  if (!requireCurrentEvidence()) return true;
+  const v = readVerdictToken(lead.evidence);
+  if (!v) return true; // unscanned / no verdict token
+  if (v === "REVIEW") return false;
+  if (v === "HOT" || v === "PUBLISHED") {
+    return isInActionableSalesQueue(lead);
+  }
+  if (lead.type === "TENDER") return isInActionableSalesQueue(lead);
+  return false;
+}
+
+/** Alias testabile: legacy HOT non entra in coda. */
+export function legacyHotExcludedFromQueue(evidence: string | null): boolean {
+  const v = readVerdictToken(evidence);
+  if (v !== "HOT") return false;
+  return isLegacyLead(evidence) || !isActionableEvidence(evidence);
+}

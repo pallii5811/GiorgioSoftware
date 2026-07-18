@@ -19,6 +19,7 @@ import {
   isVercelUiHost,
 } from "@/lib/sanita/scan-engine-url";
 import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
+import { isInActionableSalesQueue, passesDefaultClientQueueGate } from "@/lib/sanita/actionable-queue";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -142,12 +143,39 @@ export async function GET(req: Request) {
       },
       orderBy: [{ leadScore: "desc" }, { lastScannedAt: "desc" }, { createdAt: "desc" }],
     });
+    // Default sicuro: coda commerciale = solo evidence corrente.
+    // Ops/audit: ?includeAll=1 (o actionable=0 / flag env false).
+    const includeAll =
+      url.searchParams.get("includeAll") === "1" ||
+      url.searchParams.get("actionable") === "0";
+    const requireActionable =
+      process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0" &&
+      url.searchParams.get("actionable") !== "0";
+    const actionableOnly =
+      url.searchParams.get("actionable") === "1" || (requireActionable && !includeAll);
+    const data = actionableOnly
+      ? leads.filter((l) =>
+          url.searchParams.get("actionable") === "1"
+            ? isInActionableSalesQueue(l)
+            : passesDefaultClientQueueGate(l)
+        )
+      : leads.map((l) => ({
+          ...l,
+          _actionable: isInActionableSalesQueue(l),
+          _legacy: !isInActionableSalesQueue(l) && !!l.evidence,
+          _queueStatus: isInActionableSalesQueue(l) ? "CURRENT" : "RESCAN_REQUIRED",
+        }));
     return NextResponse.json({
       success: true,
-      data: leads,
+      data,
       meta: {
         tavilyAvailable: isRegionalCheckAvailable(),
         regions: await regionScanMeta(),
+        actionableQueueRequireCurrentEvidence:
+          process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0",
+        actionableCount: leads.filter((l) => isInActionableSalesQueue(l)).length,
+        totalReturned: data.length,
+        filteredDefault: actionableOnly,
       },
     });
   } catch {
