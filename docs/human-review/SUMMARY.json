@@ -1,0 +1,80 @@
+{
+  "generatedAt": "2026-07-18T17:12:56.566Z",
+  "humanReviewed": 0,
+  "packs": [
+    {
+      "file": "docs/human-review/sanita-campania-review",
+      "rows": 100,
+      "distribution": {
+        "HOT": 20,
+        "PUBLISHED": 15,
+        "REVIEW": 15,
+        "GROUP": 8,
+        "SINGLE_SITE": 8,
+        "PDF": 8,
+        "HTML": 6,
+        "AUTOASSICURAZIONE": 5,
+        "EXPIRED_POLICY": 5,
+        "NO_SITE": 5,
+        "CRAWL_INCOMPLETE": 5
+      },
+      "humanReviewed": 0
+    },
+    {
+      "file": "docs/human-review/sanita-veneto-review",
+      "rows": 100,
+      "distribution": {
+        "HOT": 20,
+        "PUBLISHED": 15,
+        "REVIEW": 15,
+        "GROUP": 8,
+        "SINGLE_SITE": 8,
+        "PDF": 8,
+        "HTML": 6,
+        "AUTOASSICURAZIONE": 5,
+        "EXPIRED_POLICY": 5,
+        "NO_SITE": 5,
+        "CRAWL_INCOMPLETE": 5
+      },
+      "humanReviewed": 0
+    },
+    {
+      "file": "docs/human-review/gare-campania-review",
+      "rows": 100,
+      "distribution": {
+        "VERY_HIGH": 15,
+        "HIGH": 15,
+        "MEDIUM": 15,
+        "EXCLUSION": 8,
+        "MULTILOTTO": 8,
+        "ATI": 7,
+        "CONSORZIO": 7,
+        "AFFIDAMENTO_DIRETTO": 5,
+        "LAVORI": 5,
+        "SERVIZI": 5,
+        "FORNITURE": 5,
+        "MULTI_PROVINCE": 5
+      },
+      "humanReviewed": 0
+    },
+    {
+      "file": "docs/human-review/gare-veneto-review",
+      "rows": 100,
+      "distribution": {
+        "VERY_HIGH": 15,
+        "HIGH": 15,
+        "MEDIUM": 15,
+        "EXCLUSION": 8,
+        "MULTILOTTO": 8,
+        "ATI": 7,
+        "CONSORZIO": 7,
+        "AFFIDAMENTO_DIRETTO": 5,
+        "LAVORI": 5,
+        "SERVIZI": 5,
+        "FORNITURE": 5,
+        "MULTI_PROVINCE": 5
+      },
+      "humanReviewed": 0
+    }
+  ]
+}
