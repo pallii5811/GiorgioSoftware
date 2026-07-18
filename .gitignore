@@ -125,3 +125,11 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# agent temporary dumps / deploy blobs (local only)
+tmp-*.json
+*.tgz
+leadsniper-deploy.tgz
+next-build.tgz
+prisma/prisma/
+docs/shadow/*.log
