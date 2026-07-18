@@ -160,8 +160,11 @@ export function SanitaLeads() {
 
   /** All'avvio carica i lead già salvati nel database condiviso. */
   useEffect(() => {
-    void fetchLeads({ silent: true })
-  }, [])
+    const t = setTimeout(() => {
+      void fetchLeads({ silent: true });
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const upsertLiveLead = (lead: Lead) => {
     const host = (() => {

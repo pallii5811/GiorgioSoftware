@@ -64,7 +64,11 @@ export function CrmLeads() {
   };
 
   useEffect(() => {
-    void fetchAll({ silent: true });
+    // Defer so setState from fetch is not synchronous inside the effect body.
+    const t = setTimeout(() => {
+      void fetchAll({ silent: true });
+    }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

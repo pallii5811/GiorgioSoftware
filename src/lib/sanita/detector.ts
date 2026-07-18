@@ -216,7 +216,7 @@ function findMassimale(text: string): string | null {
 
   // RC strutture sanitarie: "Limite dell'Indennizzo ... EUR 5.000.000,00"
   const rcLimit =
-    /limite\s+(?:dell['’]?)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
+    /limite\s+(?:dell['’]?\s*)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
   const rc = text.match(rcLimit);
   if (rc?.[1]) {
     const ctx = text.slice(Math.max(0, (rc.index ?? 0) - 80), (rc.index ?? 0) + 200);
@@ -616,7 +616,7 @@ export function analyzePolicy(text: string, url?: string): PolicyAnalysis {
       clean
     );
 
-  let policyFound =
+  const policyFound =
     concreteData ||
     selfInsured ||
     rcDeclaredOnPage ||

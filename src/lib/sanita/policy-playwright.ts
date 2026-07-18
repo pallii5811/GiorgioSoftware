@@ -310,7 +310,7 @@ async function enrichCrawlWithPlaywrightInner(
   const { deriveCrawlComplete } = await import("@/lib/evidence/contract");
   const MAX_PLAYWRIGHT_PDFS = Number.MAX_SAFE_INTEGER;
   let policyPdfsRead = crawl.policyPdfsRead;
-  let policyPdfsQueued = crawl.policyPdfsQueued + pdfUrls.size;
+  const policyPdfsQueued = crawl.policyPdfsQueued + pdfUrls.size;
   let needsOcrReview = crawl.needsOcrReview;
   let policyPdfAnalysis = crawl.policyPdfAnalysis;
   let policyPdfUrl = crawl.policyPdfUrl;

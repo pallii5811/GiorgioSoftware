@@ -785,9 +785,9 @@ export async function crawlSite(baseUrl: string): Promise<CrawlResult> {
   if (POLICY_EXHAUSTIVE) process.env.OCR_ENABLED = "1";
 
   const pagesVisited: string[] = [];
-  let combined = "";
-  let policyText = "";
-  let foundRelevantPage = false;
+  const combined = "";
+  const policyText = "";
+  const foundRelevantPage = false;
 
   try {
     const inner = await crawlSiteInner(baseUrl, pagesVisited, combined, policyText, foundRelevantPage);
