@@ -61,6 +61,12 @@ CLAUDE.md
 data/shadow/db/
 data/shadow/before/
 data/shadow/after/
+data/shadow/drift/*-full.json
+data/shadow/drift/*-pii*
+data/shadow/drift/raw/
+data/shadow/batch1/*-full.json
+data/shadow/batch1/results.jsonl
+data/shadow/batch1/*.jsonl
 *.db-shm
 *.db-wal
 
