@@ -47,10 +47,21 @@ export interface FieldClaim<T = string | number | boolean | null> {
   needsHumanReview?: boolean;
 }
 
+export type SitemapStatus =
+  | "NOT_DISCOVERED"
+  | "NOT_PRESENT"
+  | "DISCOVERED_COMPLETE"
+  | "DISCOVERED_PARTIAL"
+  | "DISCOVERED_FAILED"
+  | "ROBOTS_REFERENCED_COMPLETE"
+  | "ROBOTS_REFERENCED_FAILED";
+
 /** Completezza crawl — `complete` è SEMPRE derivato, mai impostato a mano. */
 export interface CrawlCompleteness {
   identityVerified: boolean;
+  /** @deprecated usare sitemapStatus — true solo se DISCOVERED_COMPLETE | NOT_PRESENT | ROBOTS_REFERENCED_COMPLETE */
   sitemapExhausted: boolean;
+  sitemapStatus: SitemapStatus;
   htmlQueueExhausted: boolean;
   relevantLinksProcessed: boolean;
   relevantDocumentsProcessed: boolean;
@@ -66,12 +77,30 @@ export interface CrawlCompleteness {
   complete: boolean;
 }
 
+export function sitemapStatusAllowsHot(status: SitemapStatus): boolean {
+  // NOT_DISCOVERED / PARTIAL / FAILED / ROBOTS_*_FAILED → bloccano HOT.
+  // NOT_PRESENT (404 senza altri riferimenti) e COMPLETE → ok.
+  return (
+    status === "NOT_PRESENT" ||
+    status === "DISCOVERED_COMPLETE" ||
+    status === "ROBOTS_REFERENCED_COMPLETE"
+  );
+}
+
 export function deriveCrawlComplete(
-  c: Omit<CrawlCompleteness, "complete">
+  c: Omit<CrawlCompleteness, "complete" | "sitemapExhausted"> & {
+    sitemapExhausted?: boolean;
+    sitemapStatus: SitemapStatus;
+  }
 ): CrawlCompleteness {
+  const sitemapOk = sitemapStatusAllowsHot(c.sitemapStatus);
+  const sitemapExhausted =
+    c.sitemapStatus === "DISCOVERED_COMPLETE" ||
+    c.sitemapStatus === "NOT_PRESENT" ||
+    c.sitemapStatus === "ROBOTS_REFERENCED_COMPLETE";
   const complete =
     c.identityVerified &&
-    c.sitemapExhausted &&
+    sitemapOk &&
     c.htmlQueueExhausted &&
     c.relevantLinksProcessed &&
     c.relevantDocumentsProcessed &&
@@ -83,7 +112,7 @@ export function deriveCrawlComplete(
     c.criticalOcrDoubts === 0 &&
     !c.urlCapReached &&
     !c.timeCapReached;
-  return { ...c, complete };
+  return { ...c, sitemapExhausted, complete };
 }
 
 /** Incompletezza strutturale → mai HOT/PUBLISHED terminali. */
@@ -93,6 +122,9 @@ export function crawlBlocksTerminalVerdict(c: CrawlCompleteness | null | undefin
   const reasons: string[] = [];
   if (!c.identityVerified) reasons.push("identità sito non verificata");
   if (!c.htmlQueueExhausted) reasons.push("coda HTML non esaurita");
+  if (!sitemapStatusAllowsHot(c.sitemapStatus)) {
+    reasons.push(`sitemap ${c.sitemapStatus}`);
+  }
   if (!c.relevantDocumentsProcessed) reasons.push("documenti rilevanti non tutti processati");
   if (c.unresolvedRelevantUrls > 0) reasons.push(`${c.unresolvedRelevantUrls} URL rilevanti irrisolti`);
   if (c.failedRelevantUrls > 0) reasons.push(`${c.failedRelevantUrls} URL rilevanti falliti`);
@@ -100,7 +132,6 @@ export function crawlBlocksTerminalVerdict(c: CrawlCompleteness | null | undefin
   if (c.criticalOcrDoubts > 0) reasons.push("OCR critico incerto");
   if (c.urlCapReached) reasons.push("cap URL raggiunto (≠ crawl completo)");
   if (c.timeCapReached) reasons.push("cap tempo raggiunto");
-  if (!c.sitemapExhausted) reasons.push("sitemap non esausta");
   if (!c.jsonEndpointsProcessed) reasons.push("JSON non tutti processati");
   if (!c.sameHostScriptsProcessed) reasons.push("script same-host non tutti processati");
   if (!c.relevantLinksProcessed) reasons.push("link rilevanti non tutti processati");

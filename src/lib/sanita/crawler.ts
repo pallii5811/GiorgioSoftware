@@ -16,6 +16,7 @@ import {
 import {
   deriveCrawlComplete,
   type CrawlCompleteness,
+  type SitemapStatus,
 } from "@/lib/evidence/contract";
 // NB: pdf-parse (e la dipendenza nativa @napi-rs/canvas) viene importato in modo
 // LAZY dentro fetchPdfText: l'import statico farebbe crashare `next build` durante
@@ -327,7 +328,7 @@ const PDF_READ_RETRIES = POLICY_EXHAUSTIVE ? 3 : 1;
 function incompleteCrawlMeta(extra: Partial<CrawlCompleteness> = {}): CrawlCompleteness {
   return deriveCrawlComplete({
     identityVerified: false,
-    sitemapExhausted: false,
+    sitemapStatus: "NOT_DISCOVERED",
     htmlQueueExhausted: false,
     relevantLinksProcessed: false,
     relevantDocumentsProcessed: false,
@@ -507,34 +508,49 @@ async function fetchHtml(url: string): Promise<string | null> {
 }
 
 /** Sitemap XML same-host — enqueue URL; nested sitemap index support (1 livello). */
-async function discoverSitemapUrls(base: URL): Promise<{ urls: string[]; exhausted: boolean }> {
+async function discoverSitemapUrls(
+  base: URL
+): Promise<{ urls: string[]; status: SitemapStatus }> {
   const candidates = [
     new URL("/sitemap.xml", base).toString(),
     new URL("/sitemap_index.xml", base).toString(),
     new URL("/wp-sitemap.xml", base).toString(),
   ];
   const out = new Set<string>();
-  let anyOk = false;
+  let saw404Only = true;
+  let sawFailure = false;
+  let sawOk = false;
   for (const smUrl of candidates) {
     try {
       const res = await externalFetch(smUrl, { timeoutMs: 12_000, redirect: "follow" });
-      if (!res.ok) continue;
+      if (res.status === 404) continue;
+      saw404Only = false;
+      if (!res.ok) {
+        sawFailure = true;
+        continue;
+      }
       const xml = await res.text();
-      if (!xml || xml.length < 20) continue;
-      anyOk = true;
+      if (!xml || xml.length < 20) {
+        sawFailure = true;
+        continue;
+      }
+      sawOk = true;
       const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1].trim());
       for (const loc of locs) {
         if (/\.xml(?:$|\?)/i.test(loc) && out.size < 5) {
           try {
             const nested = await externalFetch(loc, { timeoutMs: 12_000, redirect: "follow" });
-            if (!nested.ok) continue;
+            if (!nested.ok) {
+              sawFailure = true;
+              continue;
+            }
             const nxml = await nested.text();
             for (const m of nxml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
               const u = sameHostScoped(base, m[1].trim(), null);
               if (u && !isSkippableAssetUrl(u)) out.add(u);
             }
           } catch {
-            /* nested skip */
+            sawFailure = true;
           }
         } else {
           const u = sameHostScoped(base, loc, null);
@@ -542,11 +558,17 @@ async function discoverSitemapUrls(base: URL): Promise<{ urls: string[]; exhaust
         }
       }
     } catch {
-      /* next candidate */
+      saw404Only = false;
+      sawFailure = true;
     }
   }
-  // Nessuna sitemap = esaurita (non applicabile); sitemap letta = esausta se parse ok.
-  return { urls: [...out].slice(0, POLICY_EXHAUSTIVE ? 2000 : 80), exhausted: true };
+  let status: SitemapStatus;
+  if (sawOk && !sawFailure) status = "DISCOVERED_COMPLETE";
+  else if (sawOk && sawFailure) status = "DISCOVERED_PARTIAL";
+  else if (sawFailure) status = "DISCOVERED_FAILED";
+  else if (saw404Only) status = "NOT_PRESENT";
+  else status = "NOT_DISCOVERED";
+  return { urls: [...out].slice(0, POLICY_EXHAUSTIVE ? 2000 : 80), status };
 }
 
 async function fetchJsAssetText(url: string): Promise<string | null> {
@@ -1036,7 +1058,7 @@ async function crawlSiteInner(
   // identityVerified=false qui: lo conferma site-identity / scan-engine.
   const completeness = deriveCrawlComplete({
     identityVerified: false,
-    sitemapExhausted: sitemap.exhausted,
+    sitemapStatus: sitemap.status,
     htmlQueueExhausted: bfsComplete && !urlCapReached,
     relevantLinksProcessed: bfsComplete && !urlCapReached,
     relevantDocumentsProcessed: allPdfsRead && !needsOcrReview,

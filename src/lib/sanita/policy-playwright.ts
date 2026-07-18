@@ -307,6 +307,7 @@ async function enrichCrawlWithPlaywrightInner(
 
   // Leggi PDF trovati via browser (import lazy dal crawler)
   const { fetchPdfTextWithRetry, sortPdfQueue } = await import("@/lib/sanita/crawler");
+  const { deriveCrawlComplete } = await import("@/lib/evidence/contract");
   const MAX_PLAYWRIGHT_PDFS = Number.MAX_SAFE_INTEGER;
   let policyPdfsRead = crawl.policyPdfsRead;
   let policyPdfsQueued = crawl.policyPdfsQueued + pdfUrls.size;
@@ -369,19 +370,13 @@ async function enrichCrawlWithPlaywrightInner(
     policyPdfAnalysis,
     policyPdfUrl,
     completeness: crawl.completeness
-      ? {
+      ? deriveCrawlComplete({
           ...crawl.completeness,
+          sitemapStatus: crawl.completeness.sitemapStatus ?? "NOT_DISCOVERED",
           relevantDocumentsProcessed: allPdfsRead && !needsOcrReview,
           unreadableRelevantDocuments: needsOcrReview ? 1 : 0,
           criticalOcrDoubts: needsOcrReview ? 1 : 0,
-          complete:
-            crawl.completeness.identityVerified &&
-            crawl.completeness.htmlQueueExhausted &&
-            allPdfsRead &&
-            !needsOcrReview &&
-            !crawl.completeness.urlCapReached &&
-            crawl.completeness.failedRelevantUrls === 0,
-        }
+        })
       : crawl.completeness,
   };
 }
