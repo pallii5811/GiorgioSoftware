@@ -71,11 +71,10 @@ for (const l of hotUncertified) {
   const motivo = crawlInsufficient
     ? `Crawl insufficiente (${l.pagesVisited ?? 0} pagine) — assenza polizza non certificabile.`
     : "Sezione Trasparenza non raggiunta — assenza polizza non certificabile.";
-  const body = (l.evidence || "").replace(/^\[V:HOT\]\s*/i, "");
   await prisma.lead.update({
     where: { id: l.id },
     data: {
-      evidence: encodeEvidence("REVIEW", `${motivo} ${body}`),
+      evidence: encodeEvidence("REVIEW", motivo),
       policyCompany: null,
       policyMassimale: null,
       policyNumber: null,

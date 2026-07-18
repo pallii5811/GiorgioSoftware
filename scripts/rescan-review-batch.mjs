@@ -6,6 +6,9 @@
 process.env.OCR_ENABLED = "1";
 process.env.POLICY_EXHAUSTIVE = "1";
 
+/** Max per lead — evita batch bloccato ore su un singolo sito. */
+const LEAD_TIMEOUT_MS = Number(process.env.RESCAN_LEAD_TIMEOUT_MS || 12 * 60_000);
+
 import { prisma } from "../src/lib/sanita/db-ready.ts";
 import { completeLeadAnalysis, runBatch } from "../src/lib/sanita/scan-engine.ts";
 import { dedupeRegionByWebsite } from "../src/lib/sanita/lead-dedup.ts";
@@ -40,19 +43,37 @@ for (const region of targetRegions) {
 
   console.log(`\n${region}: rianalisi ${leads.length} REVIEW con sito…`);
 
-  await prisma.lead.updateMany({
-    where: { id: { in: leads.map((l) => l.id) } },
-    data: { lastScannedAt: null },
-  });
-
   let pub = 0;
   let hot = 0;
   let rev = 0;
   let done = 0;
+  let skipped = 0;
 
   await runBatch(leads, 1, async (lead) => {
+    await prisma.lead.update({ where: { id: lead.id }, data: { lastScannedAt: null } });
     const c = { analyzed: 0, withPolicy: 0, hot: 0, review: 0, regionalChecked: 0, regionalWithPolicy: 0 };
-    await completeLeadAnalysis(lead, region, c);
+    try {
+      await Promise.race([
+        completeLeadAnalysis(lead, region, c),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`timeout ${LEAD_TIMEOUT_MS}ms`)), LEAD_TIMEOUT_MS)
+        ),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          lastScannedAt: new Date(),
+          evidence: `[V:REV] Analisi interrotta (${msg.slice(0, 80)}) — rianalisi singola consigliata.`,
+        },
+      });
+      rev++;
+      done++;
+      skipped++;
+      console.log(`  [${done}/${leads.length}] ${lead.companyName?.slice(0, 42)} → REVIEW (timeout)`);
+      return;
+    }
     const fresh = await prisma.lead.findUnique({ where: { id: lead.id }, select: { evidence: true } });
     const v = readVerdictToken(fresh?.evidence);
     if (v === "PUBLISHED") pub++;
@@ -62,7 +83,7 @@ for (const region of targetRegions) {
     console.log(`  [${done}/${leads.length}] ${lead.companyName?.slice(0, 42)} → ${v}`);
   });
 
-  console.log(`✓ ${region}: PUB=${pub} HOT=${hot} REVIEW=${rev}`);
+  console.log(`✓ ${region}: PUB=${pub} HOT=${hot} REVIEW=${rev}${skipped ? ` timeout=${skipped}` : ""}`);
 }
 
 await terminateOcrWorker().catch(() => {});

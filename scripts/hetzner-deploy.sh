@@ -13,6 +13,7 @@ node scripts/prisma-smart.mjs
 npm run build
 export DATABASE_URL='file:/opt/leadsniper/prisma/dev.db'
 export SCAN_ENGINE_LOCAL=1
+export SCAN_FAST=0
 export OCR_ENABLED=1
 export POLICY_EXHAUSTIVE=1
 export NODE_ENV=production

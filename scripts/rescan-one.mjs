@@ -35,5 +35,12 @@ console.log(
 );
 console.log("EVIDENCE_HEAD", (after.evidence || "").slice(0, 280));
 
-await terminateOcrWorker().catch(() => {});
-await closeMapsBrowserPool().catch(() => {});
+await Promise.race([
+  Promise.all([
+    terminateOcrWorker().catch(() => {}),
+    closeMapsBrowserPool().catch(() => {}),
+    prisma.$disconnect(),
+  ]),
+  new Promise((r) => setTimeout(r, 15_000)),
+]);
+process.exit(0);

@@ -75,9 +75,11 @@ function crawlIsolated(website) {
 
 await ensureSqliteWal();
 
+const region = process.argv[2] || null;
 const hot = await prisma.lead.findMany({
   where: {
     type: "HEALTHCARE",
+    ...(region ? { region } : {}),
     evidence: { startsWith: "[V:HOT]" },
     website: { not: null },
     lastScannedAt: { not: null },
@@ -85,45 +87,93 @@ const hot = await prisma.lead.findMany({
   orderBy: { companyName: "asc" },
 });
 
-console.log(`\n🔒 RE-AUDIT RIGOROSO — ${hot.length} HOT con sito (subprocess isolato)\n`);
+function policyDbFields(verdict, a) {
+  const hasMeta = Boolean(a.company || a.expiry || a.policyNumber || a.massimale);
+  const keepPublished = verdict === "PUBLISHED" && Boolean(a.policyFound) && !a.policyObsolete;
+  const keepObsoleteHot = verdict === "HOT" && Boolean(a.policyObsolete) && hasMeta;
+  const keep = keepPublished || keepObsoleteHot;
+  return {
+    policyFound: keepPublished,
+    policyCompany: keep ? a.company : null,
+    policyMassimale: keep ? a.massimale : null,
+    policyNumber: keep ? a.policyNumber : null,
+    policyExpiry: keep ? a.expiry : null,
+    confidence: keep ? (a.confidence ?? 1) : null,
+  };
+}
+
+console.log(`\n🔒 RE-AUDIT RIGOROSO — ${hot.length} HOT con sito${region ? ` (${region})` : ""} (subprocess isolato)\n`);
 
 let confirmed = 0;
 let downgraded = 0;
 let upgraded = 0;
+let obsoleteHot = 0;
 let errors = 0;
 
 for (let i = 0; i < hot.length; i++) {
   const lead = hot[i];
   const oldV = readVerdictToken(lead.evidence);
 
+  console.log(`  → (${i + 1}/${hot.length}) ${lead.companyName} | ${lead.website}`);
   const crawl = await crawlIsolated(lead.website);
 
   if (crawl.crash) {
     errors++;
-    console.warn(`  ⚠ ${lead.companyName?.slice(0, 40)}: worker crash — ${crawl.error?.slice(0, 60)}`);
+    const err = (crawl.error || "worker crash").toString().slice(0, 160);
+    console.warn(`  ⚠ ${lead.companyName?.slice(0, 40)}: worker crash → REVIEW (${err})`);
+    // Mai lasciare HOT non verificabile: se il worker crasha, degrado a REVIEW con errore esplicito.
     await prisma.lead.update({
       where: { id: lead.id },
       data: {
-        evidence: packEvidence("REVIEW", `Re-audit: crash OCR/crawl — ${crawl.error}`, { osm: true }),
-        leadScore: scoreLead({ verdict: "REVIEW", phone: lead.phone, email: lead.email, pec: lead.pec }),
+        websiteReachable: null,
+        pagesVisited: null,
+        leadScore: scoreLead({
+          verdict: "REVIEW",
+          phone: lead.phone,
+          email: lead.email,
+          pec: lead.pec,
+        }),
+        evidence: packEvidence(
+          "REVIEW",
+          `Re-audit: crash crawler (OCR/PDF). Impossibile verificare online: ${err}. Riprova in ambiente stabile o verifica manuale.`,
+          {
+            osm: true,
+            sitePages: [],
+            siteRelevant: false,
+          }
+        ),
         lastScannedAt: new Date(),
       },
     });
-    downgraded++;
     continue;
   }
 
   if (!crawl.ok) {
+    const err = (crawl.error || "crawl fail").toString().slice(0, 160);
+    console.warn(`  ⚠ ${lead.companyName?.slice(0, 40)}: crawl fail → REVIEW (${err})`);
     await prisma.lead.update({
       where: { id: lead.id },
       data: {
         websiteReachable: false,
-        evidence: packEvidence("REVIEW", `Re-audit: sito irraggiungibile — ${crawl.error}`, { osm: true }),
-        leadScore: scoreLead({ verdict: "REVIEW", phone: lead.phone, email: lead.email, pec: lead.pec }),
+        pagesVisited: crawl.pagesVisited?.length ?? null,
+        leadScore: scoreLead({
+          verdict: "REVIEW",
+          phone: lead.phone,
+          email: lead.email,
+          pec: lead.pec,
+        }),
+        evidence: packEvidence(
+          "REVIEW",
+          `Re-audit: crawl fallito — impossibile verificare pubblicazione polizza. Motivo: ${err}.`,
+          {
+            osm: true,
+            sitePages: crawl.pagesVisited ?? [],
+            siteRelevant: Boolean(crawl.foundRelevantPage),
+          }
+        ),
         lastScannedAt: new Date(),
       },
     });
-    downgraded++;
     continue;
   }
 
@@ -137,17 +187,22 @@ for (let i = 0; i < hot.length; i++) {
     companyName: lead.companyName,
     website: lead.website,
     city: lead.city,
+    category: lead.category,
+    osmId: lead.osmId,
+    mapsVerified: Boolean(lead.osmId?.startsWith("gmaps/")),
   });
   verdict = rec.verdict;
+  const analysisOut = rec.analysis;
 
-  if (verdict === "HOT") confirmed++;
+  if (verdict === "HOT" && analysisOut.policyObsolete) obsoleteHot++;
+  else if (verdict === "HOT") confirmed++;
   else if (verdict === "PUBLISHED") upgraded++;
   else downgraded++;
 
   if (verdict !== oldV || rec.note) {
     const body =
       (rec.note ? `${rec.note} ` : "") +
-      (analysis.evidence ||
+      (analysisOut.evidence ||
         (verdict === "HOT"
           ? "Polizza non pubblicata — sito e Trasparenza verificati (re-audit rigoroso)."
           : verdict === "PUBLISHED"
@@ -157,24 +212,22 @@ for (let i = 0; i < hot.length; i++) {
       where: { id: lead.id },
       data: {
         websiteReachable: true,
-        policyFound: analysis.policyFound,
-        policyCompany: analysis.company,
-        policyMassimale: analysis.massimale,
-        policyNumber: analysis.policyNumber,
-        policyExpiry: analysis.expiry,
-        confidence: analysis.confidence,
+        ...policyDbFields(verdict, analysisOut),
         pagesVisited: crawl.pagesVisited.length,
         leadScore: scoreLead({
           verdict,
           phone: lead.phone,
           email: lead.email,
           pec: lead.pec,
-          expiry: analysis.expiry,
+          expiry: analysisOut.expiry,
+          obsoletePolicy: analysisOut.policyObsolete,
         }),
         evidence: packEvidence(verdict, body, {
           osm: true,
           sitePages: crawl.pagesVisited,
           siteRelevant: crawl.foundRelevantPage,
+          policyPdfsQueued: crawl.policyPdfsQueued,
+          policyPdfsRead: crawl.policyPdfsRead,
         }),
         lastScannedAt: new Date(),
       },
@@ -188,6 +241,6 @@ for (let i = 0; i < hot.length; i++) {
 }
 
 console.log(
-  `\n✅ HOT confermati: ${confirmed} | declassati: ${downgraded} | PUBLISHED: ${upgraded} | errori crawl: ${errors}\n`
+  `\n✅ HOT assenza certa: ${confirmed} | HOT pubblicata scaduta: ${obsoleteHot} | PUBLISHED: ${upgraded} | REVIEW: ${downgraded} | errori crawl: ${errors}\n`
 );
 await prisma.$disconnect();
