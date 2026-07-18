@@ -1,0 +1,35 @@
+{
+  "snapshotId": "giorgio-shadow-20260718",
+  "backupSha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+  "backupSizeBytes": 2007040,
+  "backupCreatedAt": "2026-07-18T20:41:06.753902+00:00",
+  "logicalMaxTimestamp": {
+    "createdAt": 1782735195618,
+    "updatedAt": 1782911944594,
+    "lastScannedAt": 1782911944592
+  },
+  "sourceDatabase": "production-read-only-snapshot",
+  "applicationCommit": "ad38748ea59edd936b9c7def3a62fdd5ae9b4e2f",
+  "phase2EvidenceCommit": "a7d9ee12d832ab6a6b719ffa7e63367f11e87162",
+  "schema": {
+    "engine": "sqlite",
+    "tables": ["Lead"],
+    "tableCount": 1
+  },
+  "totalLeads": 1237,
+  "hotLeads": 515,
+  "publishedLeads": 120,
+  "reviewLeads": 242,
+  "byType": {
+    "HEALTHCARE": 877,
+    "TENDER": 360
+  },
+  "byRegionHealthcare": {
+    "Campania": 511,
+    "Veneto": 366
+  },
+  "quarantineMarkersOnLive": 0,
+  "immutable": true,
+  "temporalRule": "All shadow results refer to this snapshot SHA and exclude subsequent production writes. Future realignment requires a new snapshot, SHA, manifest, and reports.",
+  "notes": "Backup created via sqlite3.Connection.backup() read-side. Do not replace with a newer live copy for this run."
+}

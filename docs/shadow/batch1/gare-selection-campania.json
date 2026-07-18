@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "seed": 20260718,
+    "region": "Campania",
+    "n": 25,
+    "categoryDist": {
+      "GARE_undefined": 23,
+      "GARE_MEDIUM": 1,
+      "GARE_HIGH": 1
+    },
+    "amountMin": 19061.6,
+    "amountMax": 20559027.59,
+    "withContact": 5,
+    "regionBasisNote": "Lead.region derives from stazione appaltante (buyer CAP); winner seat / execution recorded when present in evidence",
+    "query": "SELECT * FROM Lead WHERE type='TENDER' AND region=? ORDER BY stable_hash(seed,id)"
+  },
+  "ids": [
+    "cmqi64p6u000w2qzyuhd1qufs",
+    "cmqi64phy005z2qzyzjua6ccr",
+    "cmqi64p8b001g2qzyr6zfew5r",
+    "cmqi64pbf00302qzy58egmrl1",
+    "cmqi64pgy005i2qzyfmcvaj3r",
+    "cmqi64pik00692qzy0nwafju2",
+    "cmqi64pg100542qzy4mqf91sa",
+    "cmqi64ph0005j2qzygr3dez8g",
+    "cmqi64po6008v2qzyfsa5z1eb",
+    "cmqi64pp500992qzyy7dqs6xr",
+    "cmqi64p9r00252qzypi7bma21",
+    "cmqi64po4008u2qzy8l2mow9h",
+    "cmqi64pjd006l2qzyf6sjpx03",
+    "cmqi64pdb003x2qzy4x0cko3b",
+    "cmqi64pie00672qzy6eido8zl",
+    "cmqi64phm005t2qzy6lklh1rb",
+    "cmqi64pg900572qzyizxbgafn",
+    "cmqi64ph7005m2qzyidnq8ift",
+    "cmqi64p63000k2qzy0wuvkedh",
+    "cmqi64p65000l2qzyvu2qg0jr",
+    "cmqtf1vio002ykpvxekskfm9a",
+    "cmqi64p8m001m2qzyk2v53xl3",
+    "cmqi64p5m000c2qzy1bohvsfr",
+    "cmqi64pjm006n2qzy4puo5549",
+    "cmqi64pgu005g2qzy50sx84j8"
+  ]
+}

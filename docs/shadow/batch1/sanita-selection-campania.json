@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "seed": 20260718,
+    "region": "Campania",
+    "n": 25,
+    "verdictDist": {
+      "HOT": 13,
+      "PUBLISHED": 4,
+      "REVIEW": 8
+    },
+    "cityDist": {
+      "Baronissi": 1,
+      "San Cipriano d'Aversa": 1,
+      "Tufino": 1,
+      "Grottaminarda": 1,
+      "Recale": 1,
+      "Villa Literno": 1,
+      "Massa di Somma": 1,
+      "Frattaminore": 1,
+      "Scala": 1,
+      "Riardo": 1,
+      "Villanova del Battista": 1,
+      "Pagliarone": 1,
+      "Acerno": 1,
+      "Forio": 1,
+      "Zingonia": 1,
+      "Montesarchio": 1,
+      "Bellizzi": 1,
+      "Brusciano": 1,
+      "Villaricca": 1,
+      "Santa Maria Capua Vetere": 1
+    },
+    "flagDist": {
+      "pdf": 17,
+      "complex": 17,
+      "group": 15,
+      "auto": 1,
+      "nosite": 6
+    },
+    "query": "SELECT * FROM Lead WHERE type='HEALTHCARE' AND region=? ORDER BY stable_hash(seed,id)"
+  },
+  "ids": [
+    "cmqn0oc2s0007zfo7tgb8ifga",
+    "cmql4d392000pc9w7usrn62m5",
+    "cmqpb2tgb000682aabzqgrr6p",
+    "cmqobbuxl003eaa3vum7v9l8v",
+    "cmqp6x5he0005qaqsr0d278sm",
+    "cmqmano01002n9g5c9h0qjxhl",
+    "cmqp623lx0001129ik68clq1n",
+    "cmqo8aope002qaa3vugvq0qy3",
+    "cmql4d399000uc9w7yzw2dgac",
+    "cmqm88tu5000ejc3mmdves99n",
+    "cmqktyimz000i111hygme29nh",
+    "cmqogn8pf004xaa3v5fdfl0sz",
+    "cmql46eh10001c9w71kvkqhu9",
+    "cmqo74rz8002laa3veviduo8k",
+    "cmqp4jq7r0007w0r0mnymzj78",
+    "cmqmc3zd900689g5chgvzf53q",
+    "cmqmaf02a001k9g5crmkdun0w",
+    "cmqmd91ay008v9g5ce94y0cro",
+    "cmqpc51r40007d5jk81x3l73e",
+    "cmqn2xibr000mmhc2lnqo0a18",
+    "cmqmd91b1008x9g5c65uk9quh",
+    "cmqohi45s005haa3vwwhe6e8v",
+    "cmqobynqm003taa3v0mx062fg",
+    "cmqp623mi0005129i3kgrkidz",
+    "cmqp9r0lc0006xk289s9h9hql"
+  ]
+}
