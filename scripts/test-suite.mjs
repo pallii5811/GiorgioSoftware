@@ -58,11 +58,11 @@ function testDetector() {
     Massimale: € 2.000.000
   `;
   const r2 = analyzePolicy(text2);
-  assert(r2.policyFound === false, "Caso 2: policyFound deve essere false (scaduta >365gg)");
+  assert(r2.policyFound === true, "Caso 2: polizza pubblicata resta trovata anche se scaduta >365gg");
   assert(r2.policyObsolete === true, "Caso 2: policyObsolete deve essere true");
   assert(r2.company === "Generali", `Caso 2: company=${r2.company}`);
   assert(r2.evidence?.includes("scaduta"), "Caso 2: evidence deve menzionare 'scaduta'");
-  console.log("  ✓ Caso 2: polizza scaduta 2016 → obsolete, policyFound=false");
+  console.log("  ✓ Caso 2: polizza scaduta 2016 → policyFound=true + obsolete (non assenza)");
 
   // Caso 3: autoassicurazione
   const text3 = `
@@ -428,7 +428,15 @@ function testFalsePositiveGates() {
 
 async function testSiteIdentity() {
   console.log("\n=== TEST 1d: SITE IDENTITY ===");
-  const { companyNameOnSite, crawlHostMatchesWebsite } = await import("../src/lib/sanita/site-identity.ts");
+  const { companyNameOnSite, crawlHostMatchesWebsite, validateSiteIdentity } = await import(
+    "../src/lib/sanita/site-identity.ts"
+  );
+  const {
+    buildIdentityEvidence,
+    identityBlocksTerminalVerdict,
+    deriveIdentityVerified,
+  } = await import("../src/lib/sanita/identity-evidence.ts");
+
   const okPini = companyNameOnSite(
     "Casa Di Cura Privata Villa Dei Pini S.p.A.",
     "Benvenuti alla Villa Dei Pini casa di cura ad Avellino"
@@ -457,6 +465,160 @@ async function testSiteIdentity() {
   assert(crawlHostMatchesWebsite("https://www.nepheocare.it/", twinCrawl).ok, "TLD gemello .it/.com ok");
   console.log("  ✓ Gate host: stesso brand .it/.com → permesso");
 
+  // --- Contratto IdentityEvidence: verified mai da verdetto precedente ---
+  const legacyHotIdentity = buildIdentityEvidence({
+    status: "NOT_CHECKED",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Vecchio HOT senza prove identità"],
+    conflicts: [],
+  });
+  assert(legacyHotIdentity.verified === false, "vecchio HOT senza prove → verified=false");
+  assert(!!identityBlocksTerminalVerdict(legacyHotIdentity), "blocca HOT terminal");
+
+  const legacyPub = buildIdentityEvidence({
+    status: "INSUFFICIENT",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Vecchio PUBLISHED senza IdentityEvidence"],
+    conflicts: [],
+  });
+  assert(legacyPub.verified === false, "vecchio PUB senza prove → verified=false");
+  assert(!!identityBlocksTerminalVerdict(legacyPub), "blocca PUB terminal");
+
+  const groupOk = buildIdentityEvidence({
+    status: "GROUP_OFFICIAL_CONFIRMED",
+    matchedLegalName: true,
+    matchedFacilityName: true,
+    matchedAddress: true,
+    matchedMunicipality: true,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: true,
+    sourceUrls: ["https://gruppo.example.it/sedi/napoli"],
+    reasons: ["Dominio gruppo + relazione sede verificata"],
+    conflicts: [],
+  });
+  assert(groupOk.verified === true, "GROUP con relazione sede → verified");
+  assert(identityBlocksTerminalVerdict(groupOk) === null, "GROUP ok non blocca");
+
+  const groupNoSeat = buildIdentityEvidence({
+    status: "PROBABLE",
+    matchedLegalName: true,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: ["https://gruppo.example.it/"],
+    reasons: ["Dominio gruppo senza prova della sede"],
+    conflicts: [],
+  });
+  assert(groupNoSeat.verified === false, "gruppo senza sede → non verified");
+  assert(!!identityBlocksTerminalVerdict(groupNoSeat), "gruppo senza sede blocca");
+
+  const omonima = validateSiteIdentity(
+    "Casa di Cura Sant'Anna",
+    "https://santanna-altro.it",
+    {
+      ok: true,
+      text: "Benvenuti alla clinica omonima di Milano. Nessun riferimento Campania.",
+      policyText: "",
+      pagesVisited: ["https://santanna-altro.it/"],
+      foundRelevantPage: false,
+      policyExhaustive: false,
+      policyPdfsQueued: 0,
+      policyPdfsRead: 0,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: null,
+    },
+    "Napoli"
+  );
+  assert(!omonima.ok, "omonimia / comune diverso → identity fail");
+  console.log("  ✓ omonimia / comune differente bloccata");
+
+  const stalePanel = buildIdentityEvidence({
+    status: "STALE_PANEL",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Pannello Google Maps obsoleto"],
+    conflicts: ["Maps URL non corrisponde al sito istituzionale"],
+  });
+  assert(!deriveIdentityVerified(stalePanel.status), "STALE_PANEL non verified");
+  assert(!!identityBlocksTerminalVerdict(stalePanel), "STALE_PANEL blocca");
+
+  const inherited = buildIdentityEvidence({
+    status: "MISMATCH",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: ["https://villadeipini.com"],
+    reasons: ["Dati ereditati da struttura precedente nello stesso batch"],
+    conflicts: ["host crawl ≠ website lead"],
+  });
+  assert(/Contaminazione critica/i.test(identityBlocksTerminalVerdict(inherited) || ""), "MISMATCH = contaminazione");
+
+  const similarNameWrongAddr = validateSiteIdentity(
+    "Poliambulatorio Salus Napoli",
+    "https://salus-milano.example.it",
+    {
+      ok: true,
+      text: "Poliambulatorio Salus — Via Roma 1, Milano. Orari e prenotazioni.",
+      policyText: "",
+      pagesVisited: ["https://salus-milano.example.it/", "https://salus-milano.example.it/contatti"],
+      foundRelevantPage: true,
+      policyExhaustive: true,
+      policyPdfsQueued: 0,
+      policyPdfsRead: 0,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: null,
+    },
+    "Napoli"
+  );
+  assert(!similarNameWrongAddr.ok, "nome simile indirizzo/città diversa → fail");
+  console.log("  ✓ sito nome simile + indirizzo differente bloccato");
+
   console.log("  SITE IDENTITY: TUTTI I TEST PASSATI ✓");
 }
 
@@ -464,7 +626,10 @@ async function testGuessWebsite() {
   console.log("\n=== TEST 1c: GUESS WEBSITE ===");
   const { probeGuessedOfficialWebsite } = await import("../src/lib/sanita/guess-website.ts");
   const villaMaria = await probeGuessedOfficialWebsite("Casa Di Cura Villa Maria BAIANO");
-  assert(villaMaria && /clinicavillamaria\.it/i.test(villaMaria), `Villa Maria → clinicavillamaria.it (era ${villaMaria})`);
+  assert(
+    villaMaria && /villamaria/i.test(villaMaria),
+    `Villa Maria → dominio *villamaria* (era ${villaMaria})`
+  );
   console.log(`  ✓ Villa Maria Baiano → ${villaMaria}`);
 
   const montevergine = await probeGuessedOfficialWebsite("Casa Di Cura Montevergine", {
@@ -695,12 +860,12 @@ function testEmbeddedJson() {
   console.log("  EMBEDDED JSON: TUTTI I TEST PASSATI ✓");
 }
 
-function testCtoEvidenceGates() {
+async function testCtoEvidenceGates() {
   console.log("\n=== TEST CTO: evidence + crawl completeness + cauzione stima ===");
 
   const incomplete = deriveCrawlComplete({
     identityVerified: true,
-    sitemapExhausted: true,
+    sitemapStatus: "DISCOVERED_COMPLETE",
     htmlQueueExhausted: false,
     relevantLinksProcessed: false,
     relevantDocumentsProcessed: true,
@@ -718,7 +883,7 @@ function testCtoEvidenceGates() {
 
   const complete = deriveCrawlComplete({
     identityVerified: true,
-    sitemapExhausted: true,
+    sitemapStatus: "NOT_PRESENT",
     htmlQueueExhausted: true,
     relevantLinksProcessed: true,
     relevantDocumentsProcessed: true,
@@ -733,6 +898,67 @@ function testCtoEvidenceGates() {
   });
   assert(complete.complete === true, "tutti i gate → complete=true");
   assert(crawlBlocksTerminalVerdict(complete) === null, "complete non blocca");
+
+  const smFail = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapStatus: "DISCOVERED_FAILED",
+    htmlQueueExhausted: true,
+    relevantLinksProcessed: true,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 0,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: false,
+    timeCapReached: false,
+  });
+  assert(smFail.complete === false, "sitemap FAILED → complete=false");
+  assert(!!crawlBlocksTerminalVerdict(smFail), "sitemap FAILED blocca HOT");
+
+  for (const status of [
+    "DISCOVERED_PARTIAL",
+    "ROBOTS_REFERENCED_FAILED",
+    "NOT_DISCOVERED",
+  ]) {
+    const c = deriveCrawlComplete({
+      identityVerified: true,
+      sitemapStatus: status,
+      htmlQueueExhausted: true,
+      relevantLinksProcessed: true,
+      relevantDocumentsProcessed: true,
+      jsonEndpointsProcessed: true,
+      sameHostScriptsProcessed: true,
+      unresolvedRelevantUrls: 0,
+      failedRelevantUrls: 0,
+      unreadableRelevantDocuments: 0,
+      criticalOcrDoubts: 0,
+      urlCapReached: false,
+      timeCapReached: false,
+    });
+    assert(c.complete === false, `sitemap ${status} → complete=false`);
+    assert(!!crawlBlocksTerminalVerdict(c), `sitemap ${status} blocca HOT`);
+  }
+
+  const { legacyHotExcludedFromQueue, passesDefaultClientQueueGate } = await import(
+    "../src/lib/sanita/actionable-queue.ts"
+  );
+  const { isLegacyLead } = await import("../src/lib/sanita/evidence-version.ts");
+  assert(isLegacyLead("[V:HOT] old without version") === true, "HOT senza versione = legacy");
+  assert(
+    legacyHotExcludedFromQueue("[V:HOT] old without version") === true,
+    "legacy HOT escluso dalla coda commerciale"
+  );
+  assert(
+    passesDefaultClientQueueGate({ evidence: "[V:HOT] old without version", type: "HEALTHCARE" }) ===
+      false,
+    "legacy HOT escluso dalla vista cliente default"
+  );
+  assert(
+    passesDefaultClientQueueGate({ evidence: null, type: "HEALTHCARE" }) === true,
+    "pending senza verdetto resta visibile in pipeline"
+  );
 
   const finCap = finalizeVerdict({
     verdict: "HOT",
