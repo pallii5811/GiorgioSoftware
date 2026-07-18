@@ -31,10 +31,23 @@ function hostsSameBrandTld(hostA: string, hostB: string): boolean {
   );
 }
 
+function baseDomain(host: string): string {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  const parts = h.split(".");
+  if (parts.length >= 3 && parts[parts.length - 1] === "it" && parts[parts.length - 2].length <= 3) {
+    return parts.slice(-3).join(".");
+  }
+  if (parts.length >= 2) return parts.slice(-2).join(".");
+  return h;
+}
+
 function hostCompatibleWithWebsite(website: string, actualHost: string | null): boolean {
   const expected = hostKey(website);
   if (!expected || !actualHost) return false;
-  return expected === actualHost || hostsSameBrandTld(expected, actualHost);
+  if (expected === actualHost || hostsSameBrandTld(expected, actualHost)) return true;
+  // Sottodomini stesso brand (es. src.cerbahealthcare.it ↔ cerbahealthcare.it)
+  if (actualHost.endsWith(`.${expected}`) || expected.endsWith(`.${actualHost}`)) return true;
+  return baseDomain(expected) === baseDomain(actualHost);
 }
 
 /** Il crawl (e il PDF polizza) devono essere sul dominio del sito Maps (o TLD gemello stesso brand). */
@@ -214,10 +227,28 @@ export function validateSiteIdentity(
   }
 
   if (!cityOnSite(city, corpus)) {
+    // Se il sito cita chiaramente un altro comune italiano ≠ atteso → omonimia/URL errato.
+    const otherCity =
+      /\b(milano|roma|torino|bologna|firenze|genova|palermo|bari|catania|verona|padova|venezia|brescia|bergamo|monza)\b/i.exec(
+        corpus
+      );
+    if (otherCity && city?.trim()) {
+      const expected = norm(city);
+      const found = norm(otherCity[1]);
+      if (found && !expected.includes(found) && !found.includes(expected.split(" ")[0] || "")) {
+        return {
+          ok: false,
+          reason: `Città sul sito (${otherCity[1]}) diversa da ${city} — omonimia o URL errato`,
+        };
+      }
+    }
     // Sede legale spesso ≠ comune su Maps (es. Pineta Castel Volturno, sito dice solo "Napoli").
     // Se nome struttura + Trasparenza ok, non bloccare HOT/REVIEW solo per comune assente.
-    if (crawl.foundRelevantPage && companyNameOnSite(companyName, corpus)) {
-      return { ok: true, reason: "Identità sito confermata (nome + Trasparenza; comune non in homepage)" };
+    if (
+      (crawl.foundRelevantPage || crawl.pagesVisited.length >= 20) &&
+      companyNameOnSite(companyName, corpus)
+    ) {
+      return { ok: true, reason: "Identità sito confermata (nome + crawl; comune non in homepage)" };
     }
     return {
       ok: false,
@@ -230,6 +261,18 @@ export function validateSiteIdentity(
 
 /** Crawl sufficiente per affermare assenza polizza (Trasparenza + PDF policy). */
 export function crawlDepthSufficient(crawl: CrawlResult): { ok: boolean; reason: string } {
+  const htmlPages = crawl.pagesVisited.filter((u) => !/\.pdf(?:$|\?|#)/i.test(u)).length;
+  const allPdfsRead =
+    crawl.policyPdfsQueued === 0 || crawl.policyPdfsRead >= crawl.policyPdfsQueued;
+  const policyOcrBlock =
+    crawl.needsOcrReview &&
+    crawl.pagesVisited.some((u) =>
+      /\.pdf(?:$|\?|#)/i.test(u) && /polizz|assicuraz|rc|rct|parm|pars/i.test(u.toLowerCase())
+    );
+
+  if (htmlPages >= 12 && allPdfsRead && !policyOcrBlock) {
+    return { ok: true, reason: "Sito analizzato per intero (BFS + PDF)" };
+  }
   if (!crawl.foundRelevantPage) {
     return { ok: false, reason: "Sezione Trasparenza/polizza non trovata sul sito" };
   }
@@ -239,8 +282,8 @@ export function crawlDepthSufficient(crawl: CrawlResult): { ok: boolean; reason:
       reason: `Crawl non esaustivo (${crawl.policyPdfsRead}/${crawl.policyPdfsQueued} PDF)`,
     };
   }
-  if (crawl.needsOcrReview) {
-    return { ok: false, reason: "PDF policy scannerizzato — OCR richiesto" };
+  if (policyOcrBlock) {
+    return { ok: false, reason: "PDF polizza RC scannerizzato — OCR insufficiente" };
   }
   return { ok: true, reason: "Trasparenza e tutti i PDF policy analizzati" };
 }

@@ -18,6 +18,14 @@ import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, isHotPublishedExpi
 import { isSiteUnderMaintenance } from "@/lib/sanita/website";
 import { verdictFromSite, verdictFromRegional, finalizeVerdict, readVerdictToken } from "@/lib/sanita/verdict";
 import { deriveCrawlComplete } from "@/lib/evidence/contract";
+import {
+  NOT_CHECKED_IDENTITY,
+  identityBlocksTerminalVerdict,
+  buildIdentityEvidence,
+  type IdentityEvidence,
+} from "@/lib/sanita/identity-evidence";
+import { appendVersionMarker, currentMarkers } from "@/lib/sanita/evidence-version";
+import { validateSiteIdentity } from "@/lib/sanita/site-identity";
 import type { Verdict } from "@/lib/sanita/verdict";
 import { scoreLead } from "@/lib/sanita/score";
 import type { Lead } from "@prisma/client";
@@ -279,13 +287,12 @@ export async function analyzeLead(
   audit.siteUnderMaintenance = isSiteUnderMaintenance([crawl.policyText, crawl.text].filter(Boolean).join("\n"));
   audit.policyPdfUrl = pickPolicyPdfUrl(crawl);
   audit.policySourceUrl = pickPolicySourceUrl(crawl);
-      audit.policyPdfsQueued = crawl.policyPdfsQueued;
-      audit.policyPdfsRead = crawl.policyPdfsRead;
-      audit.needsOcrReview = crawl.needsOcrReview;
-      crawlPolicyExhaustive = crawl.policyExhaustive;
-      crawlNeedsOcrReview = crawl.needsOcrReview;
+  audit.policyPdfsQueued = crawl.policyPdfsQueued;
+  audit.policyPdfsRead = crawl.policyPdfsRead;
+  audit.needsOcrReview = crawl.needsOcrReview;
 
   let analysis = analyzeCrawlPolicy(crawl);
+  let confidence: number | null = analysis.confidence ?? null;
   let verdict: Verdict = verdictFromSite({
     reachable: true,
     policyFound: analysis.policyFound,
@@ -301,9 +308,9 @@ export async function analyzeLead(
   });
   analysis = reconciled.analysis;
   verdict = reconciled.verdict;
-  let evidenceBody = analysis.evidence;
+  let evidenceBody = analysis.evidence ?? "";
   if (reconciled.note) {
-    evidenceBody = `${reconciled.note} ${evidenceBody ?? ""}`.trim();
+    evidenceBody = `${reconciled.note} ${evidenceBody}`.trim();
   }
 
   if (verdict === "HOT" && isRegionalCheckAvailable()) {
@@ -386,6 +393,73 @@ export async function analyzeLead(
     }
   }
 
+  // Identità da prove (validateSiteIdentity), MAI da verdetto precedente.
+  let identityEv: IdentityEvidence = NOT_CHECKED_IDENTITY;
+  try {
+    const idRes = validateSiteIdentity(
+      lead.companyName,
+      website,
+      crawl,
+      lead.city
+    );
+    if (idRes.ok) {
+      identityEv = buildIdentityEvidence({
+        status: "OFFICIAL_CONFIRMED",
+        matchedLegalName: true,
+        matchedFacilityName: true,
+        matchedAddress: false,
+        matchedMunicipality: Boolean(lead.city),
+        matchedPhone: false,
+        matchedTaxIdentifier: false,
+        matchedOfficialRegistry: false,
+        matchedGroupRelationship: false,
+        sourceUrls: crawl.pagesVisited.slice(0, 5),
+        reasons: [idRes.reason],
+        conflicts: [],
+      });
+    } else if (/omonimia|errato|diverso|hotel|monastero|parcheggiato|ASL/i.test(idRes.reason)) {
+      identityEv = buildIdentityEvidence({
+        status: /omonimia|errato|diverso|hotel|monastero|ASL/i.test(idRes.reason)
+          ? "MISMATCH"
+          : "INSUFFICIENT",
+        matchedLegalName: false,
+        matchedFacilityName: false,
+        matchedAddress: false,
+        matchedMunicipality: false,
+        matchedPhone: false,
+        matchedTaxIdentifier: false,
+        matchedOfficialRegistry: false,
+        matchedGroupRelationship: false,
+        sourceUrls: crawl.pagesVisited.slice(0, 3),
+        reasons: [idRes.reason],
+        conflicts: [idRes.reason],
+      });
+    } else {
+      identityEv = buildIdentityEvidence({
+        status: "INSUFFICIENT",
+        matchedLegalName: false,
+        matchedFacilityName: false,
+        matchedAddress: false,
+        matchedMunicipality: false,
+        matchedPhone: false,
+        matchedTaxIdentifier: false,
+        matchedOfficialRegistry: false,
+        matchedGroupRelationship: false,
+        sourceUrls: [],
+        reasons: [idRes.reason],
+        conflicts: [],
+      });
+    }
+  } catch {
+    identityEv = NOT_CHECKED_IDENTITY;
+  }
+
+  const idBlock = identityBlocksTerminalVerdict(identityEv);
+  if (idBlock && (verdict === "HOT" || verdict === "PUBLISHED")) {
+    verdict = "REVIEW";
+    evidenceBody = `${idBlock} ${evidenceBody}`.trim();
+  }
+
   const fin = finalizeVerdict({
     verdict,
     evidenceBody,
@@ -400,7 +474,7 @@ export async function analyzeLead(
     crawlCompleteness: deriveCrawlComplete({
       ...(crawl.completeness ?? {
         identityVerified: false,
-        sitemapExhausted: false,
+        sitemapStatus: "NOT_DISCOVERED" as const,
         htmlQueueExhausted: false,
         relevantLinksProcessed: false,
         relevantDocumentsProcessed: false,
@@ -413,18 +487,20 @@ export async function analyzeLead(
         urlCapReached: false,
         timeCapReached: false,
       }),
-      // reconcilePolicyVerdict ha già gated l'identità per emettere HOT
-      identityVerified: verdict === "HOT" || verdict === "PUBLISHED" || Boolean(crawl.completeness?.identityVerified),
+      identityVerified: identityEv.verified,
+      sitemapStatus: crawl.completeness?.sitemapStatus ?? "NOT_DISCOVERED",
     }),
   });
   verdict = fin.verdict;
-  evidenceBody = fin.evidenceBody;
+  evidenceBody = appendVersionMarker(fin.evidenceBody, currentMarkers("CURRENT"));
 
   // Mai REVIEW se polizza certificata sul sito corretto (evita UNJUSTIFIED_REVIEW).
+  // Richiede comunque identità verificata — no bypass.
   if (
     verdict === "REVIEW" &&
     analysis.policyFound &&
-    !/dominio diverso|non attribuibile/i.test(evidenceBody)
+    identityEv.verified &&
+    !/dominio diverso|non attribuibile|Contaminazione critica|Identità/i.test(evidenceBody)
   ) {
     const certified =
       !!pickPolicyPdfUrl(crawl) ||
@@ -433,6 +509,7 @@ export async function analyzeLead(
     if (certified) {
       verdict = analysis.policyObsolete ? "HOT" : "PUBLISHED";
       if (verdict === "PUBLISHED") confidence = analysis.confidence ?? 1;
+      evidenceBody = appendVersionMarker(evidenceBody, currentMarkers("CURRENT"));
     }
   }
 
@@ -679,6 +756,8 @@ export async function analyzeRegional(
       siteVerdict = siteRec.verdict;
       verdict = siteVerdict;
       crawlPolicyObsolete = Boolean(siteAnalysis.policyObsolete && siteAnalysis.policyFound);
+      crawlPolicyExhaustive = crawl.policyExhaustive;
+      crawlNeedsOcrReview = crawl.needsOcrReview;
       if (siteVerdict === "PUBLISHED" && siteAnalysis.policyFound) {
         policyFound = true;
         policyCompany = siteAnalysis.company || policyCompany;
@@ -700,7 +779,7 @@ export async function analyzeRegional(
         policyMassimale = null;
         policyNumber = null;
         policyExpiry = null;
-        confidence = null;
+        confidence = 0;
       } else {
         policyFound = siteAnalysis.policyFound;
         if (siteAnalysis.policyFound) {
