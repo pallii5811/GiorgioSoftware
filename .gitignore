@@ -57,11 +57,12 @@ prisma/*.db-wal
 AGENTS.md
 CLAUDE.md
 
-# agent temporary dumps / deploy blobs (local only)
-tmp-*.json
-*.tgz
-leadsniper-deploy.tgz
-next-build.tgz
+# shadow isolated DB copies + sensitive exports (never commit)
+data/shadow/db/
+data/shadow/before/
+data/shadow/after/
+*.db-shm
+*.db-wal
 
 # one-off ops probes (local inventory — see docs/forensics/residual-working-tree.md)
 scripts/audit-*.mjs
