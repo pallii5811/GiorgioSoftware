@@ -30,19 +30,28 @@ function buildTenderEvidence(meta: TenderMeta, audit: AuditSources): string {
     `Aggiudicazione ANAC ${meta.datasetYear}`,
     `CIG ${meta.cig}`,
     meta.awardDate ? `Data aggiudicazione: ${fmtAwardDate(meta.awardDate)}` : null,
-    meta.object.slice(0, 160),
+    meta.object.slice(0, 400),
     meta.buyer ? `Stazione appaltante: ${meta.buyer}` : null,
     meta.buyerCity ? `Comune stazione: ${meta.buyerCity}` : null,
     `Importo €${Math.round(meta.amount).toLocaleString("it-IT")}`,
     `Priorità broker: ${meta.relevance}`,
+    meta.relevance === "HIGH"
+      ? "Opportunità: RC/polizze/sanità"
+      : meta.relevance === "MEDIUM"
+        ? "Opportunità: cauzione definitiva + RC impresa"
+        : null,
   ].filter(Boolean);
 
-  const trail = buildAuditTrail({
-    ...audit,
-    anac: true,
-    anacYear: meta.datasetYear,
-    anacCig: meta.cig,
-  });
+  const trail = buildAuditTrail(
+    {
+      ...audit,
+      anac: true,
+      anacYear: meta.datasetYear,
+      anacCig: meta.cig,
+    },
+    "REVIEW",
+    parts.join(" · ")
+  );
   return `${parts.join(" · ")} — ${trail}`;
 }
 

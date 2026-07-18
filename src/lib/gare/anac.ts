@@ -249,6 +249,9 @@ export async function fetchAnacAwards(
 
   if (!unlimited && awards.length > max) awards = awards.slice(0, max);
 
+  const minAward = new Date("2024-01-01T00:00:00Z");
+  awards = awards.filter((a) => !a.awardDate || a.awardDate >= minAward);
+
   const lastYear = yearsTried[0] ?? null;
   return { awards, year: lastYear, years: yearsTried, scanned: totalScanned };
 }

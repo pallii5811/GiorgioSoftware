@@ -130,5 +130,35 @@ export function discoverJsonApiUrls(html: string, baseUrl: string): string[] {
   };
 
   $("a[href]").each((_, el) => add($(el).attr("href") || ""));
-  return [...out].slice(0, 8);
+  const cap =
+    process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false" ? 128 : 8;
+  return [...out].slice(0, cap);
+}
+
+/** Script .js same-host (bundle CMS/SPA con polizza embedded). */
+export function discoverScriptJsUrls(html: string, baseUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const out = new Set<string>();
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+  const host = base.hostname.replace(/^www\./, "");
+  $("script[src]").each((_, el) => {
+    const href = $(el).attr("src") || "";
+    if (!href || href.startsWith("data:")) return;
+    try {
+      const u = new URL(href, base);
+      if (u.hostname.replace(/^www\./, "") !== host) return;
+      if (!/\.js(?:$|\?|#)/i.test(u.pathname) && !/\.mjs(?:$|\?|#)/i.test(u.pathname)) return;
+      out.add(u.toString());
+    } catch {
+      /* skip */
+    }
+  });
+  const cap =
+    process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false" ? 64 : 12;
+  return [...out].slice(0, cap);
 }

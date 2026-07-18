@@ -8,8 +8,14 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { extractJsonPolicyText, extractPageText } from "../src/lib/sanita/extract-embedded.ts";
 import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
-import { verdictFromSite, verdictFromRegional, readVerdictToken } from "../src/lib/sanita/verdict.ts";
+import { verdictFromSite, verdictFromRegional, readVerdictToken, finalizeVerdict } from "../src/lib/sanita/verdict.ts";
 import { scoreLead } from "../src/lib/sanita/score.ts";
+import {
+  deriveCrawlComplete,
+  crawlBlocksTerminalVerdict,
+} from "../src/lib/evidence/contract.ts";
+import { estimateCauzione, scoreGareCommercial, claimKindLabel } from "../src/lib/gare/commercial.ts";
+import { scoreSanitaCommercial } from "../src/lib/sanita/commercial.ts";
 
 // === UTILITÀ ===
 function assert(cond, msg) {
@@ -500,7 +506,8 @@ function testVerdict() {
   assertEq(verdictFromSite({ reachable: false, policyFound: false, foundRelevantPage: false }), "REVIEW", "verdict REVIEW (sito non raggiungibile)");
 
   assertEq(verdictFromRegional({ checked: true, policyFound: true }), "PUBLISHED", "regional PUBLISHED");
-  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: true }), "HOT", "regional HOT con sito");
+  // Mai HOT da portali regionali soli — serve crawl sito esaustivo (zero falsi HOT).
+  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: true }), "REVIEW", "regional senza polizza → REVIEW (no HOT)");
   assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: false }), "REVIEW", "regional senza sito → REVIEW");
 
   assertEq(readVerdictToken("[V:PUB] Polizza trovata"), "PUBLISHED", "read PUBLISHED");
@@ -688,6 +695,116 @@ function testEmbeddedJson() {
   console.log("  EMBEDDED JSON: TUTTI I TEST PASSATI ✓");
 }
 
+function testCtoEvidenceGates() {
+  console.log("\n=== TEST CTO: evidence + crawl completeness + cauzione stima ===");
+
+  const incomplete = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapExhausted: true,
+    htmlQueueExhausted: false,
+    relevantLinksProcessed: false,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 3,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: true,
+    timeCapReached: false,
+  });
+  assert(incomplete.complete === false, "cap URL → complete=false");
+  assert(!!crawlBlocksTerminalVerdict(incomplete), "cap URL blocca HOT");
+
+  const complete = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapExhausted: true,
+    htmlQueueExhausted: true,
+    relevantLinksProcessed: true,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 0,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: false,
+    timeCapReached: false,
+  });
+  assert(complete.complete === true, "tutti i gate → complete=true");
+  assert(crawlBlocksTerminalVerdict(complete) === null, "complete non blocca");
+
+  const finCap = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: incomplete,
+  });
+  assertEq(finCap.verdict, "REVIEW", "HOT degradato se crawl incompleto (cap)");
+  assert(finCap.downgraded === true, "downgraded=true");
+
+  const finOk = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza certificata",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+  });
+  assertEq(finOk.verdict, "HOT", "HOT permesso solo se completeness.complete");
+
+  const finTimeout = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "x",
+    pagesVisited: 40,
+    websiteReachable: false,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+  });
+  assertEq(finTimeout.verdict, "REVIEW", "sito non raggiungibile ≠ assenza");
+
+  const est = estimateCauzione(1_000_000);
+  assertEq(est.kind, "ESTIMATE", "cauzione è ESTIMATE");
+  assertEq(est.value, 100_000, "10% di 1M");
+  assert(claimKindLabel(est.kind).includes("Stima"), "label stima");
+
+  const gare = scoreGareCommercial({
+    awardDate: new Date(),
+    amount: 2_000_000,
+    hasPhone: true,
+    hasEmail: true,
+    hasWebsite: true,
+    relevance: "HIGH",
+    winnerIdentified: true,
+    officialSource: true,
+  });
+  assert(gare.score >= 70, `gare score HIGH+ atteso, got ${gare.score}`);
+  assert(gare.inferences.some((i) => /cauzione/i.test(i)), "inferenza cauzione etichettata");
+
+  const san = scoreSanitaCommercial({
+    verdict: "HOT",
+    crawlComplete: false,
+    hasPhone: true,
+  });
+  assertEq(san.tier, "NOT_ACTIONABLE", "HOT senza crawl completo non actionable");
+
+  const sanOk = scoreSanitaCommercial({
+    verdict: "HOT",
+    crawlComplete: true,
+    hasPhone: true,
+    hasEmail: true,
+    hasWebsite: true,
+    pagesVisited: 40,
+  });
+  assert(sanOk.score >= 70, `sanità HOT completo score=${sanOk.score}`);
+  console.log("  ✓ CTO evidence/completeness/cauzione gates");
+}
+
 // === ESECUZIONE ===
 async function main() {
   console.log("╔══════════════════════════════════════════════════════╗");
@@ -708,6 +825,7 @@ async function main() {
     testOcrExtraction,
     testIntegration,
     testEmbeddedJson,
+    testCtoEvidenceGates,
   ];
 
   for (const t of tests) {

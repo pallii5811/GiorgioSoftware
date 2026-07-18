@@ -49,15 +49,117 @@ export function verdictFromSite(opts: {
   return "REVIEW";
 }
 
-/** Verdetto per struttura senza sito crawlato — mai HOT senza aver letto il sito. */
+/** Verdetto per struttura senza sito crawlato — mai HOT senza crawl esaustivo del sito. */
 export function verdictFromRegional(opts: {
   checked: boolean;
   policyFound: boolean;
   hasWebsite?: boolean;
 }): Verdict {
   if (opts.policyFound) return "PUBLISHED";
-  if (opts.hasWebsite && opts.checked) return "HOT";
   return "REVIEW";
+}
+
+import type { CrawlCompleteness } from "@/lib/evidence/contract";
+import { crawlBlocksTerminalVerdict } from "@/lib/evidence/contract";
+
+/** Pagine minime per certificare assenza polizza (HOT). */
+export const MIN_PAGES_FOR_HOT = 12;
+
+export type FinalizeVerdictInput = {
+  verdict: Verdict;
+  evidenceBody: string;
+  pagesVisited: number;
+  websiteReachable: boolean | null;
+  website: string | null;
+  policyCompany?: string | null;
+  policyExpiry?: Date | null;
+  policyObsolete?: boolean;
+  /** Crawl BFS+PDF completato sul dominio — obbligatorio per HOT "assente". */
+  policyExhaustive?: boolean;
+  /** PDF policy non decodificabile — mai HOT assenza. */
+  needsOcrReview?: boolean;
+  /** Completezza strutturale — se presente, HOT richiede complete=true. */
+  crawlCompleteness?: CrawlCompleteness | null;
+};
+
+/**
+ * Ultimo gate prima del DB: mai HOT senza crawl reale sul sito.
+ * Zero falsi HOT > meno REVIEW ingiustificati.
+ */
+export function finalizeVerdict(input: FinalizeVerdictInput): {
+  verdict: Verdict;
+  evidenceBody: string;
+  downgraded: boolean;
+} {
+  let { verdict, evidenceBody } = input;
+  if (verdict !== "HOT") return { verdict, evidenceBody, downgraded: false };
+
+  if (!input.website?.trim()) {
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `Sito assente — impossibile certificare HOT. ${evidenceBody}`,
+      downgraded: true,
+    };
+  }
+  if (input.websiteReachable === false) {
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `Sito non raggiungibile — crawl non completato, HOT non certificabile. ${evidenceBody}`,
+      downgraded: true,
+    };
+  }
+  const hotObsoleteCertified =
+    input.policyObsolete && Boolean(input.policyCompany || input.policyExpiry);
+
+  // Errore tecnico / cap / OCR / coda non vuota → REVIEW, mai HOT assenza.
+  if (!hotObsoleteCertified) {
+    const block = crawlBlocksTerminalVerdict(input.crawlCompleteness ?? null);
+    if (block) {
+      return {
+        verdict: "REVIEW",
+        evidenceBody: `${block} ${evidenceBody}`,
+        downgraded: true,
+      };
+    }
+  }
+
+  if (!hotObsoleteCertified && input.pagesVisited < MIN_PAGES_FOR_HOT) {
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `Crawl insufficiente (${input.pagesVisited}/${MIN_PAGES_FOR_HOT} pagine) — HOT non certificabile. ${evidenceBody}`,
+      downgraded: true,
+    };
+  }
+  if (!hotObsoleteCertified && input.needsOcrReview) {
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `PDF polizza non leggibile (OCR) — impossibile certificare assenza sul sito. ${evidenceBody}`,
+      downgraded: true,
+    };
+  }
+  if (!hotObsoleteCertified && input.policyExhaustive !== true) {
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `Crawl sito non esaustivo — impossibile certificare assenza polizza (Art. 10). ${evidenceBody}`,
+      downgraded: true,
+    };
+  }
+  if (
+    input.policyObsolete &&
+    /scaduta da \d+ giorni/i.test(evidenceBody) &&
+    !input.policyCompany &&
+    !input.policyExpiry
+  ) {
+    const clean = evidenceBody
+      .replace(/\s*Polizza RC pubblicata sul sito ma scaduta da \d+ giorni[^.]*\.?/gi, "")
+      .trim();
+    return {
+      verdict: "REVIEW",
+      evidenceBody: `Polizza scaduta non verificabile (metadata assenti). ${clean}`,
+      downgraded: true,
+    };
+  }
+  return { verdict, evidenceBody, downgraded: false };
 }
 
 /**
