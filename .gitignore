@@ -146,3 +146,17 @@ prisma/data/
 
 data/shadow/frontier/
 
+
+# staging isolated DBs (never commit)
+data/staging/
+
+# staging acceptance raw artifacts (keep sanitized JSON/md)
+docs/staging-acceptance/*.log
+docs/staging-acceptance/*.out
+docs/staging-acceptance/crawl-*.json
+docs/staging-acceptance/crawl-*.err
+docs/staging-acceptance/crawl-*.out
+docs/staging-acceptance/fixtures/*.pdf
+docs/staging-acceptance/screenshots/*.png
+!docs/staging-acceptance/screenshots/.gitkeep
+
