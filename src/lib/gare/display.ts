@@ -11,8 +11,10 @@ export function categoryToRelevance(category: string | null | undefined): GareRe
   return CATEGORY_MAP[category.toUpperCase()] ?? null;
 }
 
-export function relevanceCategory(relevance: GareRelevance): string {
-  return `GARE_${relevance}`;
+export function relevanceCategory(relevance: GareRelevance | null | undefined): string {
+  // Guard: never emit GARE_undefined (historical bug when relevance was missing).
+  const r = relevance === "HIGH" || relevance === "MEDIUM" || relevance === "LOW" ? relevance : "LOW";
+  return `GARE_${r}`;
 }
 
 export function parseTenderDatasetYear(evidence: string | null | undefined): number | null {
