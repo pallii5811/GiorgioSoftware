@@ -1,0 +1,39 @@
+{
+  "uniq": 50,
+  "selectionHash": "dd6ed2ae8ea395f33a05f837ffab839b20875ae721804a151aa169d0310716d1",
+  "mode": "POLICY_EXHAUSTIVE=1 with OS hard timeout 90s per lead; timeout → REVIEW + INSUFFICIENT identity motivation",
+  "stopConditionsDetected": [
+    {
+      "id": "cmqobynqm003taa3v0mx062fg",
+      "reason": "HOT_INCOMPLETE_CRAWL",
+      "remediation": "downgraded to REVIEW on shadow DB + results"
+    }
+  ],
+  "stopConditionsUnresolved": [],
+  "campania": {
+    "selected": 25,
+    "completed": 25,
+    "identityVerified": 9,
+    "identityInsufficient": 11,
+    "identityMismatch": 5,
+    "notChecked": 0,
+    "crawlComplete": 3,
+    "HOT": 0,
+    "PUBLISHED": 3,
+    "REVIEW": 22,
+    "technicalFailure": 1
+  },
+  "veneto": {
+    "selected": 25,
+    "completed": 25,
+    "identityVerified": 9,
+    "identityInsufficient": 11,
+    "identityMismatch": 5,
+    "notChecked": 0,
+    "crawlComplete": 1,
+    "HOT": 0,
+    "PUBLISHED": 3,
+    "REVIEW": 22,
+    "technicalFailure": 7
+  }
+}
