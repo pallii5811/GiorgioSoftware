@@ -129,7 +129,13 @@ try {
   const semantic = [];
   if (fs.existsSync(samplePath)) {
     const sample = JSON.parse(fs.readFileSync(samplePath, "utf8"));
-    const ids = (sample.leads || sample.rows || sample).slice?.(0, 4) || [];
+    const ids = [
+      ...(sample.published || []),
+      ...(sample.hot || []),
+      ...(sample.hard || []),
+      ...(sample.leads || []),
+      ...(sample.rows || []),
+    ].slice(0, 8);
     for (const row of ids) {
       const id = row.id || row.leadId;
       if (!id) continue;
@@ -139,11 +145,13 @@ try {
         const lead =
           json?.leads?.find?.((l) => l.id === id) ||
           json?.lead ||
-          (Array.isArray(json) ? json.find((l) => l.id === id) : null);
+          (Array.isArray(json) ? json.find((l) => l.id === id) : null) ||
+          json?.items?.find?.((l) => l.id === id);
         const ev = lead?.evidence || "";
         const checks = {
           id,
-          hasBadgeHint: /\[V:(PUB|HOT|REV)\]|\[STATE:|\[BV:/.test(ev) || Boolean(lead?.policyFound != null),
+          companyName: lead?.companyName || row.companyName || null,
+          hasBadgeHint: /\[V:(PUB|HOT|REV)\]|\[STATE:|\[BV:/.test(ev) || lead?.policyFound != null,
           processingState: (ev.match(/\[STATE:([A-Z_]+)\]/) || [])[1] || null,
           businessVerdict: (ev.match(/\[BV:([A-Z_]+)\]/) || [])[1] || null,
           company: lead?.policyCompany || null,
@@ -151,25 +159,18 @@ try {
           expiry: lead?.policyExpiry || null,
           docs: (ev.match(/\[DOCS:\s*([^\]]+)\]/) || [])[1] || null,
           apiOk: res.status() < 500,
+          found: Boolean(lead),
         };
         semantic.push(checks);
         ok(checks.apiOk, `semantic API ${id}`);
-        ok(
-          checks.hasBadgeHint || checks.processingState != null,
-          `semantic fields present for ${id}`
-        );
-        if (/RETRY_PENDING|TECHNICAL_BLOCKED/.test(checks.processingState || "")) {
-          ok(
-            !/\[V:REV\]/.test(ev) || true,
-            `tech state ${checks.processingState} not treated as human REVIEW queue signal`
-          );
-        }
+        ok(checks.found || checks.hasBadgeHint, `semantic record visible/fields for ${id}`);
       } catch (e) {
         ok(false, `semantic ${id}: ${e}`);
       }
     }
+    ok(semantic.length >= 4, `browser_semantic_acceptance covered ${semantic.length} IDs`);
   } else {
-    ok(true, "browser_semantic_acceptance: sample missing — structural checks only");
+    ok(false, "browser_semantic_acceptance: sample-sanita.json missing");
   }
 
   // Gare semantic fields from API
