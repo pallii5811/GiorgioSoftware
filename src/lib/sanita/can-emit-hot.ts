@@ -1,6 +1,7 @@
 /**
  * Unico gate HOT — nessun altro modulo può certificare assenza Art.10.
  * Fail-closed: qualsiasi dubbio → false.
+ * Completeness deve derivare dal frontier DB quando richiesto.
  */
 import {
   crawlBlocksTerminalVerdict,
@@ -11,6 +12,7 @@ import {
   frontierBlocksHot,
   type CrawlFrontierLedger,
 } from "@/lib/sanita/crawl-frontier-ledger";
+import { deriveCrawlCompleteness, getCrawlRun } from "@/lib/sanita/frontier-store";
 
 export const MIN_PAGES_FOR_HOT = 12;
 
@@ -20,12 +22,15 @@ export type HotEmitEvidence = {
   pagesVisited: number;
   policyExhaustive: boolean;
   needsOcrReview: boolean;
-  crawlCompleteness: CrawlCompleteness | null | undefined;
+  /** Solo se requirePersistedCompleteness=false (legacy unit tests). */
+  crawlCompleteness?: CrawlCompleteness | null | undefined;
   identityStatus?: IdentityStatus | "UNKNOWN" | null;
-  /** Categoria sanitaria valorizzata — obbligatoria per HOT. */
   category?: string | null;
-  /** Ledger grafo — se presente, pending/failed devono essere 0. */
   frontier?: CrawlFrontierLedger | null;
+  /** Run persistita — obbligatoria per HOT produzione. */
+  crawlRunId?: string | null;
+  /** Se true, completeness SOLO da deriveCrawlCompleteness(crawlRunId). */
+  requirePersistedCompleteness?: boolean;
 };
 
 export type HotEmitResult = {
@@ -33,9 +38,6 @@ export type HotEmitResult = {
   reasons: string[];
 };
 
-/**
- * HOT solo se prova negativa esaustiva. Mai HOT su crawl incompleto.
- */
 export function canEmitHot(evidence: HotEmitEvidence): boolean {
   return explainCanEmitHot(evidence).ok;
 }
@@ -62,7 +64,22 @@ export function explainCanEmitHot(evidence: HotEmitEvidence): HotEmitResult {
   if (evidence.needsOcrReview) reasons.push("OCR critico incerto / PDF illeggibile");
   if (evidence.policyExhaustive !== true) reasons.push("crawl non esaustivo");
 
-  const block = crawlBlocksTerminalVerdict(evidence.crawlCompleteness ?? null);
+  let completeness: CrawlCompleteness | null | undefined = evidence.crawlCompleteness;
+
+  if (evidence.requirePersistedCompleteness || evidence.crawlRunId) {
+    if (!evidence.crawlRunId) {
+      reasons.push("crawlRunId assente — HOT richiede frontier persistita");
+    } else {
+      const run = getCrawlRun(evidence.crawlRunId);
+      if (!run) reasons.push("crawl run non trovata nel frontier store");
+      completeness = deriveCrawlCompleteness(evidence.crawlRunId);
+      if (run && String(run.state) !== "COMPLETED" && !completeness.complete) {
+        reasons.push(`crawl run non COMPLETED (${run.state})`);
+      }
+    }
+  }
+
+  const block = crawlBlocksTerminalVerdict(completeness ?? null);
   if (block) reasons.push(block);
 
   if (evidence.frontier !== undefined) {

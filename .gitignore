@@ -143,3 +143,6 @@ docs/shadow/*.log
 # local prisma shadow copies (never commit DBs)
 prisma/data/
 
+
+data/shadow/frontier/
+
