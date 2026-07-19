@@ -23,8 +23,8 @@ Gate suite locali: PASS. Deploy/live write: zero.
 | Live application commit (manifest) | `ad38748ea59edd936b9c7def3a62fdd5ae9b4e2f` |
 | Branch | `cto/final-production-grade-20260719` |
 | HEAD iniziale sessione | `67212d2729fddadc28fd30f0898409415b2bc4ba` |
-| HEAD finale | `684746c8a7533bf96703a7d6833ac164f0572bfd` |
-| Commit finale | `684746c feat(sanita): gate PUB/HOT persist through verdict gateway and frontier` |
+| HEAD finale | `21ffbdc` (docs) / motore `684746c` |
+| Commit motore | `684746c feat(sanita): gate PUB/HOT persist through verdict gateway and frontier` |
 | Base quality | `b311e99feeaf351b39c319e8f596374390a9ab56` |
 | Snapshot SHA-256 | `cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab` |
 | Working tree | pulito dopo commit |
