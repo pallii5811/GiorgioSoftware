@@ -492,7 +492,27 @@ export async function analyzeLead(
     }),
   });
   verdict = fin.verdict;
+  const ccStamp = deriveCrawlComplete({
+    ...(crawl.completeness ?? {
+      identityVerified: false,
+      sitemapStatus: "NOT_DISCOVERED" as const,
+      htmlQueueExhausted: false,
+      relevantLinksProcessed: false,
+      relevantDocumentsProcessed: false,
+      jsonEndpointsProcessed: false,
+      sameHostScriptsProcessed: false,
+      unresolvedRelevantUrls: 0,
+      failedRelevantUrls: 0,
+      unreadableRelevantDocuments: 0,
+      criticalOcrDoubts: 0,
+      urlCapReached: false,
+      timeCapReached: false,
+    }),
+    identityVerified: identityEv.verified,
+    sitemapStatus: crawl.completeness?.sitemapStatus ?? "NOT_DISCOVERED",
+  });
   evidenceBody = appendVersionMarker(fin.evidenceBody, currentMarkers("CURRENT"));
+  evidenceBody = `${evidenceBody} [IDENTITY:${identityEv.status}] [CRAWL_COMPLETE:${ccStamp.complete}]`.trim();
 
   // Mai REVIEW se polizza certificata sul sito corretto (evita UNJUSTIFIED_REVIEW).
   // Richiede comunque identità verificata — no bypass.
