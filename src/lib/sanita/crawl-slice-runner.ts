@@ -525,37 +525,41 @@ export async function runCrawlSlice(opts: {
   failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
   completed = nodesAfter.filter((n) => n.state === "COMPLETED").length;
 
-  if (outcome === "EMPTY" || outcome === "SLICE_CHECKPOINTED" || outcome === "PUBLISHED_SIGNAL") {
-    if (!pendingWork && completed > 0 && outcome !== "PUBLISHED_SIGNAL") {
+  // Re-bind for TS control-flow (outcome may have been narrowed by earlier branches)
+  let settle: SliceOutcome = outcome;
+  if (settle === "EMPTY" || settle === "SLICE_CHECKPOINTED" || settle === "PUBLISHED_SIGNAL") {
+    if (!pendingWork && completed > 0 && settle !== "PUBLISHED_SIGNAL") {
       setCrawlRunFlags(crawlRunId, {
         identityVerified: true,
         scopeVerified: true,
         sitemapStatus: "DISCOVERED_COMPLETE",
       });
       completeCrawlRun(crawlRunId, stopReason || "frontier_exhausted");
-      outcome = "RUN_COMPLETED";
+      settle = "RUN_COMPLETED";
       stopReason = stopReason || "frontier_exhausted";
     } else if (stopReason === RUN_WALL_CLOCK_EXHAUSTED) {
       setCrawlRunFlags(crawlRunId, { timeCapReached: true });
       heartbeatCrawlRun(crawlRunId, RUN_WALL_CLOCK_EXHAUSTED);
       releaseWorkerLock(crawlRunId);
     } else if (pendingWork || Date.now() >= deadline) {
-      if (outcome !== "PUBLISHED_SIGNAL") {
+      if (settle !== "PUBLISHED_SIGNAL") {
         stopReason = SLICE_BUDGET_EXHAUSTED;
-        outcome = "SLICE_CHECKPOINTED";
+        settle = "SLICE_CHECKPOINTED";
         heartbeatCrawlRun(crawlRunId, SLICE_BUDGET_EXHAUSTED);
         releaseWorkerLock(crawlRunId);
       }
     }
-  } else if (outcome === "RUN_WALL_CLOCK") {
+  } else if (settle === "RUN_WALL_CLOCK") {
     setCrawlRunFlags(crawlRunId, { timeCapReached: true });
     releaseWorkerLock(crawlRunId);
   }
 
-  if (outcome === "PUBLISHED_SIGNAL") {
+  if (settle === "PUBLISHED_SIGNAL") {
     heartbeatCrawlRun(crawlRunId, "POLICY_FOUND");
     releaseWorkerLock(crawlRunId);
   }
+
+  outcome = settle;
 
   const completeness = deriveCrawlCompleteness(crawlRunId);
 
