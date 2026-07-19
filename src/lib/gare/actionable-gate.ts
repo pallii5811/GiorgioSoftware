@@ -26,6 +26,9 @@ export type GareActionableInput = {
   lotId?: string | null;
   /** Categoria contratto o legacy GARE_* */
   category?: string | null;
+  /** DOCUMENTED | STRONGLY_INFERRED required for HIGH/VH */
+  insuranceNeed?: "DOCUMENTED" | "STRONGLY_INFERRED" | "WEAKLY_INFERRED" | "NOT_FOUND" | null;
+  contactPath?: boolean;
 };
 
 export type GareActionableResult = {
@@ -59,6 +62,19 @@ export function evaluateGareActionable(input: GareActionableInput): GareActionab
   if (!input.winnerIdentified) exclusions.push("vincitore non verificato");
   if (!input.officialSource) exclusions.push("fonte ufficiale assente");
   if (!input.cig?.trim()) exclusions.push("CIG assente");
+
+  const contactOk =
+    input.hasPhone || input.hasEmail || input.hasWebsite || input.contactPath === true;
+  if (!contactOk) exclusions.push("contatto o percorso concreto assente");
+
+  const ins = input.insuranceNeed;
+  if (
+    ins != null &&
+    ins !== "DOCUMENTED" &&
+    ins !== "STRONGLY_INFERRED"
+  ) {
+    exclusions.push("bisogno assicurativo non DOCUMENTED/STRONGLY_INFERRED");
+  }
 
   const scoredRelevance: GareRelevance | null =
     input.relevance === "HIGH" || input.relevance === "MEDIUM" || input.relevance === "LOW"
@@ -96,6 +112,21 @@ export function evaluateGareActionable(input: GareActionableInput): GareActionab
     !input.awardDate
   ) {
     exclusions.push("HIGH senza data — non actionable");
+  }
+  if (
+    (commercial.tier === "HIGH" || commercial.tier === "VERY_HIGH") &&
+    ins != null &&
+    ins !== "DOCUMENTED" &&
+    ins !== "STRONGLY_INFERRED"
+  ) {
+    exclusions.push("HIGH/VH senza valore assicurativo concreto");
+  }
+  // Default fail-closed for HIGH/VH when insurance not assessed
+  if ((commercial.tier === "HIGH" || commercial.tier === "VERY_HIGH") && ins == null) {
+    exclusions.push("HIGH/VH richiede assessment bisogno assicurativo");
+  }
+  if ((commercial.tier === "HIGH" || commercial.tier === "VERY_HIGH") && !contactOk) {
+    exclusions.push("HIGH/VH senza contatto");
   }
 
   const actionable =

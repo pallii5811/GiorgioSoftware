@@ -39,6 +39,8 @@ const validInput = {
   officialSource: true,
   cig: "CIG123",
   lotId: "1",
+  insuranceNeed: "STRONGLY_INFERRED",
+  contactPath: true,
 };
 const valid = evaluateGareActionable(validInput);
 ok(valid.actionable, `aggiudicazione valida actionable (tier=${valid.tier})`);
