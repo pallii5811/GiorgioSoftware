@@ -62,7 +62,7 @@ process.env.OCR_JOB_TIMEOUT_MS = process.env.OCR_TIMEOUT_MS;
 process.env.PER_HOST_DELAY_MS = process.env.PER_HOST_DELAY_MS || "400";
 process.env.CRAWL_MAX_HTML_PER_SLICE = process.env.CRAWL_MAX_HTML_PER_SLICE || "8";
 process.env.OCR_ENABLED = "1";
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+// TLS remains strict — do not set NODE_TLS_REJECT_UNAUTHORIZED=0
 
 requireStagingIsolation();
 assertStagingSafeOrThrow();
