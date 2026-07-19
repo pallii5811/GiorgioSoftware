@@ -17,7 +17,8 @@ import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
 import { mergeContacts, pickBestPhone, pickOfficialWebsite } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, isHotPublishedExpiredEvidence, type AuditSources } from "@/lib/sanita/audit";
 import { isSiteUnderMaintenance } from "@/lib/sanita/website";
-import { verdictFromSite, verdictFromRegional, finalizeVerdict, readVerdictToken } from "@/lib/sanita/verdict";
+import { verdictFromSite, verdictFromRegional, readVerdictToken } from "@/lib/sanita/verdict";
+import { finalizeVerdict } from "@/lib/sanita/finalize-verdict";
 import { deriveCrawlComplete } from "@/lib/evidence/contract";
 import {
   NOT_CHECKED_IDENTITY,
