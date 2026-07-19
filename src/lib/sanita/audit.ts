@@ -91,9 +91,11 @@ export function policyDocsForDisplay(docs: string[] | null): string[] {
     .slice(0, 3);
 }
 
-/** HOT con polizza RC pubblicata sul sito ma scaduta/non aggiornata (Art. 10). */
+/** HOT con polizza RC pubblicata sul sito ma scaduta (legacy) OPPURE PUBLISHED_EXPIRED. */
 export function isHotPublishedExpiredEvidence(evidence: string | null | undefined): boolean {
-  if (!evidence || !/^\[V:HOT\]/i.test(evidence)) return false;
+  if (!evidence) return false;
+  if (/\[PS:PUBLISHED_EXPIRED\]/i.test(evidence) && /^\[V:PUB\]/i.test(evidence)) return true;
+  if (!/^\[V:HOT\]/i.test(evidence)) return false;
   // Stesso evidence che dice "non pubblicata" e "scaduta" → non è una polizza certificata.
   if (/non\s+pubblicat|assenza\s+pubblicazione|assenza\s+polizza/i.test(evidence)) return false;
   return /polizza\s+rc\s+pubblicata|polizza\s+pubblicata\s+sul\s+sito|pubblicata\s+sul\s+sito/i.test(

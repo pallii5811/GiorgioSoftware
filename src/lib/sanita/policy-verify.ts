@@ -286,20 +286,20 @@ export function reconcilePolicyVerdict(
         };
       }
     }
-    // Polizza pubblicata ma scaduta da >1 anno → HOT con messaggio esplicito (non "non pubblicata").
+    // Polizza pubblicata ma scaduta → PUBLISHED (sottotipo EXPIRED), mai HOT assenza.
     if (enriched.policyObsolete) {
       const days =
         enriched.expiry != null
           ? Math.floor((Date.now() - enriched.expiry.getTime()) / 86_400_000)
           : null;
       return {
-        verdict: "HOT",
+        verdict: "PUBLISHED",
         analysis: enriched,
         adjusted: true,
         note:
           days != null && days > 0
-            ? `Polizza RC pubblicata sul sito ma scaduta da ${days} giorni — Art. 10 richiede aggiornamento.`
-            : "Polizza RC pubblicata sul sito ma non aggiornata — Art. 10 richiede pubblicazione corrente.",
+            ? `Polizza RC pubblicata sul sito ma scaduta da ${days} giorni — opportunità urgente (Art. 10).`
+            : "Polizza RC pubblicata sul sito ma non aggiornata — opportunità urgente (Art. 10).",
       };
     }
     if (!publicationIsCertain(enriched, effectiveCrawl) && !softPublicationCertain(enriched, effectiveCrawl)) {

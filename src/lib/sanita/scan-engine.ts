@@ -12,6 +12,7 @@ import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
 import { tavilyFallbackForBlockedSite } from "@/lib/sanita/tavily-crawl-fallback";
+import { terminalVerdictFromDiscovery } from "@/lib/sanita/discovery-gate";
 import { isTransientAnalysisFailure } from "@/lib/sanita/scan-errors";
 import { mergeContacts, pickBestPhone, pickOfficialWebsite } from "@/lib/sanita/contacts";
 import { packEvidence, pickPolicySourceUrl, pickPolicyPdfUrl, isHotPublishedExpiredEvidence, type AuditSources } from "@/lib/sanita/audit";
@@ -28,6 +29,11 @@ import { appendVersionMarker, currentMarkers } from "@/lib/sanita/evidence-versi
 import { validateSiteIdentity } from "@/lib/sanita/site-identity";
 import type { Verdict } from "@/lib/sanita/verdict";
 import { scoreLead } from "@/lib/sanita/score";
+import {
+  derivePublishedSubtype,
+  stampPublishedSubtype,
+} from "@/lib/sanita/published-subtype";
+import { assertAtomicHotPersist, HotIncompleteStopError } from "@/lib/sanita/atomic-verdict";
 import type { Lead } from "@prisma/client";
 
 import type { PolicyAnalysis } from "@/lib/sanita/detector";
@@ -64,7 +70,7 @@ function acceptDiscoveredWebsite(raw: string | null | undefined, companyName: st
   return pickOfficialWebsite([v], companyName) ? v : null;
 }
 
-/** HOT/REVIEW: mai campi polizza in UI/DB. Solo PUBLISHED con polizza confermata. */
+/** HOT: mai campi polizza. PUBLISHED (anche scaduta): conserva metadati. */
 function policyDbFields(
   verdict: Verdict,
   a: Pick<
@@ -72,17 +78,14 @@ function policyDbFields(
     "policyFound" | "policyObsolete" | "company" | "massimale" | "policyNumber" | "expiry" | "confidence"
   >
 ) {
-  const hasMeta = Boolean(a.company || a.expiry || a.policyNumber || a.massimale);
-  const keepPublished = verdict === "PUBLISHED" && Boolean(a.policyFound) && !a.policyObsolete;
-  const keepObsoleteHot = verdict === "HOT" && Boolean(a.policyObsolete) && hasMeta;
-  const keep = keepPublished || keepObsoleteHot;
+  const keepPublished = verdict === "PUBLISHED" && Boolean(a.policyFound);
   return {
     policyFound: keepPublished,
-    policyCompany: keep ? a.company : null,
-    policyMassimale: keep ? a.massimale : null,
-    policyNumber: keep ? a.policyNumber : null,
-    policyExpiry: keep ? a.expiry : null,
-    confidence: keep ? (a.confidence ?? 1) : null,
+    policyCompany: keepPublished ? a.company : null,
+    policyMassimale: keepPublished ? a.massimale : null,
+    policyNumber: keepPublished ? a.policyNumber : null,
+    policyExpiry: keepPublished ? a.expiry : null,
+    confidence: keepPublished ? (a.confidence ?? 1) : null,
   };
 }
 
@@ -92,6 +95,7 @@ export async function runBatch<T>(items: T[], size: number, worker: (item: T) =>
     await Promise.all(
       chunk.map((item) =>
         worker(item).catch((err) => {
+          if (err instanceof HotIncompleteStopError) throw err;
           console.error(`  [runBatch] worker error:`, err instanceof Error ? err.message : err);
         })
       )
@@ -194,11 +198,11 @@ export async function analyzeLead(
     let pec = lead.pec;
     let verdict: Verdict = "REVIEW";
     let policyFound = false;
-    let policyCompany: string | null = null;
-    let policyMassimale: string | null = null;
-    let policyNumber: string | null = null;
-    let policyExpiry: Date | null = null;
-    let confidence: number | null = null;
+    const policyCompany: string | null = null;
+    const policyMassimale: string | null = null;
+    const policyNumber: string | null = null;
+    const policyExpiry: Date | null = null;
+    const confidence: number | null = null;
     let evidenceBody =
       crawl.error === "bot_blocked"
         ? "Sito protetto anti-bot (CAPTCHA/WAF) — IP datacenter bloccato. Verifica manuale sul sito (es. footer «Assicurazione RCT»)."
@@ -208,15 +212,11 @@ export async function analyzeLead(
     if (tavily) {
       audit.contactSearch = true;
       audit.contactUrls = tavily.urls;
+      // Discovery-only: snippet Tavily non può emettere PUBLISHED terminale.
+      verdict = terminalVerdictFromDiscovery(Boolean(tavily.policyAnalysis.policyFound));
+      policyFound = false;
       if (tavily.policyAnalysis.policyFound) {
-        verdict = "PUBLISHED";
-        policyFound = true;
-        policyCompany = tavily.policyAnalysis.company;
-        policyMassimale = tavily.policyAnalysis.massimale;
-        policyNumber = tavily.policyAnalysis.policyNumber;
-        policyExpiry = tavily.policyAnalysis.expiry;
-        confidence = tavily.policyAnalysis.confidence ?? 1;
-        evidenceBody = `Polizza RC rilevata via ricerca web indicizzata (sito blocca IP server Hetzner/WAF). ${tavily.policyAnalysis.evidence || ""}`;
+        evidenceBody = `Candidato discovery (Tavily/WAF): possibile polizza indicizzata — fetch first-party e attribuzione richiesti prima di PUBLISHED. URLs: ${tavily.urls.slice(0, 3).join(" | ")}. ${tavily.policyAnalysis.evidence || ""}`;
       } else {
         evidenceBody = `Sito blocca IP server (WAF) — frammenti web indicizzati analizzati, polizza RC non trovata. Verifica manuale consigliata sul sito ufficiale.`;
       }
@@ -226,8 +226,9 @@ export async function analyzeLead(
       audit.regionalQueries = regional.queryCount;
       audit.regionalUrls = regional.sourceUrls;
       if (regional.policyFound) {
-        verdict = "PUBLISHED";
-        evidenceBody = `Polizza trovata su portale regionale/ASL; sito web non raggiungibile. ${regional.evidence || ""}`;
+        // Portale regionale senza fetch first-party del sito → REVIEW (candidato), non PUBLISHED terminale.
+        verdict = "REVIEW";
+        evidenceBody = `Candidato portale regionale/ASL (sito non crawlable): possibile polizza — verifica first-party obbligatoria. ${regional.evidence || ""}`;
       } else if (regional.checked) {
         verdict = "REVIEW";
         evidenceBody = `Sito non crawlable da server; portali ASL consultati — crawl sito necessario per HOT. ${regional.evidence || ""}`;
@@ -471,6 +472,8 @@ export async function analyzeLead(
     policyObsolete: analysis.policyObsolete,
     policyExhaustive: crawl.policyExhaustive,
     needsOcrReview: crawl.needsOcrReview,
+    identityStatus: identityEv.status,
+    category: lead.category,
     crawlCompleteness: deriveCrawlComplete({
       ...(crawl.completeness ?? {
         identityVerified: false,
@@ -527,10 +530,21 @@ export async function analyzeLead(
       (crawl.policyPdfsRead ?? 0) > 0 ||
       (crawl.foundRelevantPage && crawl.pagesVisited.length >= 4);
     if (certified) {
-      verdict = analysis.policyObsolete ? "HOT" : "PUBLISHED";
-      if (verdict === "PUBLISHED") confidence = analysis.confidence ?? 1;
+      verdict = "PUBLISHED";
       evidenceBody = appendVersionMarker(evidenceBody, currentMarkers("CURRENT"));
     }
+  }
+
+  if (verdict === "PUBLISHED") {
+    const subtype = derivePublishedSubtype({
+      policyObsolete: analysis.policyObsolete,
+      policyExpiry: analysis.expiry,
+      policyCompany: analysis.company,
+      policyNumber: analysis.policyNumber,
+      policyMassimale: analysis.massimale,
+      evidenceBody,
+    });
+    evidenceBody = stampPublishedSubtype(evidenceBody, subtype);
   }
 
   if (verdict === "PUBLISHED") counters.withPolicy++;
@@ -554,6 +568,17 @@ export async function analyzeLead(
       audit.contactUrls = enriched.sourceUrls;
     }
   }
+
+  assertAtomicHotPersist(verdict, {
+    website,
+    websiteReachable: true,
+    pagesVisited: crawl.pagesVisited.length,
+    policyExhaustive: crawl.policyExhaustive === true,
+    needsOcrReview: Boolean(crawl.needsOcrReview),
+    crawlCompleteness: ccStamp,
+    identityStatus: identityEv.status,
+    category: lead.category,
+  });
 
   await prisma.lead.update({
     where: { id: lead.id },
@@ -835,17 +860,11 @@ export async function analyzeRegional(
       if (tavily) {
         audit.contactSearch = true;
         audit.contactUrls = tavily.urls;
+        verdict = terminalVerdictFromDiscovery(Boolean(tavily.policyAnalysis.policyFound));
+        policyFound = false;
         if (tavily.policyAnalysis.policyFound) {
-          verdict = "PUBLISHED";
-          policyFound = true;
-          policyCompany = tavily.policyAnalysis.company;
-          policyMassimale = tavily.policyAnalysis.massimale;
-          policyNumber = tavily.policyAnalysis.policyNumber;
-          policyExpiry = tavily.policyAnalysis.expiry;
-          confidence = tavily.policyAnalysis.confidence ?? 1;
-          evidenceBody = `Polizza RC rilevata via ricerca web indicizzata (sito blocca IP server/WAF). ${tavily.policyAnalysis.evidence || ""}`;
+          evidenceBody = `Candidato discovery (Tavily/WAF): possibile polizza indicizzata — fetch first-party richiesto. ${tavily.urls.slice(0, 3).join(" | ")}. ${tavily.policyAnalysis.evidence || ""}`;
         } else if (result.checked) {
-          verdict = "REVIEW";
           evidenceBody = `Sito blocca IP server (WAF) — portali ASL consultati, crawl sito necessario. ${result.evidence ?? ""}`;
         }
       } else if (crawl.error === "bot_blocked" && result.checked && !result.policyFound) {

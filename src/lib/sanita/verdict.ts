@@ -60,10 +60,14 @@ export function verdictFromRegional(opts: {
 }
 
 import type { CrawlCompleteness } from "@/lib/evidence/contract";
-import { crawlBlocksTerminalVerdict } from "@/lib/evidence/contract";
+import {
+  canEmitHot,
+  explainCanEmitHot,
+  MIN_PAGES_FOR_HOT,
+} from "@/lib/sanita/can-emit-hot";
+import type { IdentityStatus } from "@/lib/sanita/identity-evidence";
 
-/** Pagine minime per certificare assenza polizza (HOT). */
-export const MIN_PAGES_FOR_HOT = 12;
+export { MIN_PAGES_FOR_HOT };
 
 export type FinalizeVerdictInput = {
   verdict: Verdict;
@@ -80,83 +84,50 @@ export type FinalizeVerdictInput = {
   needsOcrReview?: boolean;
   /** Completezza strutturale — se presente, HOT richiede complete=true. */
   crawlCompleteness?: CrawlCompleteness | null;
+  identityStatus?: IdentityStatus | "UNKNOWN" | null;
+  category?: string | null;
 };
 
 /**
- * Ultimo gate prima del DB: mai HOT senza crawl reale sul sito.
- * Zero falsi HOT > meno REVIEW ingiustificati.
+ * Ultimo gate prima del DB: HOT solo via canEmitHot (unico controllo).
+ * Polizza scaduta pubblicata non è HOT — resta PUBLISHED (sottotipo EXPIRED).
  */
 export function finalizeVerdict(input: FinalizeVerdictInput): {
   verdict: Verdict;
   evidenceBody: string;
   downgraded: boolean;
 } {
-  const verdict = input.verdict;
+  let verdict = input.verdict;
   const evidenceBody = input.evidenceBody;
+
+  // Scaduta pubblicata → PUBLISHED (non HOT assenza).
+  if (
+    verdict === "HOT" &&
+    input.policyObsolete &&
+    (input.policyCompany || input.policyExpiry || /polizza\s+rc\s+pubblicata|scaduta\s+da/i.test(evidenceBody))
+  ) {
+    verdict = "PUBLISHED";
+    return { verdict, evidenceBody, downgraded: false };
+  }
+
   if (verdict !== "HOT") return { verdict, evidenceBody, downgraded: false };
 
-  if (!input.website?.trim()) {
-    return {
-      verdict: "REVIEW",
-      evidenceBody: `Sito assente — impossibile certificare HOT. ${evidenceBody}`,
-      downgraded: true,
-    };
-  }
-  if (input.websiteReachable === false) {
-    return {
-      verdict: "REVIEW",
-      evidenceBody: `Sito non raggiungibile — crawl non completato, HOT non certificabile. ${evidenceBody}`,
-      downgraded: true,
-    };
-  }
-  const hotObsoleteCertified =
-    input.policyObsolete && Boolean(input.policyCompany || input.policyExpiry);
+  const hotEv = {
+    website: input.website,
+    websiteReachable: input.websiteReachable,
+    pagesVisited: input.pagesVisited,
+    policyExhaustive: input.policyExhaustive === true,
+    needsOcrReview: Boolean(input.needsOcrReview),
+    crawlCompleteness: input.crawlCompleteness ?? null,
+    identityStatus: input.identityStatus ?? "UNKNOWN",
+    category: input.category,
+  };
 
-  // Errore tecnico / cap / OCR / coda non vuota → REVIEW, mai HOT assenza.
-  if (!hotObsoleteCertified) {
-    const block = crawlBlocksTerminalVerdict(input.crawlCompleteness ?? null);
-    if (block) {
-      return {
-        verdict: "REVIEW",
-        evidenceBody: `${block} ${evidenceBody}`,
-        downgraded: true,
-      };
-    }
-  }
-
-  if (!hotObsoleteCertified && input.pagesVisited < MIN_PAGES_FOR_HOT) {
+  if (!canEmitHot(hotEv)) {
+    const { reasons } = explainCanEmitHot(hotEv);
     return {
       verdict: "REVIEW",
-      evidenceBody: `Crawl insufficiente (${input.pagesVisited}/${MIN_PAGES_FOR_HOT} pagine) — HOT non certificabile. ${evidenceBody}`,
-      downgraded: true,
-    };
-  }
-  if (!hotObsoleteCertified && input.needsOcrReview) {
-    return {
-      verdict: "REVIEW",
-      evidenceBody: `PDF polizza non leggibile (OCR) — impossibile certificare assenza sul sito. ${evidenceBody}`,
-      downgraded: true,
-    };
-  }
-  if (!hotObsoleteCertified && input.policyExhaustive !== true) {
-    return {
-      verdict: "REVIEW",
-      evidenceBody: `Crawl sito non esaustivo — impossibile certificare assenza polizza (Art. 10). ${evidenceBody}`,
-      downgraded: true,
-    };
-  }
-  if (
-    input.policyObsolete &&
-    /scaduta da \d+ giorni/i.test(evidenceBody) &&
-    !input.policyCompany &&
-    !input.policyExpiry
-  ) {
-    const clean = evidenceBody
-      .replace(/\s*Polizza RC pubblicata sul sito ma scaduta da \d+ giorni[^.]*\.?/gi, "")
-      .trim();
-    return {
-      verdict: "REVIEW",
-      evidenceBody: `Polizza scaduta non verificabile (metadata assenti). ${clean}`,
+      evidenceBody: `HOT bloccato (canEmitHot): ${reasons.join("; ")}. ${evidenceBody}`,
       downgraded: true,
     };
   }
@@ -189,19 +160,19 @@ export const VERDICT_META: Record<
   { label: string; subtitle: string; tone: string; commercial: string }
 > = {
   PUBLISHED: {
-    label: "In regola · polizza pubblicata",
-    subtitle: "Art. 10 L. 24/2017 — copertura trovata sulle fonti verificate",
+    label: "Polizza pubblicata",
+    subtitle: "Art. 10 L. 24/2017 — pubblicazione trovata (controllare validità/scadenza)",
     tone: "emerald",
-    commercial: "Rinnovo / confronto condizioni prima della scadenza",
+    commercial: "Verificare scadenza e opportunità rinnovo — non assume conformità automatica",
   },
   HOT: {
-    label: "Irregolare Gelli · lead certificato",
-    subtitle: "Sito verificato (identità + Trasparenza/PDF) — polizza NON pubblicata",
+    label: "Assenza verificata",
+    subtitle: "Crawl completo + identità ufficiale — polizza NON trovata sul sito",
     tone: "red",
     commercial: "Vendita RC e messa in regola — chiamare subito",
   },
   REVIEW: {
-    label: "Da verificare manualmente",
+    label: "Da verificare",
     subtitle: "Controllo automatico non conclusivo — serve l'esperienza dell'agente",
     tone: "amber",
     commercial: "Verifica manuale su sito o portale ASL prima della chiamata",

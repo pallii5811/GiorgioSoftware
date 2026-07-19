@@ -980,8 +980,35 @@ async function testCtoEvidenceGates() {
     website: "https://example.it",
     policyExhaustive: true,
     crawlCompleteness: complete,
+    identityStatus: "OFFICIAL_CONFIRMED",
+    category: "Casa di cura",
   });
-  assertEq(finOk.verdict, "HOT", "HOT permesso solo se completeness.complete");
+  assertEq(finOk.verdict, "HOT", "HOT permesso solo se canEmitHot (complete+identity+category)");
+
+  const finNoId = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+    identityStatus: "INSUFFICIENT",
+    category: "Casa di cura",
+  });
+  assertEq(finNoId.verdict, "REVIEW", "HOT bloccato senza identità terminale");
+
+  const finExpiredPub = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "Polizza RC pubblicata sul sito ma scaduta da 400 giorni",
+    pagesVisited: 5,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyObsolete: true,
+    policyCompany: "Generali",
+    policyExpiry: new Date("2016-01-01"),
+  });
+  assertEq(finExpiredPub.verdict, "PUBLISHED", "scaduta pubblicata → PUBLISHED non HOT assenza");
 
   const finTimeout = finalizeVerdict({
     verdict: "HOT",
