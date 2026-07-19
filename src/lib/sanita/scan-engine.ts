@@ -70,7 +70,7 @@ export type ScanCounters = {
 };
 
 /** Evidence tecnica senza token REVIEW (non entra in coda umana/commerciale). */
-function packRetryPendingEvidence(body: string, _audit?: AuditSources): string {
+function packRetryPendingEvidence(body: string): string {
   const stamped = stampProcessingMeta(body, {
     state: "RETRY_PENDING",
     businessVerdict: "NONE",
@@ -331,7 +331,7 @@ export async function analyzeLead(
             city: lead.city,
             websiteReachable: false,
             policyFound: false,
-            evidence: packRetryPendingEvidence(evidenceBody, audit),
+            evidence: packRetryPendingEvidence(evidenceBody),
             lastScannedAt: new Date(),
           },
         });
@@ -859,7 +859,7 @@ export async function analyzeLead(
 
   const finalEvidence =
     fin.processingHint === "RETRY_PENDING"
-      ? packRetryPendingEvidence(evidenceBody, audit)
+      ? packRetryPendingEvidence(evidenceBody)
       : packEvidence(verdict, evidenceBody, audit);
 
   await prisma.lead.update({
@@ -1381,7 +1381,7 @@ export async function analyzeRegional(
       }),
       evidence:
         finReg.processingHint === "RETRY_PENDING"
-          ? packRetryPendingEvidence(evidenceBody, audit)
+          ? packRetryPendingEvidence(evidenceBody)
           : packEvidence(verdict, evidenceBody, audit),
       lastScannedAt: new Date(),
     },
