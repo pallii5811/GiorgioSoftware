@@ -34,7 +34,7 @@ export function isInActionableSalesQueue(lead: ActionableLeadLike): boolean {
   if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING|DISCOVERED|REVIEW_HUMAN|OUT_OF_SCOPE)\]/i.test(lead.evidence || "")) {
     return false;
   }
-  if (/\[BV:REVIEW_HUMAN\]|\[BV:OUT_OF_SCOPE\]/i.test(lead.evidence || "")) {
+  if (/\[BV:REVIEW_HUMAN\]|\[BV:OUT_OF_SCOPE\]|\[BV:NONE\]/i.test(lead.evidence || "")) {
     return false;
   }
   if (/\[ENRICH:(ENRICHMENT_PENDING|ENRICHMENT_RUNNING|ENRICHMENT_BLOCKED|NOT_ACTIONABLE)\]/i.test(lead.evidence || "")) {

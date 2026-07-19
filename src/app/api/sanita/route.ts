@@ -267,8 +267,13 @@ export async function POST(req: Request) {
     const counters = {
       analyzed: 0,
       withPolicy: 0,
+      published: 0,
       hot: 0,
       review: 0,
+      reviewHuman: 0,
+      retryPending: 0,
+      technicalBlocked: 0,
+      outOfScope: 0,
       regionalChecked: 0,
       regionalWithPolicy: 0,
     };

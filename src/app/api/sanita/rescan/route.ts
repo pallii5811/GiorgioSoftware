@@ -90,7 +90,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Lead non trovato" }, { status: 404 });
     }
 
-    const counters = { analyzed: 0, withPolicy: 0, hot: 0, review: 0 };
+    const counters = {
+      analyzed: 0,
+      withPolicy: 0,
+      published: 0,
+      hot: 0,
+      review: 0,
+      reviewHuman: 0,
+      retryPending: 0,
+      technicalBlocked: 0,
+      outOfScope: 0,
+    };
     await analyzeLead(freshLead, counters);
     const fresh = await prisma.lead.findUnique({ where: { id } });
     if (!fresh) {

@@ -64,6 +64,10 @@ export function deriveVerdict(lead: {
   evidence: string | null;
 }): Verdict | null {
   if (!lead.lastScannedAt) return null;
+  // Technical queues are not REVIEW — filter via processingState, not legacy token.
+  if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING)\]/i.test(lead.evidence || "")) {
+    return null;
+  }
   const token = readVerdictToken(lead.evidence);
   if (token) return token;
   if (lead.policyFound) return "PUBLISHED";
