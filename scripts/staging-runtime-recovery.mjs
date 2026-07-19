@@ -554,7 +554,11 @@ for (const lead of campania) {
     },
   });
 
-  const officialSource = Boolean(lead.tenderCig && (awardFromEvidence || enrich.officialSource));
+  const officialSource = Boolean(
+    lead.tenderCig &&
+      (awardFromEvidence || enrich.awardDate) &&
+      (enrich.officialSource === true || Boolean(awardFromEvidence))
+  );
   const relevance = relevanceFromCategory(cat);
   const gate = evaluateGareActionable({
     awardDate: enrich.awardDate || awardFromEvidence,
@@ -651,9 +655,9 @@ for (const rec of venetoRecs) {
 fs.writeFileSync(path.join(OUT, "recovery-gare-campania.json"), JSON.stringify(gareC, null, 2));
 fs.writeFileSync(path.join(OUT, "recovery-gare-veneto.json"), JSON.stringify(gareV, null, 2));
 
-if (gareC.length === 10 && gareV.length === 10) pass("gare_sample", "20/20");
+if (gareC.length === 25 && gareV.length === 25) pass("gare_sample", "50/50");
 else fail("gare_sample", `C=${gareC.length} V=${gareV.length}`);
-if (venetoMat === 10) pass("veneto_db", "10/10");
+if (venetoMat === 25) pass("veneto_db", "25/25");
 else fail("veneto_db", String(venetoMat));
 if (gareUndefined === 0 && gareLow === 0 && missingDateHigh === 0) pass("gare_gates", "clean");
 else fail("gare_gates", `undef=${gareUndefined} low=${gareLow} missDate=${missingDateHigh}`);
