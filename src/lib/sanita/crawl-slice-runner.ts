@@ -113,27 +113,38 @@ function enqueue(
   }
 }
 
-function pickNextNode(crawlRunId: string): { id: string; canonicalUrl: string; resourceType: string; state: string; retryCount: number } | null {
+function pickNextNode(
+  crawlRunId: string,
+  nowMs = Date.now()
+): {
+  id: string;
+  canonicalUrl: string;
+  resourceType: string;
+  state: string;
+  retryCount: number;
+  nextRetryAt: string | null;
+} | null {
   const nodes = listNodes(crawlRunId);
-  const now = Date.now();
   const ready = nodes.filter((n) => {
     if (n.state === "DISCOVERED" || n.state === "QUEUED") return true;
-    if (n.state === "RETRY_PENDING") {
-      // nextRetryAt not on listNodes — use retryCount only; due check via raw if needed
-      return true;
-    }
     if (n.state === "FETCHING") return true; // crash resume
+    if (n.state === "RETRY_PENDING") {
+      if (!n.nextRetryAt) return false;
+      const due = Date.parse(n.nextRetryAt);
+      return Number.isFinite(due) && due <= nowMs;
+    }
     return false;
   });
-  // Prefer critical pdf/html
   ready.sort((a, b) => {
     const score = (u: string) => (/\.pdf/i.test(u) ? 0 : /trasparen|polizz|assicur/i.test(u) ? 1 : 2);
     return score(a.canonicalUrl) - score(b.canonicalUrl);
   });
-  const n = ready[0];
-  if (!n) return null;
-  void now;
-  return n as { id: string; canonicalUrl: string; resourceType: string; state: string; retryCount: number };
+  return ready[0] ?? null;
+}
+
+/** Export for tests with fake clock. */
+export function pickNextNodeForTest(crawlRunId: string, nowMs: number) {
+  return pickNextNode(crawlRunId, nowMs);
 }
 
 async function fetchResource(
@@ -240,7 +251,7 @@ export async function runCrawlSlice(opts: {
       extraUrls: opts.seedExtraUrls,
     });
   } else {
-    // Re-queue RETRY_PENDING / stuck FETCHING
+    // Re-queue only DISCOVERED. RETRY_PENDING stays until nextRetryAt (pickNextNode).
     for (const n of listNodes(crawlRunId)) {
       if (n.state === "DISCOVERED") {
         try {
@@ -254,16 +265,8 @@ export async function runCrawlSlice(opts: {
           transitionFrontierNode(n.id, "RETRY_PENDING", {
             lastError: "interrupted_fetch",
             bumpRetry: true,
-            nextRetryAt: new Date().toISOString(),
+            nextRetryAt: new Date(Date.now() + computeBackoffMs(n.retryCount || 0)).toISOString(),
           });
-          transitionFrontierNode(n.id, "QUEUED");
-        } catch {
-          /* */
-        }
-      }
-      if (n.state === "RETRY_PENDING") {
-        try {
-          transitionFrontierNode(n.id, "QUEUED");
         } catch {
           /* */
         }
@@ -298,20 +301,15 @@ export async function runCrawlSlice(opts: {
     const node = pickNextNode(crawlRunId);
     if (!node) break;
 
-    // Cap total HTML nodes visited for staging graphs
+    // Cap: mark time/url cap — do NOT EXCLUDE remaining just to force HOT complete
     const completedHtml = listNodes(crawlRunId).filter(
       (n) => n.state === "COMPLETED" && n.resourceType === "html"
     ).length;
     if (completedHtml >= 40 && !/\.pdf/i.test(node.canonicalUrl)) {
-      try {
-        if (node.state === "DISCOVERED" || node.state === "QUEUED") {
-          transitionFrontierNode(node.id, node.state === "DISCOVERED" ? "QUEUED" : "QUEUED");
-          transitionFrontierNode(node.id, "EXCLUDED", { exclusionReason: "html_cap" });
-        }
-      } catch {
-        /* */
-      }
-      continue;
+      setCrawlRunFlags(crawlRunId, { urlCapReached: true });
+      stopReason = "URL_CAP_REACHED";
+      outcome = "RUN_WALL_CLOCK";
+      break;
     }
 
     try {
@@ -330,13 +328,22 @@ export async function runCrawlSlice(opts: {
       const retries = (node.retryCount || 0) + 1;
       const max = /\.pdf/i.test(node.canonicalUrl) ? budget.maxDocumentRetries : budget.maxUrlRetries;
       try {
-        // Missing seed paths are exclusions, not technical failures (keeps HOT completeness viable)
+        // Missing paths: retry then TECHNICAL_BLOCKED — never fake EXCLUDE for HOT
         if (fetched.status === 404 || fetched.status === 410) {
-          transitionFrontierNode(node.id, "EXCLUDED", {
-            httpStatus: fetched.status,
-            exclusionReason: "not_found",
-            lastError: fetched.error || `http_${fetched.status}`,
-          });
+          if (retries >= max) {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              httpStatus: fetched.status,
+              lastError: `http_${fetched.status}`,
+              bumpRetry: true,
+            });
+          } else {
+            transitionFrontierNode(node.id, "RETRY_PENDING", {
+              httpStatus: fetched.status,
+              lastError: `http_${fetched.status}`,
+              bumpRetry: true,
+              nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+            });
+          }
         } else if (retries >= max) {
           transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
             lastError: fetched.error || `http_${fetched.status}`,
@@ -482,58 +489,18 @@ export async function runCrawlSlice(opts: {
     }
   }
 
-  const nodes = listNodes(crawlRunId);
-  let retryPending = nodes.filter((n) => n.state === "RETRY_PENDING").length;
-  let failed = nodes.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
-  let completed = nodes.filter((n) => n.state === "COMPLETED").length;
-
-  // HOT-ready finalize: enough completed pages, no critical pending → exclude leftovers
-  const criticalPending = nodes.filter(
-    (n) =>
-      n.relevance === "critical" &&
-      ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING", "FETCHED", "PARSED"].includes(n.state)
-  );
-  if (
-    completed >= 12 &&
-    criticalPending.length === 0 &&
-    outcome !== "PUBLISHED_SIGNAL" &&
-    outcome !== "RUN_WALL_CLOCK"
-  ) {
-    for (const n of nodes) {
-      if (["DISCOVERED", "QUEUED", "RETRY_PENDING"].includes(n.state)) {
-        try {
-          if (n.state === "DISCOVERED" || n.state === "RETRY_PENDING") {
-            try {
-              transitionFrontierNode(n.id, "QUEUED");
-            } catch {
-              /* */
-            }
-          }
-          transitionFrontierNode(n.id, "EXCLUDED", { exclusionReason: "hot_finalize_non_critical" });
-        } catch {
-          /* */
-        }
-      }
-    }
-  }
-
   const nodesAfter = listNodes(crawlRunId);
   const pendingWork = nodesAfter.some((n) =>
     ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING"].includes(n.state)
   );
-  retryPending = nodesAfter.filter((n) => n.state === "RETRY_PENDING").length;
-  failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
-  completed = nodesAfter.filter((n) => n.state === "COMPLETED").length;
+  const retryPending = nodesAfter.filter((n) => n.state === "RETRY_PENDING").length;
+  const failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
+  const completed = nodesAfter.filter((n) => n.state === "COMPLETED").length;
 
-  // Re-bind for settle; at this point outcome is EMPTY | RUN_WALL_CLOCK | PUBLISHED_SIGNAL
+  // Re-bind for settle. Identity/scope/sitemap MUST come from real engines — never auto-complete here.
   let settle: SliceOutcome = outcome;
   if (settle === "EMPTY" || settle === "PUBLISHED_SIGNAL") {
     if (!pendingWork && completed > 0 && settle !== "PUBLISHED_SIGNAL") {
-      setCrawlRunFlags(crawlRunId, {
-        identityVerified: true,
-        scopeVerified: true,
-        sitemapStatus: "DISCOVERED_COMPLETE",
-      });
       completeCrawlRun(crawlRunId, stopReason || "frontier_exhausted");
       settle = "RUN_COMPLETED";
       stopReason = stopReason || "frontier_exhausted";

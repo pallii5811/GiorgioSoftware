@@ -436,10 +436,11 @@ export function listNodes(crawlRunId: string): Array<{
   relevance: string;
   resourceType: string;
   retryCount: number;
+  nextRetryAt: string | null;
 }> {
   return db()
     .prepare(
-      `SELECT id, canonicalUrl, state, relevance, resourceType, retryCount FROM CrawlFrontierNode WHERE crawlRunId = ? ORDER BY discoveredAt`
+      `SELECT id, canonicalUrl, state, relevance, resourceType, retryCount, nextRetryAt FROM CrawlFrontierNode WHERE crawlRunId = ? ORDER BY discoveredAt`
     )
     .all(crawlRunId) as Array<{
     id: string;
@@ -448,6 +449,7 @@ export function listNodes(crawlRunId: string): Array<{
     relevance: string;
     resourceType: string;
     retryCount: number;
+    nextRetryAt: string | null;
   }>;
 }
 

@@ -83,7 +83,7 @@ export function persistCrawlIntoFrontier(opts: {
   setCrawlRunFlags(crawlRunId, {
     identityVerified: opts.identityVerified,
     scopeVerified: opts.scopeVerified ?? opts.identityVerified,
-    sitemapStatus: opts.sitemapStatus ?? "DISCOVERED_COMPLETE",
+    sitemapStatus: opts.sitemapStatus ?? "NOT_DISCOVERED",
     ocrDoubts: opts.needsOcrReview ? 1 : 0,
     unresolvedPolicyCandidates: 0,
     urlCapReached: false,

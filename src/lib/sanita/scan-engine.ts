@@ -7,7 +7,7 @@ import { resolveOfficialWebsite } from "@/lib/sanita/resolve-website";
 import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
 import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
-import { crawlSite } from "@/lib/sanita/crawler";
+import { crawlLeadViaSlices, applyIdentityToCrawlRun } from "@/lib/sanita/lead-crawl-runtime";
 import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
@@ -49,8 +49,6 @@ import {
   buildFrontierFromCrawl,
   stampFrontierSummary,
 } from "@/lib/sanita/crawl-frontier-ledger";
-import { persistCrawlIntoFrontier } from "@/lib/sanita/persist-crawl-frontier";
-import { defaultFrontierDbPath, openFrontierStore } from "@/lib/sanita/frontier-store";
 import { runProductionWaterfall } from "@/lib/sanita/production-waterfall";
 import { resolveRegionalIdentity } from "@/lib/sanita/regional-identity";
 import type { Lead } from "@prisma/client";
@@ -60,11 +58,47 @@ import type { PolicyAnalysis } from "@/lib/sanita/detector";
 export type ScanCounters = {
   analyzed: number;
   withPolicy: number;
+  published: number;
   hot: number;
   review: number;
+  reviewHuman: number;
+  retryPending: number;
+  technicalBlocked: number;
+  outOfScope: number;
   regionalChecked: number;
   regionalWithPolicy: number;
 };
+
+/** Evidence tecnica senza token REVIEW (non entra in coda umana/commerciale). */
+function packRetryPendingEvidence(body: string, audit: AuditSources): string {
+  const stamped = stampProcessingMeta(body, {
+    state: "RETRY_PENDING",
+    businessVerdict: "NONE",
+    validationStatus: "REVALIDATION_PENDING",
+  });
+  const when = new Date().toISOString().slice(0, 16).replace("T", " ");
+  return `${stamped} — [FONTI: retry tecnico] [Verifica: ${when}] [STATE:RETRY_PENDING]`.trim();
+}
+
+function bumpCounter(
+  counters: Pick<
+    ScanCounters,
+    "published" | "withPolicy" | "hot" | "review" | "reviewHuman" | "retryPending" | "technicalBlocked" | "outOfScope"
+  >,
+  kind: "published" | "hot" | "reviewHuman" | "retryPending" | "technicalBlocked" | "outOfScope"
+) {
+  if (kind === "published") {
+    counters.published = (counters.published ?? 0) + 1;
+    counters.withPolicy++;
+  } else if (kind === "hot") counters.hot++;
+  else if (kind === "retryPending") counters.retryPending = (counters.retryPending ?? 0) + 1;
+  else if (kind === "technicalBlocked") counters.technicalBlocked = (counters.technicalBlocked ?? 0) + 1;
+  else if (kind === "outOfScope") counters.outOfScope = (counters.outOfScope ?? 0) + 1;
+  else {
+    counters.reviewHuman = (counters.reviewHuman ?? 0) + 1;
+    counters.review++;
+  }
+}
 
 export const CRAWL_CONCURRENCY = 10;
 export const REGIONAL_CONCURRENCY = 6;
@@ -136,7 +170,18 @@ export async function analyzeLead(
     pec: string | null;
     piva: string | null;
   },
-  counters: Pick<ScanCounters, "analyzed" | "withPolicy" | "hot" | "review">
+  counters: Pick<
+    ScanCounters,
+    | "analyzed"
+    | "withPolicy"
+    | "published"
+    | "hot"
+    | "review"
+    | "reviewHuman"
+    | "retryPending"
+    | "technicalBlocked"
+    | "outOfScope"
+  >
 ) {
   const existing = await prisma.lead.findUnique({
     where: { id: lead.id },
@@ -208,7 +253,14 @@ export async function analyzeLead(
 
   if (!website) return;
 
-  const crawl = await crawlSite(website);
+  const sliceRun = await crawlLeadViaSlices({
+    leadId: lead.id,
+    website,
+    evidence: existing?.evidence,
+    runId: process.env.SHADOW_RUN_ID || `analyze-${lead.id}`,
+  });
+  const crawl = sliceRun.crawl;
+  let productCrawlRunId: string | null = sliceRun.crawlRunId;
   counters.analyzed++;
 
   if (!crawl.ok && crawl.pagesVisited.length === 0) {
@@ -229,7 +281,7 @@ export async function analyzeLead(
 
     // Errore tecnico: non cancellare businessVerdict PUB storico → RETRY_PENDING
     const techErr = crawl.error || evidenceBody;
-    if (isTechnicalTransientError(techErr) || crawl.error === "bot_blocked") {
+    if (isTechnicalTransientError(techErr) || crawl.error === "bot_blocked" || crawl.error === "retry_pending") {
       const resolved = resolveAfterTechnicalFailure({
         previousEvidence: existing?.evidence,
         error: String(techErr),
@@ -263,7 +315,7 @@ export async function analyzeLead(
             lastScannedAt: new Date(),
           },
         });
-        counters.withPolicy++;
+        bumpCounter(counters, "published");
         return;
       }
       if (resolved.state === "RETRY_PENDING") {
@@ -279,11 +331,30 @@ export async function analyzeLead(
             city: lead.city,
             websiteReachable: false,
             policyFound: false,
-            evidence: packEvidence("REVIEW", evidenceBody, audit),
+            evidence: packRetryPendingEvidence(evidenceBody, audit),
             lastScannedAt: new Date(),
           },
         });
-        counters.review++;
+        bumpCounter(counters, "retryPending");
+        return;
+      }
+      if (resolved.state === "TECHNICAL_BLOCKED") {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            website,
+            city: lead.city,
+            websiteReachable: false,
+            policyFound: false,
+            evidence: stampProcessingMeta(evidenceBody, {
+              state: "TECHNICAL_BLOCKED",
+              businessVerdict: "NONE",
+              validationStatus: "TECHNICAL_BLOCKED",
+            }),
+            lastScannedAt: new Date(),
+          },
+        });
+        bumpCounter(counters, "technicalBlocked");
         return;
       }
     }
@@ -357,9 +428,9 @@ export async function analyzeLead(
         lastScannedAt: new Date(),
       },
     });
-    if (verdict === "PUBLISHED") counters.withPolicy++;
-    else if (verdict === "HOT") counters.hot++;
-    else counters.review++;
+    if (verdict === "PUBLISHED") bumpCounter(counters, "published");
+    else if (verdict === "HOT") bumpCounter(counters, "hot");
+    else bumpCounter(counters, "reviewHuman");
     return;
   }
 
@@ -412,7 +483,13 @@ export async function analyzeLead(
   // Polizza assente su .it/.com Maps — prova il TLD gemello (stesso brand nel nome).
   if (!analysis.policyFound && (verdict === "HOT" || verdict === "REVIEW")) {
     for (const altUrl of alternateBrandTldUrls(website, lead.companyName)) {
-      const altCrawl = await crawlSite(altUrl);
+      const altSlice = await crawlLeadViaSlices({
+        leadId: lead.id,
+        website: altUrl,
+        evidence: existing?.evidence,
+        runId: process.env.SHADOW_RUN_ID || `analyze-alt-${lead.id}`,
+      });
+      const altCrawl = altSlice.crawl;
       if (!altCrawl.ok) continue;
       const altAnalysis = analyzeCrawlPolicy(altCrawl);
       const altRec = reconcilePolicyVerdict(
@@ -439,6 +516,7 @@ export async function analyzeLead(
       ) {
         website = normalizeWebsite(altUrl) ?? altUrl;
         Object.assign(crawl, altCrawl);
+        productCrawlRunId = altSlice.crawlRunId;
         analysis = altRec.analysis;
         verdict = "PUBLISHED";
         evidenceBody =
@@ -620,30 +698,14 @@ export async function analyzeLead(
   });
   evidenceBody = stampFrontierSummary(evidenceBody, frontier);
 
-  let crawlRunId: string | null = null;
-  const frontierPath =
-    process.env.FRONTIER_DB_PATH ||
-    (process.env.SHADOW_MODE === "true" || process.env.SHADOW_MODE === "1"
-      ? defaultFrontierDbPath(process.env.SHADOW_RUN_ID || "local-scan")
-      : null);
-  if (frontierPath) {
+  let crawlRunId: string | null = productCrawlRunId;
+  if (crawlRunId) {
     try {
-      openFrontierStore(frontierPath);
-      const persisted = persistCrawlIntoFrontier({
-        dbPath: frontierPath,
-        leadId: lead.id,
-        runId: process.env.SHADOW_RUN_ID || `scan-${lead.id}`,
-        baseUrl: website,
-        pagesVisited: crawl.pagesVisited,
-        policyPdfsQueued: crawl.policyPdfsQueued ?? 0,
-        policyPdfsRead: crawl.policyPdfsRead ?? 0,
-        needsOcrReview: Boolean(crawl.needsOcrReview),
+      const ccLive = applyIdentityToCrawlRun(crawlRunId, {
         identityVerified: identityEv.verified,
         scopeVerified: identityEv.verified,
-        sitemapStatus: ccStamp.sitemapStatus,
       });
-      crawlRunId = persisted.crawlRunId;
-      Object.assign(ccStamp, persisted.completeness);
+      Object.assign(ccStamp, ccLive);
       const wf = await runProductionWaterfall({
         website,
         crawlRunId,
@@ -652,6 +714,8 @@ export async function analyzeLead(
     } catch (e) {
       evidenceBody = `${evidenceBody} [FRONTIER_PERSIST_ERR:${e instanceof Error ? e.message : "x"}]`.trim();
     }
+  } else {
+    evidenceBody = `${evidenceBody} [FRONTIER:missing]`.trim();
   }
 
   // Candidato PUB da polizza sul sito: resta PUB solo se gateway/canEmitPublished ok.
@@ -788,9 +852,15 @@ export async function analyzeLead(
     }
   }
 
-  if (verdict === "PUBLISHED") counters.withPolicy++;
-  else if (verdict === "HOT") counters.hot++;
-  else counters.review++;
+  if (verdict === "PUBLISHED") bumpCounter(counters, "published");
+  else if (verdict === "HOT") bumpCounter(counters, "hot");
+  else if (fin.processingHint === "RETRY_PENDING") bumpCounter(counters, "retryPending");
+  else bumpCounter(counters, "reviewHuman");
+
+  const finalEvidence =
+    fin.processingHint === "RETRY_PENDING"
+      ? packRetryPendingEvidence(evidenceBody, audit)
+      : packEvidence(verdict, evidenceBody, audit);
 
   await prisma.lead.update({
     where: { id: lead.id },
@@ -811,7 +881,7 @@ export async function analyzeLead(
         expiry: analysis.expiry,
         obsoletePolicy: analysis.policyObsolete,
       }),
-      evidence: packEvidence(verdict, evidenceBody, audit),
+      evidence: finalEvidence,
       pagesVisited: crawl.pagesVisited.length,
       lastScannedAt: new Date(),
     },
@@ -986,7 +1056,13 @@ export async function analyzeRegional(
 
   if (website && mustCrawlSite) {
     audit.sitePages = [];
-    const crawl = await crawlSite(website);
+    const sliceRun = await crawlLeadViaSlices({
+      leadId: lead.id,
+      website,
+      evidence: lead.evidence,
+      runId: process.env.SHADOW_RUN_ID || `analyze-reg-${lead.id}`,
+    });
+    const crawl = sliceRun.crawl;
     pagesVisited = crawl.pagesVisited.length;
     if (crawl.ok || crawl.pagesVisited.length > 0) {
       websiteReachable = true;
@@ -1271,9 +1347,10 @@ export async function analyzeRegional(
     }
   }
 
-  if (verdict === "PUBLISHED" && policyFound) counters.withPolicy++;
-  else if (verdict === "HOT") counters.hot++;
-  else counters.review++;
+  if (verdict === "PUBLISHED" && policyFound) bumpCounter(counters, "published");
+  else if (verdict === "HOT") bumpCounter(counters, "hot");
+  else if (finReg.processingHint === "RETRY_PENDING") bumpCounter(counters, "retryPending");
+  else bumpCounter(counters, "reviewHuman");
 
   await prisma.lead.update({
     where: { id: lead.id },
@@ -1302,7 +1379,10 @@ export async function analyzeRegional(
         expiry: policyExpiry,
         obsoletePolicy: crawlPolicyObsolete,
       }),
-      evidence: packEvidence(verdict, evidenceBody, audit),
+      evidence:
+        finReg.processingHint === "RETRY_PENDING"
+          ? packRetryPendingEvidence(evidenceBody, audit)
+          : packEvidence(verdict, evidenceBody, audit),
       lastScannedAt: new Date(),
     },
   });
