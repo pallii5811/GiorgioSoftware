@@ -1,5 +1,6 @@
 /**
  * PUBLISHED fast-path: revalidate historical [DOCS:] evidence URL without full-site crawl.
+ * Historical metadata MUST NOT certify an unrelated / non-insurance document.
  */
 import { createHash } from "node:crypto";
 import { externalFetch } from "@/lib/http";
@@ -15,6 +16,8 @@ import {
   type SanitaProcessingState,
 } from "@/lib/sanita/processing-state";
 import { readCrawlBudgetConfig } from "@/lib/sanita/crawl-budget";
+import { classifyNegativeInsuranceDocument } from "@/lib/sanita/negative-document";
+import { canAttributeEntity, type EntityFingerprint } from "@/lib/sanita/entity-fingerprint";
 
 export type PublishedFastPathInput = {
   leadId: string;
@@ -25,7 +28,12 @@ export type PublishedFastPathInput = {
   policyCompany?: string | null;
   policyNumber?: string | null;
   policyExpiry?: number | null;
-  identityStatus?: "OFFICIAL_CONFIRMED" | "GROUP_OFFICIAL_CONFIRMED" | "UNKNOWN";
+  /** Only when derived from real identity engine — never default OFFICIAL_CONFIRMED. */
+  identityStatus?: "OFFICIAL_CONFIRMED" | "GROUP_OFFICIAL_CONFIRMED" | "UNKNOWN" | "INSUFFICIENT";
+  city?: string | null;
+  phone?: string | null;
+  piva?: string | null;
+  facilityFingerprint?: EntityFingerprint;
 };
 
 export type PublishedFastPathResult = {
@@ -45,10 +53,51 @@ export type PublishedFastPathResult = {
   reasons: string[];
   techError: string | null;
   historicalDocs: string[];
+  negativeKind: string | null;
 };
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function facilityFp(input: PublishedFastPathInput): EntityFingerprint {
+  if (input.facilityFingerprint) return input.facilityFingerprint;
+  let domain: string | null = null;
+  try {
+    domain = input.website ? new URL(input.website).hostname.replace(/^www\./i, "") : null;
+  } catch {
+    domain = null;
+  }
+  return {
+    facilityName: input.companyName,
+    legalName: input.companyName,
+    municipality: input.city,
+    phone: input.phone,
+    vatId: input.piva,
+    domain,
+  };
+}
+
+function docFpFromText(text: string, url: string, facility: EntityFingerprint): EntityFingerprint {
+  const vat =
+    text.match(/(?:p\.?\s*iva|partita\s+iva)[^\d]{0,12}(\d{11})/i)?.[1] ||
+    text.match(/\b(\d{11})\b/)?.[1] ||
+    null;
+  let domain: string | null = null;
+  try {
+    domain = new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    domain = null;
+  }
+  return {
+    facilityName: facility.facilityName,
+    legalName: facility.legalName,
+    municipality: facility.municipality,
+    phone: facility.phone,
+    vatId: vat,
+    domain,
+    seatPageUrl: url,
+  };
 }
 
 export async function runPublishedFastPath(
@@ -74,11 +123,11 @@ export async function runPublishedFastPath(
     reasons: [],
     techError: null,
     historicalDocs,
+    negativeKind: null,
   };
 
   const candidates = [
     ...historicalDocs,
-    // fallback: URL embedded in body
     ...((input.evidence || "").match(/https?:\/\/[^\s\]]+\.pdf/gi) ?? []),
   ].filter(Boolean);
 
@@ -99,7 +148,9 @@ export async function runPublishedFastPath(
     };
   }
 
+  const facility = facilityFp(input);
   let lastErr: string | null = null;
+
   for (const rawUrl of candidates) {
     const url = rawUrl.trim();
     try {
@@ -119,7 +170,6 @@ export async function runPublishedFastPath(
       let ocrUsed = false;
 
       if (/\.pdf/i.test(url) || (res.headers.get("content-type") || "").includes("pdf")) {
-        // Prefer digital text; OCR only when empty (hist metadata can complete insurance signals)
         let digital = "";
         try {
           const { PDFParse } = await import("pdf-parse");
@@ -155,36 +205,50 @@ export async function runPublishedFastPath(
         digitalLen = text.length;
       }
 
-      if (!text || text.length < 40) {
-        // Fetched bytes OK but text thin: augment with historical evidence body (same DOCS URL revalidation)
-        const histBody = parts.body || "";
-        text = `${text} ${histBody} ${input.policyCompany || ""} ${input.policyNumber || ""}`.replace(/\s+/g, " ").trim();
-      }
-
+      // Current document only — do NOT inject historical policyCompany/policyNumber into text
       if (!text || text.length < 40) {
         lastErr = "empty_content";
         continue;
       }
 
+      const negative = classifyNegativeInsuranceDocument(text, url);
+      if (negative.blocked) {
+        return {
+          ...base,
+          contentAcquired: true,
+          exactUrl: url,
+          contentHash: hash,
+          excerpt: text.slice(0, 2000),
+          digitalLen,
+          ocrLen,
+          ocrUsed,
+          analysis: analyzePolicy(text, url),
+          publishedOk: false,
+          businessVerdict: null,
+          validationStatus: "CONFLICT_FOUND",
+          processingState: "REVIEW_HUMAN",
+          keepLegacyToken: "PUBLISHED",
+          reasons: [...negative.reasons, "documento_non_assicurativo"],
+          techError: null,
+          negativeKind: negative.kind,
+        };
+      }
+
       const analysis = analyzePolicy(text, url);
       const sig = detectInsuranceSignals(text);
-      // Historical DOCS revalidation: preserve known policy metadata as insurance signal support
-      const histStrong =
-        Boolean(input.policyNumber?.trim()) ||
-        /autoassicur|gestione\s+diretta/i.test(input.policyCompany || "") ||
-        Boolean(input.policyCompany?.trim() && analysis.policyFound);
+      // Strong signal must come from CURRENT document body — not historical lead fields alone
+      const currentStrong =
+        sig.strong ||
+        Boolean(analysis.policyNumber?.trim()) ||
+        (Boolean(analysis.company?.trim()) && /rct|rco|polizza|assicur/i.test(text));
+
       const sourceClass = classifyFetchedAgainstFacility({
         pageUrl: url,
         facilityWebsite: input.website,
       });
-      // Historical PUBLISHED on facility docs: treat first-party if same host family
-      const effectiveSource =
-        sourceClass === "UNKNOWN" && input.website
-          ? classifyFetchedAgainstFacility({ pageUrl: url, facilityWebsite: input.website })
-          : sourceClass;
       const firstParty =
-        effectiveSource === "FIRST_PARTY_FACILITY" ||
-        effectiveSource === "FIRST_PARTY_GROUP" ||
+        sourceClass === "FIRST_PARTY_FACILITY" ||
+        sourceClass === "FIRST_PARTY_GROUP" ||
         (input.website &&
           (() => {
             try {
@@ -196,31 +260,33 @@ export async function runPublishedFastPath(
             }
           })());
 
+      const docFp = docFpFromText(text, url, facility);
+      const attr = canAttributeEntity(docFp, facility);
+      const identityStatus =
+        input.identityStatus === "OFFICIAL_CONFIRMED" ||
+        input.identityStatus === "GROUP_OFFICIAL_CONFIRMED"
+          ? input.identityStatus
+          : "INSUFFICIENT";
+
       const decision = canEmitPublished({
-        identityStatus: input.identityStatus ?? "OFFICIAL_CONFIRMED",
-        sourceClass: firstParty ? "FIRST_PARTY_FACILITY" : effectiveSource,
+        identityStatus,
+        sourceClass: firstParty ? "FIRST_PARTY_FACILITY" : sourceClass,
         exactUrl: url,
         contentFetched: true,
         contentExcerpt: text.slice(0, 4000),
-        entityAttributed: true,
-        hasStrongInsuranceSignal:
-          sig.strong || Boolean(analysis.policyNumber || analysis.company) || histStrong,
-        hasMediumInsuranceSignals: Math.max(
-          sig.mediumCount,
-          analysis.policyFound ? 2 : 0,
-          input.policyCompany ? 2 : 0
-        ),
+        entityAttributed: attr.ok,
+        hasStrongInsuranceSignal: currentStrong,
+        hasMediumInsuranceSignals: sig.mediumCount,
         policyObsolete: analysis.policyObsolete,
-        hasCoverageEnd: Boolean(analysis.expiry) || Boolean(input.policyExpiry),
+        hasCoverageEnd: Boolean(analysis.expiry),
         category: input.category || "Casa di cura",
       });
 
-      // Prefer analysis expiry; fall back to lead.policyExpiry for classification
       let bv = decision.businessVerdict;
-      if (decision.ok && bv === "PUBLISHED_CURRENT" && input.policyExpiry) {
-        if (input.policyExpiry < Date.now()) bv = "PUBLISHED_EXPIRED";
+      if (decision.ok && bv === "PUBLISHED_CURRENT" && analysis.expiry) {
+        if (analysis.expiry.getTime() < Date.now()) bv = "PUBLISHED_EXPIRED";
       }
-      if (decision.ok && !analysis.expiry && !input.policyExpiry) {
+      if (decision.ok && !analysis.expiry) {
         bv = "PUBLISHED_DATE_UNKNOWN";
       }
 
@@ -244,19 +310,20 @@ export async function runPublishedFastPath(
               : "PUBLISHED_CURRENT"
           : "REVIEW_HUMAN",
         keepLegacyToken: "PUBLISHED",
-        reasons: decision.reasons,
+        reasons: decision.ok ? decision.reasons : [...decision.reasons, ...attr.reasons],
         techError: null,
         historicalDocs,
+        negativeKind: null,
       };
     } catch (e) {
       lastErr = e instanceof Error ? e.message : String(e);
-      await sleep(budget.perHostDelayMs);
+      await sleep(50);
     }
   }
 
   const tech = resolveAfterTechnicalFailure({
     previousEvidence: input.evidence,
-    error: lastErr || "fast_path_fetch_failed",
+    error: lastErr || "fetch_failed",
     retriesExhausted: false,
   });
   return {
@@ -265,7 +332,7 @@ export async function runPublishedFastPath(
     validationStatus: tech.validationStatus,
     processingState: tech.state,
     keepLegacyToken: "PUBLISHED",
+    reasons: [lastErr || "fetch_failed"],
     techError: lastErr,
-    reasons: [lastErr || "fast_path_failed"],
   };
 }
