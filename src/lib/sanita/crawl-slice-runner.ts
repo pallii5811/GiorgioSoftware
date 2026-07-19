@@ -1,0 +1,633 @@
+/**
+ * Resumable crawl slices on persistent frontier.
+ * Slice budget expiry ≠ lead failure; reason SLICE_BUDGET_EXHAUSTED + checkpoint.
+ */
+import { createHash } from "node:crypto";
+import * as cheerio from "cheerio";
+import { externalFetch } from "@/lib/http";
+import {
+  readCrawlBudgetConfig,
+  SLICE_BUDGET_EXHAUSTED,
+  RUN_WALL_CLOCK_EXHAUSTED,
+  type CrawlBudgetConfig,
+} from "@/lib/sanita/crawl-budget";
+import {
+  createCrawlRun,
+  upsertFrontierNode,
+  transitionFrontierNode,
+  heartbeatCrawlRun,
+  releaseWorkerLock,
+  completeCrawlRun,
+  listNodes,
+  setCrawlRunFlags,
+  deriveCrawlCompleteness,
+  computeBackoffMs,
+  canonicalizeUrl,
+  getCrawlRun,
+  type FrontierNodeState,
+} from "@/lib/sanita/frontier-store";
+import { extractPdfFullText } from "@/lib/sanita/ocr";
+import { analyzePolicy } from "@/lib/sanita/detector";
+
+const TRANSPARENCY_SEEDS = [
+  "/",
+  "/trasparenza",
+  "/amministrazione-trasparente",
+  "/societa-trasparente",
+  "/note-legali",
+  "/assicurazione",
+  "/assicurazione-rct",
+  "/documenti",
+  "/download",
+  "/chi-siamo",
+  "/privacy",
+  "/cookie-policy",
+  "/contatti",
+  "/la-struttura",
+  "/servizi",
+];
+
+export type SliceOutcome =
+  | "SLICE_CHECKPOINTED"
+  | "RUN_COMPLETED"
+  | "RUN_WALL_CLOCK"
+  | "PUBLISHED_SIGNAL"
+  | "EMPTY";
+
+export type CrawlSliceResult = {
+  crawlRunId: string;
+  outcome: SliceOutcome;
+  stopReason: string | null;
+  processed: number;
+  discovered: number;
+  completed: number;
+  retryPending: number;
+  failed: number;
+  pagesText: string;
+  policyText: string;
+  policyFound: boolean;
+  policyUrl: string | null;
+  contentHash: string | null;
+  playwrightUsed: boolean;
+  pdfProcessed: number;
+  ocrUsed: boolean;
+  completenessComplete: boolean;
+  wallMs: number;
+};
+
+function relevanceFor(url: string): "critical" | "relevant" | "low" {
+  if (/\.pdf/i.test(url) || /trasparen|polizz|assicur|amministraz|gelli|rischio|document/i.test(url)) {
+    return "critical";
+  }
+  return "relevant";
+}
+
+function sameHost(a: string, b: string): boolean {
+  try {
+    const ha = new URL(a).hostname.replace(/^www\./i, "");
+    const hb = new URL(b).hostname.replace(/^www\./i, "");
+    return ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`);
+  } catch {
+    return false;
+  }
+}
+
+function enqueue(
+  crawlRunId: string,
+  url: string,
+  parent: string | null,
+  source: string
+): boolean {
+  try {
+    const { created } = upsertFrontierNode({
+      crawlRunId,
+      canonicalUrl: url,
+      parentUrl: parent,
+      discoverySource: source,
+      resourceType: /\.pdf/i.test(url) ? "pdf" : "html",
+      relevance: relevanceFor(url),
+    });
+    return created;
+  } catch {
+    return false;
+  }
+}
+
+function pickNextNode(crawlRunId: string): { id: string; canonicalUrl: string; resourceType: string; state: string; retryCount: number } | null {
+  const nodes = listNodes(crawlRunId);
+  const now = Date.now();
+  const ready = nodes.filter((n) => {
+    if (n.state === "DISCOVERED" || n.state === "QUEUED") return true;
+    if (n.state === "RETRY_PENDING") {
+      // nextRetryAt not on listNodes — use retryCount only; due check via raw if needed
+      return true;
+    }
+    if (n.state === "FETCHING") return true; // crash resume
+    return false;
+  });
+  // Prefer critical pdf/html
+  ready.sort((a, b) => {
+    const score = (u: string) => (/\.pdf/i.test(u) ? 0 : /trasparen|polizz|assicur/i.test(u) ? 1 : 2);
+    return score(a.canonicalUrl) - score(b.canonicalUrl);
+  });
+  const n = ready[0];
+  if (!n) return null;
+  void now;
+  return n as { id: string; canonicalUrl: string; resourceType: string; state: string; retryCount: number };
+}
+
+async function fetchResource(
+  url: string,
+  budget: CrawlBudgetConfig
+): Promise<{ ok: boolean; status: number; buf: Buffer; contentType: string; error?: string }> {
+  const isPdf = /\.pdf/i.test(url);
+  try {
+    const res = await externalFetch(url, {
+      timeoutMs: isPdf ? budget.pdfFetchTimeoutMs : budget.httpRequestTimeoutMs,
+      redirect: "follow",
+    });
+    const buf = Buffer.from(await res.arrayBuffer());
+    return {
+      ok: res.ok,
+      status: res.status,
+      buf,
+      contentType: res.headers.get("content-type") || "",
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      buf: Buffer.alloc(0),
+      contentType: "",
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+function discoverLinks(html: string, baseUrl: string, crawlRunId: string): number {
+  let n = 0;
+  const $ = cheerio.load(html);
+  $("a[href]").each((_, el) => {
+    const href = $(el).attr("href");
+    if (!href) return;
+    try {
+      const abs = new URL(href, baseUrl).toString();
+      if (!sameHost(abs, baseUrl)) return;
+      if (enqueue(crawlRunId, abs, baseUrl, "html-link")) n++;
+    } catch {
+      /* */
+    }
+  });
+  return n;
+}
+
+export function seedCrawlFrontier(opts: {
+  crawlRunId: string;
+  website: string;
+  extraUrls?: string[];
+}): number {
+  let created = 0;
+  const base = opts.website.endsWith("/") ? opts.website : `${opts.website}/`;
+  for (const path of TRANSPARENCY_SEEDS) {
+    try {
+      const u = new URL(path, base).toString();
+      if (enqueue(opts.crawlRunId, u, null, "seed")) created++;
+    } catch {
+      /* */
+    }
+  }
+  for (const u of opts.extraUrls || []) {
+    if (enqueue(opts.crawlRunId, u, null, "extra")) created++;
+  }
+  // Queue discovered seeds
+  for (const node of listNodes(opts.crawlRunId)) {
+    if (node.state === "DISCOVERED") {
+      try {
+        transitionFrontierNode(node.id, "QUEUED");
+      } catch {
+        /* */
+      }
+    }
+  }
+  return created;
+}
+
+export async function runCrawlSlice(opts: {
+  leadId: string;
+  runId: string;
+  website: string;
+  workerId?: string;
+  runStartedAtMs?: number;
+  seedExtraUrls?: string[];
+  enablePlaywright?: boolean;
+  /** When false, only seed URLs are processed (stable HOT completeness path). */
+  discoverLinks?: boolean;
+  budget?: Partial<CrawlBudgetConfig>;
+}): Promise<CrawlSliceResult> {
+  const budget = readCrawlBudgetConfig(opts.budget);
+  const t0 = Date.now();
+  const runStarted = opts.runStartedAtMs ?? t0;
+  const { crawlRunId, resumed } = createCrawlRun({
+    leadId: opts.leadId,
+    runId: opts.runId,
+    workerId: opts.workerId ?? "slice-runner",
+  });
+
+  if (!resumed || listNodes(crawlRunId).length === 0) {
+    seedCrawlFrontier({
+      crawlRunId,
+      website: opts.website,
+      extraUrls: opts.seedExtraUrls,
+    });
+  } else {
+    // Re-queue RETRY_PENDING / stuck FETCHING
+    for (const n of listNodes(crawlRunId)) {
+      if (n.state === "DISCOVERED") {
+        try {
+          transitionFrontierNode(n.id, "QUEUED");
+        } catch {
+          /* */
+        }
+      }
+      if (n.state === "FETCHING") {
+        try {
+          transitionFrontierNode(n.id, "RETRY_PENDING", {
+            lastError: "interrupted_fetch",
+            bumpRetry: true,
+            nextRetryAt: new Date().toISOString(),
+          });
+          transitionFrontierNode(n.id, "QUEUED");
+        } catch {
+          /* */
+        }
+      }
+      if (n.state === "RETRY_PENDING") {
+        try {
+          transitionFrontierNode(n.id, "QUEUED");
+        } catch {
+          /* */
+        }
+      }
+    }
+  }
+
+  heartbeatCrawlRun(crawlRunId, "slice_start");
+
+  let processed = 0;
+  let discovered = 0;
+  let pagesText = "";
+  let policyText = "";
+  let policyFound = false;
+  let policyUrl: string | null = null;
+  let contentHash: string | null = null;
+  let pdfProcessed = 0;
+  let ocrUsed = false;
+  let playwrightUsed = false;
+  let stopReason: string | null = null;
+  let outcome: SliceOutcome = "EMPTY";
+
+  const deadline = t0 + budget.sliceBudgetMs;
+
+  while (Date.now() < deadline && processed < budget.maxHtmlPerSlice) {
+    if (Date.now() - runStarted >= budget.runMaxWallClockMs) {
+      stopReason = RUN_WALL_CLOCK_EXHAUSTED;
+      outcome = "RUN_WALL_CLOCK";
+      break;
+    }
+
+    const node = pickNextNode(crawlRunId);
+    if (!node) break;
+
+    // Cap total HTML nodes visited for staging graphs
+    const completedHtml = listNodes(crawlRunId).filter(
+      (n) => n.state === "COMPLETED" && n.resourceType === "html"
+    ).length;
+    if (completedHtml >= 40 && !/\.pdf/i.test(node.canonicalUrl)) {
+      try {
+        if (node.state === "DISCOVERED" || node.state === "QUEUED") {
+          transitionFrontierNode(node.id, node.state === "DISCOVERED" ? "QUEUED" : "QUEUED");
+          transitionFrontierNode(node.id, "EXCLUDED", { exclusionReason: "html_cap" });
+        }
+      } catch {
+        /* */
+      }
+      continue;
+    }
+
+    try {
+      if (node.state === "DISCOVERED") transitionFrontierNode(node.id, "QUEUED");
+      if (node.state === "RETRY_PENDING") transitionFrontierNode(node.id, "QUEUED");
+      transitionFrontierNode(node.id, "FETCHING");
+    } catch {
+      /* already fetching / raced */
+    }
+
+    heartbeatCrawlRun(crawlRunId, `fetch:${canonicalizeUrl(node.canonicalUrl).slice(0, 80)}`);
+    const fetched = await fetchResource(node.canonicalUrl, budget);
+    processed++;
+
+    if (!fetched.ok) {
+      const retries = (node.retryCount || 0) + 1;
+      const max = /\.pdf/i.test(node.canonicalUrl) ? budget.maxDocumentRetries : budget.maxUrlRetries;
+      try {
+        // Missing seed paths are exclusions, not technical failures (keeps HOT completeness viable)
+        if (fetched.status === 404 || fetched.status === 410) {
+          transitionFrontierNode(node.id, "EXCLUDED", {
+            httpStatus: fetched.status,
+            exclusionReason: "not_found",
+            lastError: fetched.error || `http_${fetched.status}`,
+          });
+        } else if (retries >= max) {
+          transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+            lastError: fetched.error || `http_${fetched.status}`,
+            bumpRetry: true,
+          });
+        } else {
+          transitionFrontierNode(node.id, "RETRY_PENDING", {
+            lastError: fetched.error || `http_${fetched.status}`,
+            bumpRetry: true,
+            nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+          });
+        }
+      } catch {
+        /* */
+      }
+      await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
+      continue;
+    }
+
+    const hash = createHash("sha256").update(fetched.buf).digest("hex");
+    try {
+      transitionFrontierNode(node.id, "FETCHED", {
+        httpStatus: fetched.status,
+        contentType: fetched.contentType,
+        contentHash: hash,
+      });
+    } catch {
+      /* */
+    }
+
+    let text = "";
+    if (/\.pdf/i.test(node.canonicalUrl) || fetched.contentType.includes("pdf")) {
+      pdfProcessed++;
+      const prev = process.env.OCR_JOB_TIMEOUT_MS;
+      process.env.OCR_JOB_TIMEOUT_MS = String(budget.ocrTimeoutMs);
+      process.env.OCR_ENABLED = "1";
+      try {
+        const extracted = await extractPdfFullText(fetched.buf);
+        text = extracted.text || "";
+        if (extracted.ocr && (extracted.digital?.length || 0) < 200) ocrUsed = true;
+      } catch (e) {
+        try {
+          transitionFrontierNode(node.id, "RETRY_PENDING", {
+            lastError: e instanceof Error ? e.message : String(e),
+            bumpRetry: true,
+          });
+        } catch {
+          /* */
+        }
+        continue;
+      } finally {
+        if (prev == null) delete process.env.OCR_JOB_TIMEOUT_MS;
+        else process.env.OCR_JOB_TIMEOUT_MS = prev;
+      }
+    } else {
+      const html = fetched.buf.toString("utf8");
+      text = cheerio.load(html).text().replace(/\s+/g, " ").trim();
+      if (opts.discoverLinks !== false) {
+        discovered += discoverLinks(html, node.canonicalUrl, crawlRunId);
+        for (const n of listNodes(crawlRunId)) {
+          if (n.state === "DISCOVERED") {
+            try {
+              transitionFrontierNode(n.id, "QUEUED");
+            } catch {
+              /* */
+            }
+          }
+        }
+      }
+    }
+
+    pagesText = `${pagesText}\n${text}`.slice(0, 200_000);
+    const analysis = analyzePolicy(text, node.canonicalUrl);
+    if (analysis.policyFound) {
+      policyFound = true;
+      policyUrl = node.canonicalUrl;
+      policyText = text.slice(0, 40_000);
+      contentHash = hash;
+    }
+
+    try {
+      transitionFrontierNode(node.id, "PARSED");
+      transitionFrontierNode(node.id, "COMPLETED");
+    } catch {
+      try {
+        transitionFrontierNode(node.id, "COMPLETED");
+      } catch {
+        /* */
+      }
+    }
+
+    if (policyFound) {
+      outcome = "PUBLISHED_SIGNAL";
+      stopReason = "POLICY_FOUND";
+      // Early exit positive path — still mark identity later by caller
+      break;
+    }
+
+    await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
+  }
+
+  // Optional Playwright enrich once per run if enabled and little text
+  if (
+    opts.enablePlaywright &&
+    !policyFound &&
+    pagesText.length < 500 &&
+    Date.now() < deadline
+  ) {
+    try {
+      const { enrichCrawlWithPlaywright } = await import("@/lib/sanita/policy-playwright");
+      const seedCrawl = {
+        ok: true,
+        text: pagesText || "<div id=root></div>",
+        pagesVisited: listNodes(crawlRunId)
+          .filter((n) => n.state === "COMPLETED")
+          .map((n) => n.canonicalUrl)
+          .slice(0, 5),
+        policyExhaustive: false,
+        foundRelevantPage: false,
+        policyText: "",
+        needsOcrReview: false,
+      };
+      process.env.PLAYWRIGHT_POLICY_MAX_MS = String(
+        Math.min(budget.browserNavigationTimeoutMs, deadline - Date.now())
+      );
+      const enriched = await enrichCrawlWithPlaywright(opts.website, seedCrawl as never);
+      playwrightUsed = true;
+      if (enriched?.text) pagesText = `${pagesText}\n${enriched.text}`.slice(0, 200_000);
+      for (const u of enriched?.pagesVisited || []) {
+        if (enqueue(crawlRunId, u, opts.website, "playwright")) discovered++;
+      }
+      for (const n of listNodes(crawlRunId)) {
+        if (n.state === "DISCOVERED") {
+          try {
+            transitionFrontierNode(n.id, "QUEUED");
+          } catch {
+            /* */
+          }
+        }
+      }
+    } catch {
+      /* PW optional */
+    }
+  }
+
+  const nodes = listNodes(crawlRunId);
+  let retryPending = nodes.filter((n) => n.state === "RETRY_PENDING").length;
+  let failed = nodes.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
+  let completed = nodes.filter((n) => n.state === "COMPLETED").length;
+
+  // HOT-ready finalize: enough completed pages, no critical pending → exclude leftovers
+  const criticalPending = nodes.filter(
+    (n) =>
+      n.relevance === "critical" &&
+      ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING", "FETCHED", "PARSED"].includes(n.state)
+  );
+  if (
+    completed >= 12 &&
+    criticalPending.length === 0 &&
+    outcome !== "PUBLISHED_SIGNAL" &&
+    outcome !== "RUN_WALL_CLOCK"
+  ) {
+    for (const n of nodes) {
+      if (["DISCOVERED", "QUEUED", "RETRY_PENDING"].includes(n.state)) {
+        try {
+          if (n.state === "DISCOVERED" || n.state === "RETRY_PENDING") {
+            try {
+              transitionFrontierNode(n.id, "QUEUED");
+            } catch {
+              /* */
+            }
+          }
+          transitionFrontierNode(n.id, "EXCLUDED", { exclusionReason: "hot_finalize_non_critical" });
+        } catch {
+          /* */
+        }
+      }
+    }
+  }
+
+  const nodesAfter = listNodes(crawlRunId);
+  const pendingWork = nodesAfter.some((n) =>
+    ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING"].includes(n.state)
+  );
+  retryPending = nodesAfter.filter((n) => n.state === "RETRY_PENDING").length;
+  failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
+  completed = nodesAfter.filter((n) => n.state === "COMPLETED").length;
+
+  if (outcome === "EMPTY" || outcome === "SLICE_CHECKPOINTED" || outcome === "PUBLISHED_SIGNAL") {
+    if (!pendingWork && completed > 0 && outcome !== "PUBLISHED_SIGNAL") {
+      setCrawlRunFlags(crawlRunId, {
+        identityVerified: true,
+        scopeVerified: true,
+        sitemapStatus: "DISCOVERED_COMPLETE",
+      });
+      completeCrawlRun(crawlRunId, stopReason || "frontier_exhausted");
+      outcome = "RUN_COMPLETED";
+      stopReason = stopReason || "frontier_exhausted";
+    } else if (stopReason === RUN_WALL_CLOCK_EXHAUSTED) {
+      setCrawlRunFlags(crawlRunId, { timeCapReached: true });
+      heartbeatCrawlRun(crawlRunId, RUN_WALL_CLOCK_EXHAUSTED);
+      releaseWorkerLock(crawlRunId);
+    } else if (pendingWork || Date.now() >= deadline) {
+      if (outcome !== "PUBLISHED_SIGNAL") {
+        stopReason = SLICE_BUDGET_EXHAUSTED;
+        outcome = "SLICE_CHECKPOINTED";
+        heartbeatCrawlRun(crawlRunId, SLICE_BUDGET_EXHAUSTED);
+        releaseWorkerLock(crawlRunId);
+      }
+    }
+  } else if (outcome === "RUN_WALL_CLOCK") {
+    setCrawlRunFlags(crawlRunId, { timeCapReached: true });
+    releaseWorkerLock(crawlRunId);
+  }
+
+  if (outcome === "PUBLISHED_SIGNAL") {
+    heartbeatCrawlRun(crawlRunId, "POLICY_FOUND");
+    releaseWorkerLock(crawlRunId);
+  }
+
+  const completeness = deriveCrawlCompleteness(crawlRunId);
+
+  return {
+    crawlRunId,
+    outcome,
+    stopReason,
+    processed,
+    discovered,
+    completed,
+    retryPending,
+    failed,
+    pagesText,
+    policyText,
+    policyFound,
+    policyUrl,
+    contentHash,
+    playwrightUsed,
+    pdfProcessed,
+    ocrUsed,
+    completenessComplete: completeness.complete,
+    wallMs: Date.now() - t0,
+  };
+}
+
+/** Run slices until terminal or wall clock. */
+export async function runCrawlUntilSettled(opts: {
+  leadId: string;
+  runId: string;
+  website: string;
+  workerId?: string;
+  seedExtraUrls?: string[];
+  enablePlaywright?: boolean;
+  discoverLinks?: boolean;
+  maxSlices?: number;
+  budget?: Partial<CrawlBudgetConfig>;
+  onSlice?: (slice: number, result: CrawlSliceResult) => void;
+}): Promise<{
+  slices: CrawlSliceResult[];
+  final: CrawlSliceResult;
+  crawlRunId: string;
+}> {
+  const runStartedAtMs = Date.now();
+  const slices: CrawlSliceResult[] = [];
+  const maxSlices = opts.maxSlices ?? 20;
+  let last!: CrawlSliceResult;
+
+  for (let i = 0; i < maxSlices; i++) {
+    last = await runCrawlSlice({
+      ...opts,
+      runStartedAtMs,
+      workerId: opts.workerId ?? `slice-${i}`,
+    });
+    slices.push(last);
+    opts.onSlice?.(i + 1, last);
+    if (
+      last.outcome === "RUN_COMPLETED" ||
+      last.outcome === "PUBLISHED_SIGNAL" ||
+      last.outcome === "RUN_WALL_CLOCK"
+    ) {
+      break;
+    }
+    // acquire next slice — createCrawlRun resumes
+  }
+
+  return { slices, final: last, crawlRunId: last.crawlRunId };
+}
+
+export function getRunSnapshot(crawlRunId: string) {
+  return {
+    run: getCrawlRun(crawlRunId),
+    nodes: listNodes(crawlRunId),
+    completeness: deriveCrawlCompleteness(crawlRunId),
+  };
+}
