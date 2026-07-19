@@ -27,6 +27,7 @@
     "test:ux-consistency": "tsx scripts/test-ux-consistency.mjs",
     "test:staging-runtime": "tsx scripts/test-staging-runtime.mjs",
     "test:crawl-slices": "tsx scripts/test-crawl-slices.mjs",
+    "test:stop-ship": "tsx scripts/test-stop-ship.mjs",
     "test:staging-browser": "tsx scripts/test-staging-browser.mjs",
     "test:published-fast-path": "tsx scripts/test-published-fast-path.mjs",
     "test:waterfall": "tsx scripts/test-resolution-waterfall.mjs",
