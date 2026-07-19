@@ -17,6 +17,7 @@
     "test:hot-proof": "tsx scripts/test-hot-proof.mjs",
     "test:state-machine": "tsx scripts/test-state-machine.mjs",
     "test:atomic-verdict": "tsx scripts/test-atomic-verdict.mjs",
+    "test:bypass-audit": "tsx scripts/test-bypass-audit.mjs",
     "test:gare-actionable": "tsx scripts/test-gare-actionable.mjs",
     "test:ux-consistency": "tsx scripts/test-ux-consistency.mjs",
     "test:waterfall": "tsx scripts/test-resolution-waterfall.mjs",

@@ -6,6 +6,7 @@ import type { Verdict } from "@/lib/sanita/verdict";
 import { canEmitHot, explainCanEmitHot, type HotEmitEvidence } from "@/lib/sanita/can-emit-hot";
 import {
   canEmitPublished,
+  detectInsuranceSignals,
   type PublishedEmitEvidence,
 } from "@/lib/sanita/can-emit-published";
 import {
@@ -15,6 +16,8 @@ import {
   type ValidationStatus,
 } from "@/lib/sanita/processing-state";
 import { HotIncompleteStopError, HOT_INCOMPLETE_STOP } from "@/lib/sanita/atomic-verdict";
+import { classifyFetchedAgainstFacility, type SourceClass } from "@/lib/sanita/source-class";
+import { canAttributeEntity, type EntityFingerprint } from "@/lib/sanita/entity-fingerprint";
 
 export class PublishedGateError extends Error {
   readonly reasons: string[];
@@ -52,8 +55,57 @@ export type PersistSanitaDecision = {
 };
 
 /**
+ * Costruisce PublishedEmitEvidence dal percorso scan (unico ingresso a canEmitPublished).
+ */
+export function buildPublishedEmitEvidence(opts: {
+  identityStatus: PublishedEmitEvidence["identityStatus"];
+  pageUrl: string | null | undefined;
+  facilityWebsite: string | null | undefined;
+  groupWebsite?: string | null;
+  contentFetched: boolean;
+  contentExcerpt: string | null | undefined;
+  docFingerprint: EntityFingerprint;
+  facilityFingerprint: EntityFingerprint;
+  policyObsolete?: boolean;
+  hasCoverageEnd?: boolean;
+  incompletePublication?: boolean;
+  analogousMeasure?: boolean;
+  category?: string | null;
+  criticalConflict?: boolean;
+  sourceClassOverride?: SourceClass;
+}): PublishedEmitEvidence {
+  const sourceClass =
+    opts.sourceClassOverride ??
+    classifyFetchedAgainstFacility({
+      pageUrl: opts.pageUrl || "",
+      facilityWebsite: opts.facilityWebsite,
+      groupWebsite: opts.groupWebsite,
+    });
+  const attr = canAttributeEntity(opts.docFingerprint, opts.facilityFingerprint);
+  const sig = detectInsuranceSignals(opts.contentExcerpt || "");
+  return {
+    identityStatus: opts.identityStatus,
+    sourceClass,
+    exactUrl: opts.pageUrl,
+    contentFetched: opts.contentFetched,
+    contentExcerpt: opts.contentExcerpt,
+    entityAttributed: attr.ok,
+    groupSeatVerified: opts.facilityFingerprint.groupSeatVerified === true,
+    hasStrongInsuranceSignal: sig.strong,
+    hasMediumInsuranceSignals: sig.mediumCount,
+    criticalConflict: opts.criticalConflict,
+    policyObsolete: opts.policyObsolete,
+    hasCoverageEnd: opts.hasCoverageEnd,
+    incompletePublication: opts.incompletePublication,
+    analogousMeasure: opts.analogousMeasure,
+    category: opts.category,
+  };
+}
+
+/**
  * Valida e prepara il payload da persistere. Non scrive sul DB.
  * Caller esegue la transazione solo se allowed.
+ * Unico percorso ammesso verso token terminali PUBLISHED / HOT_VERIFIED.
  */
 export function prepareSanitaVerdictPersist(input: PersistSanitaInput): PersistSanitaDecision {
   const legacy = input.legacyVerdict;
@@ -94,7 +146,6 @@ export function prepareSanitaVerdictPersist(input: PersistSanitaInput): PersistS
   }
 
   if (legacy === "REVIEW" && state === "RETRY_PENDING") {
-    // RETRY_PENDING non è REVIEW_HUMAN
     bv = bv === "NONE" ? "NONE" : bv;
   }
 

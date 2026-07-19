@@ -7,6 +7,10 @@ import {
   type CrawlCompleteness,
 } from "@/lib/evidence/contract";
 import type { IdentityStatus } from "@/lib/sanita/identity-evidence";
+import {
+  frontierBlocksHot,
+  type CrawlFrontierLedger,
+} from "@/lib/sanita/crawl-frontier-ledger";
 
 export const MIN_PAGES_FOR_HOT = 12;
 
@@ -20,6 +24,8 @@ export type HotEmitEvidence = {
   identityStatus?: IdentityStatus | "UNKNOWN" | null;
   /** Categoria sanitaria valorizzata — obbligatoria per HOT. */
   category?: string | null;
+  /** Ledger grafo — se presente, pending/failed devono essere 0. */
+  frontier?: CrawlFrontierLedger | null;
 };
 
 export type HotEmitResult = {
@@ -58,6 +64,11 @@ export function explainCanEmitHot(evidence: HotEmitEvidence): HotEmitResult {
 
   const block = crawlBlocksTerminalVerdict(evidence.crawlCompleteness ?? null);
   if (block) reasons.push(block);
+
+  if (evidence.frontier !== undefined) {
+    const fb = frontierBlocksHot(evidence.frontier);
+    if (fb) reasons.push(fb);
+  }
 
   return { ok: reasons.length === 0, reasons };
 }

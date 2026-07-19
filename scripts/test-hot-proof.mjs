@@ -81,7 +81,39 @@ for (const [name, ev] of cases) {
     category: ev.category,
   });
   ok(fin.verdict === "REVIEW", `finalizeVerdict → REVIEW: ${name}`);
+  if (name === "OCR dubbio" || name === "timeout / time cap" || name === "URL fallito") {
+    ok(fin.processingHint === "RETRY_PENDING", `tech hint RETRY_PENDING: ${name}`);
+  }
+  if (name === "identity insufficient") {
+    ok(fin.processingHint === "REVIEW_HUMAN", "identity → REVIEW_HUMAN hint");
+  }
 }
+
+import { buildFrontierFromCrawl, frontierBlocksHot } from "../src/lib/sanita/crawl-frontier-ledger.ts";
+const openFrontier = buildFrontierFromCrawl({
+  baseUrl: "https://example.it",
+  pagesVisited: ["https://example.it/"],
+  policyPdfsQueued: 2,
+  policyPdfsRead: 0,
+  needsOcrReview: false,
+  completeness: deriveCrawlComplete({
+    ...baseComplete,
+    unresolvedRelevantUrls: 1,
+    identityVerified: true,
+  }),
+});
+ok(frontierBlocksHot(openFrontier) != null, "frontier open blocks HOT");
+ok(!canEmitHot({ ...good, frontier: openFrontier }), "canEmitHot respects frontier");
+const closedFrontier = buildFrontierFromCrawl({
+  baseUrl: "https://example.it",
+  pagesVisited: Array.from({ length: 15 }, (_, i) => `https://example.it/p${i}`),
+  policyPdfsQueued: 0,
+  policyPdfsRead: 0,
+  needsOcrReview: false,
+  completeness: baseComplete,
+});
+ok(frontierBlocksHot(closedFrontier) == null, "exhausted frontier allows HOT");
+ok(canEmitHot({ ...good, frontier: closedFrontier }), "canEmitHot with exhausted frontier");
 
 resetHotWorkerStopForTests();
 let threw = false;

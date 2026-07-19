@@ -20,8 +20,16 @@
 | Closure human-review HTML dumps | **DROP** from engine; **KEEP** as docs artifact | Not product code | n/a |
 | `resolution-waterfall.ts` | **REWORK** | Wire real steps / no stub PASS | waterfall + state-machine |
 | Baseline ID pack | **KEEP** | Regression corpus IDs | characterization fixtures (versioned) |
+| `crawl-frontier-ledger.ts` | **KEEP** (partial) | Blocks HOT on open frontier; **not yet DB-persistent** | `test:hot-proof` |
+| `entity-fingerprint.ts` | **KEEP** | Attribution rule strong/medium | characterization + canEmitPublished |
+| `test:bypass-audit` | **KEEP** | Static gate that scan persist uses gateway | bypass-audit |
+| Obsolete→HOT in scan-engine | **DROP** (fixed) | Expired must stay PUBLISHED | characterization + bypass-audit |
 
 ## Principle
 
 Technical failure updates **validationStatus** / **RETRY_PENDING**.  
 It must **not** erase a historically proven **businessVerdict** PUBLISHED.
+
+## Ready gate
+
+See `docs/final/status.md` — current verdetto **NOT READY** until frontier persistence, shadow sample, and gare enrichment loop close.

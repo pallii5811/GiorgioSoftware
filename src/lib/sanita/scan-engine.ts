@@ -39,7 +39,15 @@ import {
   resolveAfterTechnicalFailure,
   stampProcessingMeta,
 } from "@/lib/sanita/processing-state";
-import { prepareSanitaVerdictPersist } from "@/lib/sanita/verdict-gateway";
+import {
+  buildPublishedEmitEvidence,
+  prepareSanitaVerdictPersist,
+  PublishedGateError,
+} from "@/lib/sanita/verdict-gateway";
+import {
+  buildFrontierFromCrawl,
+  stampFrontierSummary,
+} from "@/lib/sanita/crawl-frontier-ledger";
 import type { Lead } from "@prisma/client";
 
 import type { PolicyAnalysis } from "@/lib/sanita/detector";
@@ -442,6 +450,8 @@ export async function analyzeLead(
     }
   }
 
+  // Candidato PUB (anche scaduta) — mai HOT assenza su polizza trovata.
+  // Persistenza passa da canEmitPublished via VerdictGateway.
   if (analysis.policyFound && verdict === "REVIEW" && crawl.ok) {
     const policySource =
       pickPolicyPdfUrl(crawl) ||
@@ -449,14 +459,10 @@ export async function analyzeLead(
       (crawl.foundRelevantPage && crawl.pagesVisited.length >= 4) ||
       crawl.pagesVisited.length >= 8;
     if (policySource) {
-      if (analysis.policyObsolete) {
-        verdict = "HOT";
-        if (!/scaduta/i.test(evidenceBody)) {
-          evidenceBody = `Polizza RC pubblicata sul sito ma non aggiornata — Art. 10 richiede aggiornamento. ${evidenceBody}`.trim();
-        }
-      } else {
-        verdict = "PUBLISHED";
-        confidence = analysis.confidence ?? 1;
+      verdict = "PUBLISHED";
+      confidence = analysis.confidence ?? 1;
+      if (analysis.policyObsolete && !/scaduta/i.test(evidenceBody)) {
+        evidenceBody = `Polizza RC pubblicata sul sito ma scaduta/non aggiornata — opportunità urgente (Art. 10). ${evidenceBody}`.trim();
       }
     }
   }
@@ -584,8 +590,32 @@ export async function analyzeLead(
   evidenceBody = appendVersionMarker(fin.evidenceBody, currentMarkers("CURRENT"));
   evidenceBody = `${evidenceBody} [IDENTITY:${identityEv.status}] [CRAWL_COMPLETE:${ccStamp.complete}]`.trim();
 
-  // Mai REVIEW se polizza certificata sul sito corretto (evita UNJUSTIFIED_REVIEW).
-  // Richiede comunque identità verificata — no bypass.
+  if (fin.processingHint === "RETRY_PENDING") {
+    evidenceBody = stampProcessingMeta(evidenceBody, {
+      state: "RETRY_PENDING",
+      businessVerdict: "NONE",
+      validationStatus: "REVALIDATION_PENDING",
+    });
+  } else if (fin.processingHint === "REVIEW_HUMAN") {
+    evidenceBody = stampProcessingMeta(evidenceBody, {
+      state: "REVIEW_HUMAN",
+      businessVerdict: "REVIEW_HUMAN",
+      validationStatus: "CONFLICT_FOUND",
+    });
+  }
+
+  const frontier = buildFrontierFromCrawl({
+    baseUrl: website,
+    pagesVisited: crawl.pagesVisited,
+    policyPdfsQueued: crawl.policyPdfsQueued ?? 0,
+    policyPdfsRead: crawl.policyPdfsRead ?? 0,
+    needsOcrReview: Boolean(crawl.needsOcrReview),
+    completeness: ccStamp,
+    scanKey: lead.id,
+  });
+  evidenceBody = stampFrontierSummary(evidenceBody, frontier);
+
+  // Candidato PUB da polizza sul sito: resta PUB solo se gateway/canEmitPublished ok.
   if (
     verdict === "REVIEW" &&
     analysis.policyFound &&
@@ -601,22 +631,6 @@ export async function analyzeLead(
       evidenceBody = appendVersionMarker(evidenceBody, currentMarkers("CURRENT"));
     }
   }
-
-  if (verdict === "PUBLISHED") {
-    const subtype = derivePublishedSubtype({
-      policyObsolete: analysis.policyObsolete,
-      policyExpiry: analysis.expiry,
-      policyCompany: analysis.company,
-      policyNumber: analysis.policyNumber,
-      policyMassimale: analysis.massimale,
-      evidenceBody,
-    });
-    evidenceBody = stampPublishedSubtype(evidenceBody, subtype);
-  }
-
-  if (verdict === "PUBLISHED") counters.withPolicy++;
-  else if (verdict === "HOT") counters.hot++;
-  else counters.review++;
 
   const nonPec = crawl.emails.filter((e) => e !== crawl.pec);
   let phone = pickBestPhone([crawl.phones[0], lead.phone], lead.region);
@@ -636,16 +650,106 @@ export async function analyzeLead(
     }
   }
 
-  assertAtomicHotPersist(verdict, {
+  const policyUrl =
+    pickPolicyPdfUrl(crawl) || pickPolicySourceUrl(crawl) || crawl.pagesVisited[0] || website;
+  const corpus = [crawl.policyText, crawl.text, evidenceBody].filter(Boolean).join("\n");
+  const hotEvidence = {
     website,
-    websiteReachable: true,
+    websiteReachable: true as const,
     pagesVisited: crawl.pagesVisited.length,
     policyExhaustive: crawl.policyExhaustive === true,
     needsOcrReview: Boolean(crawl.needsOcrReview),
     crawlCompleteness: ccStamp,
     identityStatus: identityEv.status,
     category: lead.category,
-  });
+    frontier,
+  };
+
+  let prepared;
+  try {
+    if (verdict === "PUBLISHED") {
+      const publishedEvidence = buildPublishedEmitEvidence({
+        identityStatus: identityEv.status,
+        pageUrl: policyUrl,
+        facilityWebsite: website,
+        contentFetched: crawl.ok,
+        contentExcerpt: corpus.slice(0, 4000),
+        docFingerprint: {
+          facilityName: lead.companyName,
+          vatId: piva,
+          municipality: lead.city,
+          phone,
+          domain: website,
+          seatPageUrl: website,
+        },
+        facilityFingerprint: {
+          facilityName: lead.companyName,
+          vatId: piva || lead.piva,
+          municipality: lead.city,
+          phone,
+          domain: website,
+          seatPageUrl: website,
+          groupSeatVerified: identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
+        },
+        policyObsolete: analysis.policyObsolete,
+        hasCoverageEnd: Boolean(analysis.expiry),
+        analogousMeasure: /autoassicuraz|misura analoga|gestione\s+diretta/i.test(corpus),
+        category: lead.category,
+      });
+      prepared = prepareSanitaVerdictPersist({
+        legacyVerdict: "PUBLISHED",
+        evidenceBody,
+        publishedEvidence,
+      });
+      const subtype = derivePublishedSubtype({
+        policyObsolete: analysis.policyObsolete,
+        policyExpiry: analysis.expiry,
+        policyCompany: analysis.company,
+        policyNumber: analysis.policyNumber,
+        policyMassimale: analysis.massimale,
+        evidenceBody: prepared.evidenceBody,
+      });
+      evidenceBody = stampPublishedSubtype(prepared.evidenceBody, subtype);
+      verdict = prepared.legacyVerdict;
+    } else if (verdict === "HOT") {
+      assertAtomicHotPersist(verdict, hotEvidence);
+      prepared = prepareSanitaVerdictPersist({
+        legacyVerdict: "HOT",
+        evidenceBody,
+        hotEvidence,
+      });
+      evidenceBody = prepared.evidenceBody;
+      verdict = prepared.legacyVerdict;
+    } else {
+      if (!fin.processingHint) {
+        evidenceBody = stampProcessingMeta(evidenceBody, {
+          state: "REVIEW_HUMAN",
+          businessVerdict: "REVIEW_HUMAN",
+          validationStatus: "CURRENT_VERIFIED",
+        });
+      }
+    }
+  } catch (e) {
+    if (e instanceof PublishedGateError) {
+      verdict = "REVIEW";
+      evidenceBody = stampProcessingMeta(
+        `PUBLISHED gate: ${e.reasons.join("; ")}. ${evidenceBody}`,
+        {
+          state: "REVIEW_HUMAN",
+          businessVerdict: "REVIEW_HUMAN",
+          validationStatus: "CONFLICT_FOUND",
+        }
+      );
+    } else if (e instanceof HotIncompleteStopError) {
+      throw e;
+    } else {
+      throw e;
+    }
+  }
+
+  if (verdict === "PUBLISHED") counters.withPolicy++;
+  else if (verdict === "HOT") counters.hot++;
+  else counters.review++;
 
   await prisma.lead.update({
     where: { id: lead.id },
@@ -980,9 +1084,111 @@ export async function analyzeRegional(
     policyObsolete: crawlPolicyObsolete,
     policyExhaustive: crawlPolicyExhaustive,
     needsOcrReview: crawlNeedsOcrReview,
+    category: lead.category,
   });
   verdict = finReg.verdict;
   evidenceBody = finReg.evidenceBody;
+
+  if (finReg.processingHint === "RETRY_PENDING") {
+    evidenceBody = stampProcessingMeta(evidenceBody, {
+      state: "RETRY_PENDING",
+      businessVerdict: "NONE",
+      validationStatus: "REVALIDATION_PENDING",
+    });
+  } else if (finReg.processingHint === "REVIEW_HUMAN") {
+    evidenceBody = stampProcessingMeta(evidenceBody, {
+      state: "REVIEW_HUMAN",
+      businessVerdict: "REVIEW_HUMAN",
+      validationStatus: "CONFLICT_FOUND",
+    });
+  }
+
+  const frontierReg =
+    website && pagesVisited > 0
+      ? buildFrontierFromCrawl({
+          baseUrl: website,
+          pagesVisited: audit.sitePages ?? [],
+          policyPdfsQueued: audit.policyPdfsQueued ?? 0,
+          policyPdfsRead: audit.policyPdfsRead ?? 0,
+          needsOcrReview: crawlNeedsOcrReview,
+          completeness: null,
+          scanKey: lead.id,
+        })
+      : null;
+  if (frontierReg) evidenceBody = stampFrontierSummary(evidenceBody, frontierReg);
+
+  try {
+    if (verdict === "PUBLISHED") {
+      const publishedEvidence = buildPublishedEmitEvidence({
+        identityStatus: "OFFICIAL_CONFIRMED",
+        pageUrl: audit.policyPdfUrl || audit.policySourceUrl || website,
+        facilityWebsite: website,
+        contentFetched: websiteReachable === true,
+        contentExcerpt: evidenceBody.slice(0, 4000),
+        docFingerprint: {
+          facilityName: lead.companyName,
+          municipality: lead.city,
+          domain: website,
+          seatPageUrl: website,
+        },
+        facilityFingerprint: {
+          facilityName: lead.companyName,
+          municipality: lead.city,
+          domain: website,
+          seatPageUrl: website,
+        },
+        policyObsolete: crawlPolicyObsolete,
+        hasCoverageEnd: Boolean(policyExpiry),
+        category: lead.category,
+      });
+      const prepared = prepareSanitaVerdictPersist({
+        legacyVerdict: "PUBLISHED",
+        evidenceBody,
+        publishedEvidence,
+      });
+      evidenceBody = prepared.evidenceBody;
+      verdict = prepared.legacyVerdict;
+    } else if (verdict === "HOT") {
+      const hotEvidence = {
+        website,
+        websiteReachable,
+        pagesVisited,
+        policyExhaustive: crawlPolicyExhaustive === true,
+        needsOcrReview: crawlNeedsOcrReview,
+        crawlCompleteness: null as null,
+        identityStatus: "OFFICIAL_CONFIRMED" as const,
+        category: lead.category,
+        frontier: frontierReg,
+      };
+      assertAtomicHotPersist(verdict, hotEvidence);
+      const prepared = prepareSanitaVerdictPersist({
+        legacyVerdict: "HOT",
+        evidenceBody,
+        hotEvidence,
+      });
+      evidenceBody = prepared.evidenceBody;
+      verdict = prepared.legacyVerdict;
+    } else if (!finReg.processingHint) {
+      evidenceBody = stampProcessingMeta(evidenceBody, {
+        state: "REVIEW_HUMAN",
+        businessVerdict: "REVIEW_HUMAN",
+        validationStatus: "CURRENT_VERIFIED",
+      });
+    }
+  } catch (e) {
+    if (e instanceof PublishedGateError) {
+      verdict = "REVIEW";
+      evidenceBody = stampProcessingMeta(`PUBLISHED gate: ${e.reasons.join("; ")}. ${evidenceBody}`, {
+        state: "REVIEW_HUMAN",
+        businessVerdict: "REVIEW_HUMAN",
+        validationStatus: "CONFLICT_FOUND",
+      });
+    } else if (e instanceof HotIncompleteStopError) {
+      throw e;
+    } else {
+      throw e;
+    }
+  }
 
   if (verdict === "PUBLISHED" && policyFound) counters.withPolicy++;
   else if (verdict === "HOT") counters.hot++;
