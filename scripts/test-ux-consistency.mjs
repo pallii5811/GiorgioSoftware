@@ -35,9 +35,9 @@ ok(expired === "PUBLISHED_EXPIRED", "subtype EXPIRED");
 const label = uxLabelForPublished(expired, VERDICT_META.PUBLISHED.label);
 ok(/scaduta/i.test(label), "label scaduta");
 ok(!/in regola/i.test(label), "scaduta ≠ in regola");
-ok(label === "Polizza pubblicata ma scaduta", "exact expired badge label");
-ok(VERDICT_META.HOT.label === "Assenza verificata", "HOT badge");
-ok(VERDICT_META.REVIEW.label === "Da verificare", "REVIEW badge");
+ok(label === "Polizza pubblicata ma scaduta — opportunità urgente", "exact expired badge label");
+ok(VERDICT_META.HOT.label.includes("scansione completa"), "HOT badge complete scan");
+ok(VERDICT_META.REVIEW.label === "Verifica umana necessaria", "REVIEW badge human");
 ok(!publishedAllowsInRegolaBadge(expired), "expired non permette badge in regola");
 
 const stamped = stampPublishedSubtype("corpo", "PUBLISHED_EXPIRED");

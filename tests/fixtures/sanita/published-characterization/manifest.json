@@ -1,0 +1,40 @@
+{
+  "fixtures": [
+    {
+      "id": "current-policy",
+      "file": "current-policy.txt",
+      "expectPolicyFound": true,
+      "expectObsolete": false,
+      "expectSubtype": "PUBLISHED_CURRENT",
+      "facilityWebsite": "https://www.casadicurasanmarco-fixture.it",
+      "sourceClass": "FIRST_PARTY_FACILITY"
+    },
+    {
+      "id": "expired-policy",
+      "file": "expired-policy.txt",
+      "expectPolicyFound": true,
+      "expectObsolete": true,
+      "expectSubtype": "PUBLISHED_EXPIRED",
+      "facilityWebsite": "https://www.clinicaaurora-fixture.it",
+      "sourceClass": "FIRST_PARTY_FACILITY"
+    },
+    {
+      "id": "date-unknown",
+      "file": "date-unknown.txt",
+      "expectPolicyFound": true,
+      "expectObsolete": false,
+      "expectSubtype": "PUBLISHED_DATE_UNKNOWN",
+      "facilityWebsite": "https://www.poliambulatoriodelta-fixture.it",
+      "sourceClass": "FIRST_PARTY_FACILITY"
+    },
+    {
+      "id": "analogous-measure",
+      "file": "analogous-measure.txt",
+      "expectPolicyFound": true,
+      "expectObsolete": false,
+      "expectSubtype": "PUBLISHED_ANALOGOUS_MEASURE",
+      "facilityWebsite": "https://www.rsasanitariaverde-fixture.it",
+      "sourceClass": "FIRST_PARTY_FACILITY"
+    }
+  ]
+}

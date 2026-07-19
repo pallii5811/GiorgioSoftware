@@ -4,6 +4,8 @@
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
 import { terminalVerdictFromDiscovery, discoveryBlocksTerminalVerdict } from "../src/lib/sanita/discovery-gate.ts";
+import { classifySourceUrl, sourceAllowsPublished } from "../src/lib/sanita/source-class.ts";
+import { canEmitPublished } from "../src/lib/sanita/can-emit-published.ts";
 
 const start = Date.now();
 let pass = 0;
@@ -91,6 +93,25 @@ ok(wrongV === "REVIEW", `wrong-host → REVIEW (got ${wrongV})`);
 
 const isolated = "Generali 1234567890 polizza";
 ok(analyzePolicy(isolated).policyFound === false, "compagnia+numero isolati ≠ policy");
+
+ok(classifySourceUrl("https://blog.example.com/gelli") === "BLOG", "blog class");
+ok(classifySourceUrl("https://tavily.com/x") === "SEARCH_DISCOVERY", "tavily class");
+ok(!sourceAllowsPublished("BLOG"), "blog cannot sustain PUB");
+ok(!sourceAllowsPublished("DIRECTORY"), "directory cannot sustain PUB");
+ok(
+  !canEmitPublished({
+    identityStatus: "OFFICIAL_CONFIRMED",
+    sourceClass: "COMMERCIAL_ARTICLE",
+    exactUrl: "https://news.example/gelli",
+    contentFetched: true,
+    contentExcerpt: "legge gelli polizza",
+    entityAttributed: true,
+    hasStrongInsuranceSignal: true,
+    hasMediumInsuranceSignals: 3,
+    category: "Ospedale",
+  }).ok,
+  "article cannot emit PUB"
+);
 
 const elapsed = Date.now() - start;
 console.log(

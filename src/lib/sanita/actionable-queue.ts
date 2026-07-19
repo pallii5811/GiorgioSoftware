@@ -30,6 +30,16 @@ export function isInActionableSalesQueue(lead: ActionableLeadLike): boolean {
     return true;
   }
 
+  // RETRY_PENDING / TECHNICAL_BLOCKED fuori coda commerciale
+  if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING|DISCOVERED)\]/i.test(lead.evidence || "")) {
+    return false;
+  }
+  if (/\[VS:(REVALIDATION_PENDING|TECHNICAL_BLOCKED)\]/i.test(lead.evidence || "")) {
+    // Legacy PUB con revalidation pending resta in coda solo se business PUB urgente (expired)
+    const urgent = /\[BV:PUBLISHED_EXPIRED\]/i.test(lead.evidence || "");
+    if (!urgent) return false;
+  }
+
   if (isLegacyLead(lead.evidence)) return false;
   if (!isActionableEvidence(lead.evidence)) return false;
 

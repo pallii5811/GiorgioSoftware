@@ -1,0 +1,14 @@
+{
+  "falsePublished": 0,
+  "lostPositives": 0,
+  "falseHot": 0,
+  "hotIncompleteEmitted": 0,
+  "techAsHumanOnFirstAttempt": 0,
+  "reviewHuman": 0,
+  "retryPending": 25,
+  "technicalBlocked": 5,
+  "reviewHumanRateOnSanitaTech": 0,
+  "gareUndefined": 0,
+  "rows": 110,
+  "gatePass": true
+}

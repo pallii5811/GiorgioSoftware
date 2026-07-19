@@ -5,6 +5,7 @@ import { evaluateGareActionable } from "../src/lib/gare/actionable-gate.ts";
 import { relevanceCategory } from "../src/lib/gare/display.ts";
 import { estimateCauzione, claimKindLabel } from "../src/lib/gare/commercial.ts";
 import { classifyGareContractType } from "../src/lib/gare/contract-type.ts";
+import { classifyGarePipelineStatus } from "../src/lib/gare/enrichment-status.ts";
 
 const start = Date.now();
 let pass = 0;
@@ -61,6 +62,35 @@ ok(
   "GARE_LOW category esclusa"
 );
 
+ok(
+  classifyGarePipelineStatus({
+    awardDate: null,
+    winnerIdentified: true,
+    officialSource: true,
+    cig: "CIG1",
+    enrichmentAttempts: 0,
+  }) === "ENRICHMENT_PENDING",
+  "missing date → ENRICHMENT_PENDING not LOW"
+);
+ok(
+  classifyGarePipelineStatus({
+    awardDate: null,
+    winnerIdentified: true,
+    officialSource: true,
+    cig: "CIG1",
+    enrichmentAttempts: 3,
+  }) === "NOT_ACTIONABLE",
+  "enrichment exhausted → NOT_ACTIONABLE"
+);
+ok(
+  classifyGarePipelineStatus({
+    awardDate: new Date(),
+    winnerIdentified: true,
+    officialSource: true,
+    cig: "CIG1",
+  }) === "ACTIONABLE",
+  "complete → ACTIONABLE"
+);
 
 const est = estimateCauzione(500_000);
 ok(est.kind === "ESTIMATE", "cauzione stimata = ESTIMATE");

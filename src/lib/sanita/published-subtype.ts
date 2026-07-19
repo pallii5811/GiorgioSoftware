@@ -15,22 +15,22 @@ export const PUBLISHED_SUBTYPE_META: Record<
   { label: string; urgency: "none" | "low" | "high"; actionablePriority: 0 | 1 | 2 }
 > = {
   PUBLISHED_CURRENT: {
-    label: "Polizza pubblicata e valida",
+    label: "Polizza pubblicata e apparentemente valida",
     urgency: "none",
     actionablePriority: 0,
   },
   PUBLISHED_EXPIRED: {
-    label: "Polizza pubblicata ma scaduta",
+    label: "Polizza pubblicata ma scaduta — opportunità urgente",
     urgency: "high",
     actionablePriority: 1,
   },
   PUBLISHED_DATE_UNKNOWN: {
-    label: "Polizza pubblicata — data non trovata",
+    label: "Polizza pubblicata — scadenza non rilevata",
     urgency: "low",
     actionablePriority: 2,
   },
   PUBLISHED_INCOMPLETE: {
-    label: "Pubblicazione incompleta",
+    label: "Pubblicazione assicurativa incompleta",
     urgency: "high",
     actionablePriority: 1,
   },

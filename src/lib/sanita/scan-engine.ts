@@ -34,6 +34,12 @@ import {
   stampPublishedSubtype,
 } from "@/lib/sanita/published-subtype";
 import { assertAtomicHotPersist, HotIncompleteStopError } from "@/lib/sanita/atomic-verdict";
+import {
+  isTechnicalTransientError,
+  resolveAfterTechnicalFailure,
+  stampProcessingMeta,
+} from "@/lib/sanita/processing-state";
+import { prepareSanitaVerdictPersist } from "@/lib/sanita/verdict-gateway";
 import type { Lead } from "@prisma/client";
 
 import type { PolicyAnalysis } from "@/lib/sanita/detector";
@@ -207,6 +213,67 @@ export async function analyzeLead(
       crawl.error === "bot_blocked"
         ? "Sito protetto anti-bot (CAPTCHA/WAF) — IP datacenter bloccato. Verifica manuale sul sito (es. footer «Assicurazione RCT»)."
         : "Sito blocca crawl da server (403/WAF o timeout) — il sito può essere raggiungibile da browser domestico.";
+
+    // Errore tecnico: non cancellare businessVerdict PUB storico → RETRY_PENDING
+    const techErr = crawl.error || evidenceBody;
+    if (isTechnicalTransientError(techErr) || crawl.error === "bot_blocked") {
+      const resolved = resolveAfterTechnicalFailure({
+        previousEvidence: existing?.evidence,
+        error: String(techErr),
+        retriesExhausted: false,
+      });
+      if (resolved.keepLegacyToken === "PUBLISHED") {
+        verdict = "PUBLISHED";
+        policyFound = existing?.policyFound === true;
+        evidenceBody = stampProcessingMeta(
+          `Revalidazione tecnica sospesa (${techErr}). Prova storica conservata. ${evidenceBody}`,
+          {
+            state: resolved.state,
+            businessVerdict: resolved.businessVerdict,
+            validationStatus: resolved.validationStatus,
+          }
+        );
+        const prepared = prepareSanitaVerdictPersist({
+          legacyVerdict: verdict,
+          evidenceBody,
+          businessVerdict: resolved.businessVerdict,
+          validationStatus: resolved.validationStatus,
+          processingState: resolved.state,
+        });
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            website,
+            city: lead.city,
+            websiteReachable: false,
+            evidence: packEvidence(prepared.legacyVerdict, prepared.evidenceBody, audit),
+            lastScannedAt: new Date(),
+          },
+        });
+        counters.withPolicy++;
+        return;
+      }
+      if (resolved.state === "RETRY_PENDING") {
+        evidenceBody = stampProcessingMeta(evidenceBody, {
+          state: "RETRY_PENDING",
+          businessVerdict: "NONE",
+          validationStatus: "REVALIDATION_PENDING",
+        });
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            website,
+            city: lead.city,
+            websiteReachable: false,
+            policyFound: false,
+            evidence: packEvidence("REVIEW", evidenceBody, audit),
+            lastScannedAt: new Date(),
+          },
+        });
+        counters.review++;
+        return;
+      }
+    }
 
     const tavily = await tavilyFallbackForBlockedSite(website, lead.companyName);
     if (tavily) {
