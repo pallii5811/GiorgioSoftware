@@ -26,6 +26,7 @@ import { canEmitPublished, detectInsuranceSignals } from "../src/lib/sanita/can-
 import { classifyFetchedAgainstFacility } from "../src/lib/sanita/source-class.ts";
 import { runAnacEnrichmentPipeline, classifyProcurementCategory } from "../src/lib/gare/anac-enrichment-pipeline.ts";
 import { evaluateGareActionable } from "../src/lib/gare/actionable-gate.ts";
+import { computeGareLeadScore } from "../src/lib/gare/relevance.ts";
 
 const ROOT = path.resolve(".");
 const OUT = path.join(ROOT, "docs/staging-acceptance");
@@ -498,13 +499,29 @@ if (techAsHuman === 0) pass("tech_as_human", "0");
 else fail("tech_as_human", String(techAsHuman));
 
 // --- Gare quick re-verify ---
+// --- Gare re-verify (provenance only — never invent awardDate/officialSource/tier) ---
+function parseAwardDateFromEvidence(ev) {
+  const m = String(ev || "").match(/Data aggiudicazione:\s*(\d{4}-\d{2}-\d{2})/i);
+  if (!m) return null;
+  const d = new Date(m[1]);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function relevanceFromCategory(cat) {
+  const c = String(cat || "").toUpperCase();
+  if (c === "GARE_HIGH" || c.includes("HIGH")) return "HIGH";
+  if (c === "GARE_MEDIUM" || c.includes("MEDIUM")) return "MEDIUM";
+  if (c === "GARE_LOW" || c.includes("LOW")) return "LOW";
+  return null;
+}
+
 const campania = stagingDb
-  .prepare(`SELECT * FROM Lead WHERE type='TENDER' AND region='Campania' ORDER BY id LIMIT 10`)
+  .prepare(`SELECT * FROM Lead WHERE type='TENDER' AND region='Campania' ORDER BY id LIMIT 25`)
   .all();
 const venetoLedgerPath = path.join(ROOT, "data/shadow/ingest/veneto-awards-ledger.json");
 let venetoRecs = [];
 if (fs.existsSync(venetoLedgerPath)) {
-  venetoRecs = (JSON.parse(fs.readFileSync(venetoLedgerPath, "utf8")).records || []).slice(0, 10);
+  venetoRecs = (JSON.parse(fs.readFileSync(venetoLedgerPath, "utf8")).records || []).slice(0, 25);
 }
 const gareC = [];
 const gareV = [];
@@ -513,44 +530,51 @@ let gareLow = 0;
 let missingDateHigh = 0;
 for (const lead of campania) {
   const object = lead.tenderObject || "";
-  let cat = lead.category;
+  const proc = classifyProcurementCategory(object, null);
+  let cat = lead.category?.trim() || null;
   if (!cat || /undefined/i.test(cat) || cat === "GARE_LOW") {
-    const proc = classifyProcurementCategory(object, null);
-    cat = proc === "NON_CLASSIFICATO" ? "NON_CLASSIFICATO" : "GARE_MEDIUM";
+    cat = proc; // may be NON_CLASSIFICATO — never force GARE_MEDIUM
   }
-  if (/undefined/i.test(cat)) gareUndefined++;
+  if (/undefined/i.test(cat || "")) gareUndefined++;
   if (cat === "GARE_LOW") gareLow++;
+
+  const awardFromEvidence = parseAwardDateFromEvidence(lead.evidence);
   const enrich = runAnacEnrichmentPipeline({
     cig: lead.tenderCig,
     enrichmentAttempts: 1,
     sourcesRemaining: [],
     knownAward: {
-      cig: lead.tenderCig || "X",
-      companyName: lead.companyName,
-      amount: lead.tenderAmount || 0,
-      object,
-      awardDate: new Date(),
-      contactsPath: true,
+      cig: lead.tenderCig || undefined,
+      companyName: lead.companyName || undefined,
+      amount: lead.tenderAmount || undefined,
+      object: object || undefined,
+      awardDate: awardFromEvidence || undefined,
+      contactsPath: Boolean(lead.phone || lead.email || lead.website),
       guaranteeText: /cauzione|garanzia/i.test(object) ? "cauzione" : null,
     },
   });
+
+  const officialSource = Boolean(lead.tenderCig && (awardFromEvidence || enrich.officialSource));
+  const relevance = relevanceFromCategory(cat);
   const gate = evaluateGareActionable({
-    awardDate: enrich.awardDate,
-    amount: enrich.amount || lead.tenderAmount || 0,
+    awardDate: enrich.awardDate || awardFromEvidence,
+    amount: enrich.amount ?? lead.tenderAmount ?? 0,
     hasPhone: Boolean(lead.phone),
     hasEmail: Boolean(lead.email),
     hasWebsite: Boolean(lead.website),
-    relevance: "HIGH",
+    relevance,
     winnerIdentified: Boolean(lead.companyName),
-    officialSource: true,
+    officialSource,
     cig: lead.tenderCig,
     category: cat,
-    insuranceNeed: enrich.insuranceNeed === "NOT_FOUND" ? "STRONGLY_INFERRED" : enrich.insuranceNeed,
-    contactPath: true,
+    insuranceNeed: enrich.insuranceNeed,
+    contactPath: Boolean(lead.phone || lead.email || lead.website),
     revoked: false,
     deserted: false,
   });
-  if ((gate.tier === "HIGH" || gate.tier === "VERY_HIGH") && !enrich.awardDate) missingDateHigh++;
+  if ((gate.tier === "HIGH" || gate.tier === "VERY_HIGH") && !(enrich.awardDate || awardFromEvidence)) {
+    missingDateHigh++;
+  }
   gareC.push({
     id: lead.id,
     cig: lead.tenderCig,
@@ -559,6 +583,15 @@ for (const lead of campania) {
     amount: lead.tenderAmount,
     tier: gate.tier,
     actionable: gate.actionable,
+    enrichmentState: enrich.state,
+    awardDate: enrich.awardDate || awardFromEvidence,
+    officialSource,
+    insuranceNeed: enrich.insuranceNeed,
+    provenance: {
+      awardDate: awardFromEvidence ? "evidence" : enrich.awardDate ? "enrichment" : "missing",
+      category: lead.category ? "db" : "classifyProcurementCategory",
+      officialSource: officialSource ? "cig+date" : "unverified",
+    },
   });
 }
 
@@ -572,21 +605,47 @@ const insert = stagingDb.prepare(
 for (const rec of venetoRecs) {
   const id = `stg_rec_veneto_${rec.cig || Date.now()}`;
   const now = new Date().toISOString();
+  const awardIso = rec.awardDate ? String(rec.awardDate).slice(0, 10) : null;
+  const object = rec.object || "";
+  const cat = classifyProcurementCategory(object, rec.cpv || null);
+  const rel = relevanceFromCategory(cat);
+  const leadScore =
+    rel && rec.amount ? computeGareLeadScore(rel, Number(rec.amount) || 0, false, false) : 0;
+  const evidenceParts = [
+    "Aggiudicazione ANAC",
+    awardIso ? `Data aggiudicazione: ${awardIso}` : "Data aggiudicazione: MANCANTE",
+    rec.cig ? `CIG ${rec.cig}` : null,
+    object.slice(0, 400),
+  ].filter(Boolean);
   insert.run(
     id,
     rec.winner || rec.companyName || "VENETO",
     rec.cig || null,
     rec.amount || 0,
-    rec.object || "",
-    "GARE_MEDIUM",
-    `Aggiudicazione ANAC Data aggiudicazione: ${String(rec.awardDate || "").slice(0, 10)} CIG ${rec.cig}`,
-    50,
+    object,
+    cat,
+    evidenceParts.join(" · "),
+    leadScore,
     now,
     now,
     now
   );
   venetoMat++;
-  gareV.push({ id, cig: rec.cig, region: "Veneto", amount: rec.amount, winner: rec.winner });
+  gareV.push({
+    id,
+    cig: rec.cig,
+    region: "Veneto",
+    amount: rec.amount,
+    winner: rec.winner,
+    category: cat,
+    awardDate: awardIso,
+    leadScore,
+    provenance: {
+      awardDate: awardIso ? "ledger" : "missing",
+      category: "classifyProcurementCategory",
+      score: "computeGareLeadScore|0",
+    },
+  });
 }
 
 fs.writeFileSync(path.join(OUT, "recovery-gare-campania.json"), JSON.stringify(gareC, null, 2));
