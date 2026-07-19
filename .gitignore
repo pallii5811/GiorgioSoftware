@@ -139,3 +139,7 @@ leadsniper-deploy.tgz
 next-build.tgz
 prisma/prisma/
 docs/shadow/*.log
+
+# local prisma shadow copies (never commit DBs)
+prisma/data/
+
