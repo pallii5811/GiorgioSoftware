@@ -70,7 +70,7 @@ export type ScanCounters = {
 };
 
 /** Evidence tecnica senza token REVIEW (non entra in coda umana/commerciale). */
-function packRetryPendingEvidence(body: string, audit: AuditSources): string {
+function packRetryPendingEvidence(body: string, _audit?: AuditSources): string {
   const stamped = stampProcessingMeta(body, {
     state: "RETRY_PENDING",
     businessVerdict: "NONE",
@@ -698,7 +698,7 @@ export async function analyzeLead(
   });
   evidenceBody = stampFrontierSummary(evidenceBody, frontier);
 
-  let crawlRunId: string | null = productCrawlRunId;
+  const crawlRunId: string | null = productCrawlRunId;
   if (crawlRunId) {
     try {
       const ccLive = applyIdentityToCrawlRun(crawlRunId, {

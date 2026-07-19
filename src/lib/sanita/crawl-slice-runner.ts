@@ -24,7 +24,6 @@ import {
   computeBackoffMs,
   canonicalizeUrl,
   getCrawlRun,
-  type FrontierNodeState,
 } from "@/lib/sanita/frontier-store";
 import { extractPdfFullText } from "@/lib/sanita/ocr";
 import { analyzePolicy } from "@/lib/sanita/detector";

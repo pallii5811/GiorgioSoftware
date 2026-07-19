@@ -25,7 +25,10 @@ const scan = fs.readFileSync(path.join(sanita, "scan-engine.ts"), "utf8");
 ok(/prepareSanitaVerdictPersist\(/.test(scan), "scan uses prepareSanitaVerdictPersist");
 ok(/resolveRegionalIdentity\(/.test(scan), "scan uses resolveRegionalIdentity");
 ok(/runProductionWaterfall\(/.test(scan), "scan wires production waterfall");
-ok(/persistCrawlIntoFrontier\(/.test(scan), "scan persists frontier");
+ok(
+  /crawlLeadViaSlices\(/.test(scan) && /applyIdentityToCrawlRun\(/.test(scan),
+  "scan persists frontier (slice runtime + identity flags on CrawlRun)"
+);
 ok(!/identityStatus:\s*"OFFICIAL_CONFIRMED"\s*as\s*const/.test(scan), "no hardcoded OFFICIAL_CONFIRMED in regional HOT path");
 
 const contract = fs.readFileSync(path.join(root, "lib/evidence/contract.ts"), "utf8");
