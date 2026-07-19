@@ -48,6 +48,10 @@ import {
   buildFrontierFromCrawl,
   stampFrontierSummary,
 } from "@/lib/sanita/crawl-frontier-ledger";
+import { persistCrawlIntoFrontier } from "@/lib/sanita/persist-crawl-frontier";
+import { defaultFrontierDbPath, openFrontierStore } from "@/lib/sanita/frontier-store";
+import { runProductionWaterfall } from "@/lib/sanita/production-waterfall";
+import { resolveRegionalIdentity } from "@/lib/sanita/regional-identity";
 import type { Lead } from "@prisma/client";
 
 import type { PolicyAnalysis } from "@/lib/sanita/detector";
@@ -615,6 +619,40 @@ export async function analyzeLead(
   });
   evidenceBody = stampFrontierSummary(evidenceBody, frontier);
 
+  let crawlRunId: string | null = null;
+  const frontierPath =
+    process.env.FRONTIER_DB_PATH ||
+    (process.env.SHADOW_MODE === "true" || process.env.SHADOW_MODE === "1"
+      ? defaultFrontierDbPath(process.env.SHADOW_RUN_ID || "local-scan")
+      : null);
+  if (frontierPath) {
+    try {
+      openFrontierStore(frontierPath);
+      const persisted = persistCrawlIntoFrontier({
+        dbPath: frontierPath,
+        leadId: lead.id,
+        runId: process.env.SHADOW_RUN_ID || `scan-${lead.id}`,
+        baseUrl: website,
+        pagesVisited: crawl.pagesVisited,
+        policyPdfsQueued: crawl.policyPdfsQueued ?? 0,
+        policyPdfsRead: crawl.policyPdfsRead ?? 0,
+        needsOcrReview: Boolean(crawl.needsOcrReview),
+        identityVerified: identityEv.verified,
+        scopeVerified: identityEv.verified,
+        sitemapStatus: ccStamp.sitemapStatus,
+      });
+      crawlRunId = persisted.crawlRunId;
+      Object.assign(ccStamp, persisted.completeness);
+      const wf = await runProductionWaterfall({
+        website,
+        crawlRunId,
+      });
+      evidenceBody = `${evidenceBody} [WATERFALL:${wf.traversed.length}/${wf.wiredCount}:${wf.technicalStatus}]`.trim();
+    } catch (e) {
+      evidenceBody = `${evidenceBody} [FRONTIER_PERSIST_ERR:${e instanceof Error ? e.message : "x"}]`.trim();
+    }
+  }
+
   // Candidato PUB da polizza sul sito: resta PUB solo se gateway/canEmitPublished ok.
   if (
     verdict === "REVIEW" &&
@@ -663,6 +701,8 @@ export async function analyzeLead(
     identityStatus: identityEv.status,
     category: lead.category,
     frontier,
+    crawlRunId,
+    requirePersistedCompleteness: Boolean(crawlRunId),
   };
 
   let prepared;
@@ -1117,10 +1157,22 @@ export async function analyzeRegional(
       : null;
   if (frontierReg) evidenceBody = stampFrontierSummary(evidenceBody, frontierReg);
 
-  try {
+  const piva = "piva" in lead ? (lead as { piva?: string | null }).piva || null : null;
+
+    try {
     if (verdict === "PUBLISHED") {
+      const regionalId = resolveRegionalIdentity({
+        companyName: lead.companyName,
+        city: lead.city,
+        region: region ?? null,
+        website,
+        phone,
+        vatId: piva,
+        category: lead.category,
+        siteText: evidenceBody,
+      });
       const publishedEvidence = buildPublishedEmitEvidence({
-        identityStatus: "OFFICIAL_CONFIRMED",
+        identityStatus: regionalId.status,
         pageUrl: audit.policyPdfUrl || audit.policySourceUrl || website,
         facilityWebsite: website,
         contentFetched: websiteReachable === true,
@@ -1130,17 +1182,25 @@ export async function analyzeRegional(
           municipality: lead.city,
           domain: website,
           seatPageUrl: website,
+          vatId: piva,
+          phone,
         },
         facilityFingerprint: {
           facilityName: lead.companyName,
           municipality: lead.city,
           domain: website,
           seatPageUrl: website,
+          vatId: piva,
+          phone,
         },
         policyObsolete: crawlPolicyObsolete,
         hasCoverageEnd: Boolean(policyExpiry),
         category: lead.category,
+        criticalConflict: regionalId.status === "MISMATCH",
       });
+      if (!regionalId.verified) {
+        throw new PublishedGateError([`identità regionale ${regionalId.status}`]);
+      }
       const prepared = prepareSanitaVerdictPersist({
         legacyVerdict: "PUBLISHED",
         evidenceBody,
@@ -1149,6 +1209,25 @@ export async function analyzeRegional(
       evidenceBody = prepared.evidenceBody;
       verdict = prepared.legacyVerdict;
     } else if (verdict === "HOT") {
+      const regionalId = resolveRegionalIdentity({
+        companyName: lead.companyName,
+        city: lead.city,
+        region: region ?? null,
+        website,
+        category: lead.category,
+        siteText: evidenceBody,
+      });
+      if (!regionalId.verified) {
+        verdict = "REVIEW";
+        evidenceBody = stampProcessingMeta(
+          `Identità regionale insufficiente (${regionalId.status}). ${evidenceBody}`,
+          {
+            state: "REVIEW_HUMAN",
+            businessVerdict: "REVIEW_HUMAN",
+            validationStatus: "CONFLICT_FOUND",
+          }
+        );
+      } else {
       const hotEvidence = {
         website,
         websiteReachable,
@@ -1156,7 +1235,7 @@ export async function analyzeRegional(
         policyExhaustive: crawlPolicyExhaustive === true,
         needsOcrReview: crawlNeedsOcrReview,
         crawlCompleteness: null as null,
-        identityStatus: "OFFICIAL_CONFIRMED" as const,
+        identityStatus: regionalId.status,
         category: lead.category,
         frontier: frontierReg,
       };
@@ -1168,6 +1247,7 @@ export async function analyzeRegional(
       });
       evidenceBody = prepared.evidenceBody;
       verdict = prepared.legacyVerdict;
+      }
     } else if (!finReg.processingHint) {
       evidenceBody = stampProcessingMeta(evidenceBody, {
         state: "REVIEW_HUMAN",

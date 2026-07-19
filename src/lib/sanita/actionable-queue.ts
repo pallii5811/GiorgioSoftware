@@ -30,8 +30,14 @@ export function isInActionableSalesQueue(lead: ActionableLeadLike): boolean {
     return true;
   }
 
-  // RETRY_PENDING / TECHNICAL_BLOCKED fuori coda commerciale
-  if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING|DISCOVERED)\]/i.test(lead.evidence || "")) {
+  // RETRY_PENDING / TECHNICAL_BLOCKED / REVIEW_HUMAN / OUT_OF_SCOPE fuori coda commerciale
+  if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING|DISCOVERED|REVIEW_HUMAN|OUT_OF_SCOPE)\]/i.test(lead.evidence || "")) {
+    return false;
+  }
+  if (/\[BV:REVIEW_HUMAN\]|\[BV:OUT_OF_SCOPE\]/i.test(lead.evidence || "")) {
+    return false;
+  }
+  if (/\[ENRICH:(ENRICHMENT_PENDING|ENRICHMENT_RUNNING|ENRICHMENT_BLOCKED|NOT_ACTIONABLE)\]/i.test(lead.evidence || "")) {
     return false;
   }
   if (/\[VS:(REVALIDATION_PENDING|TECHNICAL_BLOCKED)\]/i.test(lead.evidence || "")) {
