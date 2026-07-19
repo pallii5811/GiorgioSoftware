@@ -1,0 +1,42 @@
+{
+  "runId": "staging-runtime-recovery-20260719",
+  "head": "7afcd7daba221f2cb51729f858934783fe047b25",
+  "startedAt": "2026-07-19T17:38:52.987Z",
+  "gates": {
+    "sample": true,
+    "no_monolithic_timeout": true,
+    "published_content": true,
+    "published_proof": true,
+    "hot_false": true,
+    "hot_completed": true,
+    "hard_content": true,
+    "playwright": true,
+    "ocr": true,
+    "tech_as_human": true,
+    "gare_sample": true,
+    "veneto_db": true,
+    "gare_gates": true
+  },
+  "failures": [],
+  "endedAt": "2026-07-19T17:50:12.788Z",
+  "sanita": {
+    "rows": 12,
+    "pubAcquired": 4,
+    "pubProof": 4,
+    "falsePub": 0,
+    "falseHot": 0,
+    "hotIncomplete": 0,
+    "hotCompletedComplete": 3,
+    "hotRunCompleteTrue": 4,
+    "hardAcquired": 4,
+    "playwrightReal": true,
+    "ocrPipeline": true,
+    "timeout45": 0
+  },
+  "gare": {
+    "campania": 10,
+    "veneto": 10,
+    "venetoMat": 10
+  },
+  "gatePass": true
+}

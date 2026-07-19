@@ -1,0 +1,26 @@
+{
+  "pre": {
+    "label": "pre-frontier",
+    "leads": 1237,
+    "pub": 120,
+    "hot": 515,
+    "tender": 360,
+    "tables": [
+      "Lead"
+    ]
+  },
+  "post": {
+    "label": "post-frontier",
+    "leads": 1237,
+    "pub": 120,
+    "hot": 515,
+    "tender": 360,
+    "tables": [
+      "Lead"
+    ]
+  },
+  "leadDelta": 0,
+  "pubDelta": 0,
+  "frontierDbCreated": true,
+  "idempotentReopen": true
+}

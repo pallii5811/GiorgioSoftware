@@ -1,0 +1,8 @@
+[
+  {
+    "mutation": "PDF_FAILED_SYNTH",
+    "completeBefore": true,
+    "completeAfter": false,
+    "rejected": true
+  }
+]

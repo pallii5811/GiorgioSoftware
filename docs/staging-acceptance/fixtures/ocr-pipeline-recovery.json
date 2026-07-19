@@ -1,0 +1,8 @@
+{
+  "proved": true,
+  "hash": "9c70f7622ff2763b00ca56c4422c775e71e15ec8fbe8554625553caff5598dc4",
+  "digitalLen": 12,
+  "ocrLen": 79,
+  "gatewayOk": true,
+  "module": "extractPdfFullText + canEmitPublished"
+}

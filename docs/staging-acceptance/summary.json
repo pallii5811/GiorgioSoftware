@@ -1,0 +1,52 @@
+{
+    "runSanita":  "staging-sanita-acceptance-20260719",
+    "runGare":  "staging-gare-acceptance-20260719",
+    "head":  "7afcd7daba221f2cb51729f858934783fe047b25",
+    "startedAt":  "2026-07-19T14:48:10.152Z",
+    "gates":  {
+                  "environment":  true,
+                  "migration":  true,
+                  "rollback":  true,
+                  "sample":  true,
+                  "hot_mutation":  true,
+                  "published_gates":  true,
+                  "hot_gates":  true,
+                  "playwright":  true,
+                  "ocr":  true,
+                  "gare_sample":  true,
+                  "veneto_materialize":  true,
+                  "gare_gates":  true,
+                  "robustness":  true,
+                  "regression":  true
+              },
+    "failures":  [
+
+                 ],
+    "endedAt":  "2026-07-19T14:57:42.793Z",
+    "sanita":  {
+                   "rows":  12,
+                   "pubPreserved":  4,
+                   "falsePub":  0,
+                   "falseHot":  0,
+                   "hotIncomplete":  0,
+                   "playwrightProved":  true,
+                   "ocrProved":  true
+               },
+    "gare":  {
+                 "campania":  10,
+                 "veneto":  10,
+                 "venetoMaterialized":  10,
+                 "gareUndefined":  0,
+                 "gareLow":  0,
+                 "missingDateHigh":  0
+             },
+    "gatePass":  false,
+    "verdict":  "STAGING ACCEPTANCE FAILED",
+    "blockers":  [
+                     "crawl_content_acquired 0/12",
+                     "published_content_revalidated 0/4",
+                     "hot_completeness_real 0/4",
+                     "ux_browser_staging missing",
+                     "working_tree dirty"
+                 ]
+}

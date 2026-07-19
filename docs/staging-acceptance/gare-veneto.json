@@ -1,0 +1,183 @@
+[
+  {
+    "id": "stg_veneto_906143116B",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "906143116B",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-04-14T12:00:00.000Z",
+    "winner": "SETINA COSTRUZIONI EDILI SRL",
+    "amount": 447727.24,
+    "enrich": "ACTIONABLE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_9062394C19",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "9062394C19",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-03-02T12:00:00.000Z",
+    "winner": "IDROTERMICA F.LLI SOLDERA SRL",
+    "amount": 90943.15,
+    "enrich": "ACTIONABLE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_91031350A6",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "91031350A6",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-03-22T12:00:00.000Z",
+    "winner": "COLSER SOCIETA COOPERATIVA",
+    "amount": 4263000,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_9200633A88",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "9200633A88",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-09-05T12:00:00.000Z",
+    "winner": "EURORISTORAZIONE S.R.L.",
+    "amount": 244843,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_912382201A",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "912382201A",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-07-05T12:00:00.000Z",
+    "winner": "ALBERGHINI MARIA ELENA",
+    "amount": 99962.6,
+    "enrich": "ACTIONABLE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_91281958CE",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "91281958CE",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-06-01T12:00:00.000Z",
+    "winner": "E-GEOS S.P.A",
+    "amount": 4217342.76,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_9130789572",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "9130789572",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-07-19T12:00:00.000Z",
+    "winner": "MOSE' S.R.L.",
+    "amount": 550898.2,
+    "enrich": "ACTIONABLE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_9175492F84",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "9175492F84",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-06-09T12:00:00.000Z",
+    "winner": "SCARMA S.R.L.",
+    "amount": 280000,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_918199779F",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "918199779F",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-06-08T12:00:00.000Z",
+    "winner": "ALPERIA SMART SERVICES SRL",
+    "amount": 20283821,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "stg_veneto_9195011B1C",
+    "region": "Veneto",
+    "fromLedger": true,
+    "cig": "9195011B1C",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2022-06-01T12:00:00.000Z",
+    "winner": "EURORISTORAZIONE S.R.L.",
+    "amount": 13157840.93,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "LOW",
+    "exclusions": [
+      "tier LOW escluso dalla vista principale"
+    ]
+  }
+]

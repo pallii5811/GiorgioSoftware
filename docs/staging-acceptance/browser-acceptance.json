@@ -1,0 +1,20 @@
+{
+  "base": "http://127.0.0.1:4310",
+  "apiUi": [
+    {
+      "api": "/api/sanita",
+      "status": 200,
+      "hasData": true
+    },
+    {
+      "api": "/api/gare",
+      "status": 200,
+      "hasData": true
+    }
+  ],
+  "screenshots": [
+    "sanita-list.png",
+    "gare-list.png"
+  ],
+  "note": "local staging HTTP — no live side effects"
+}

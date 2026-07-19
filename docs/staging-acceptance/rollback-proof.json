@@ -1,0 +1,9 @@
+{
+  "restoredFromBackup": true,
+  "leads": 1237,
+  "pub": 120,
+  "matchesPre": true,
+  "estimatedDurationSec": 2,
+  "responsible": "staging-acceptance-harness",
+  "liveExecuted": false
+}

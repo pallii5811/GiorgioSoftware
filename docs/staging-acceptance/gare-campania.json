@@ -1,0 +1,187 @@
+[
+  {
+    "id": "cmqi64p4p00002qzylujav4z0",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "93784058A1",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "RI.LA.CO. SRL",
+    "amount": 51179.75,
+    "enrich": "ACTIONABLE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": true,
+    "tier": "MEDIUM",
+    "exclusions": []
+  },
+  {
+    "id": "cmqi64p4w00012qzy00vc6kkj",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "939821003E",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "SCOGNAMIGLIO SRL",
+    "amount": 1750195,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": true,
+    "tier": "VERY_HIGH",
+    "exclusions": []
+  },
+  {
+    "id": "cmqi64p4z00022qzymkr4og68",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "9277064B63",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "ALFA INTES S.R.L.",
+    "amount": 213675,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5100032qzyl04sn7mb",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "92954808C1",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "ING. DETTA ANTONIO",
+    "amount": 8387.71,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "WEAKLY_INFERRED",
+    "insuranceKind": "INFERENCE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "bisogno assicurativo non DOCUMENTED/STRONGLY_INFERRED",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5300042qzywenqun7l",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "93820096BF",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "TOSCHI PAOLO",
+    "amount": 147348.07,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5500052qzy0tj0q9dx",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "92954331FA",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "ING. DAVIDE BIANCULLI",
+    "amount": 7607.8,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "WEAKLY_INFERRED",
+    "insuranceKind": "INFERENCE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "bisogno assicurativo non DOCUMENTED/STRONGLY_INFERRED",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5700062qzymk9ym272",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "A00E4F62A0",
+    "category": "GARE_MEDIUM",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "DEDAGROUP PUBLIC SERVICE SRL",
+    "amount": 67500,
+    "enrich": "ACTIONABLE",
+    "insurance": "STRONGLY_INFERRED",
+    "insuranceKind": "ESTIMATE",
+    "actionable": true,
+    "tier": "MEDIUM",
+    "exclusions": []
+  },
+  {
+    "id": "cmqi64p5b00072qzyaapl8k1l",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "A0111814AD",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "ING. DI LEVA ANTONIO",
+    "amount": 2417.87,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "WEAKLY_INFERRED",
+    "insuranceKind": "INFERENCE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "bisogno assicurativo non DOCUMENTED/STRONGLY_INFERRED",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5e00082qzy9sp5lp0v",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "9390383531",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "COSTRUZIONI NARDONE SRL",
+    "amount": 585846.95,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "DOCUMENTED",
+    "insuranceKind": "FACT",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  },
+  {
+    "id": "cmqi64p5g00092qzyzs0z1gqg",
+    "region": "Campania",
+    "fromLedger": false,
+    "cig": "9295253D6C",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2026-06-17T00:00:00.000Z",
+    "winner": "ING. RAFFAELE DE BIASE",
+    "amount": 10245.9,
+    "enrich": "ENRICHMENT_COMPLETE",
+    "insurance": "WEAKLY_INFERRED",
+    "insuranceKind": "INFERENCE",
+    "actionable": false,
+    "tier": "NOT_ACTIONABLE",
+    "exclusions": [
+      "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+      "bisogno assicurativo non DOCUMENTED/STRONGLY_INFERRED",
+      "tier NOT_ACTIONABLE escluso dalla vista principale"
+    ]
+  }
+]
