@@ -1,0 +1,85 @@
+{
+  "runId": "published-baseline-e2e-20260719",
+  "safety": {
+    "liveWrite": 0,
+    "deploy": 0,
+    "email": 0,
+    "webhook": 0,
+    "cron": 0,
+    "deletes": 0,
+    "shadowCopy": "C:\\Users\\Simone\\CascadeProjects\\windsurf-project-20\\data\\shadow\\db\\giorgio-shadow-closure-20260719.db",
+    "shadowSha": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+    "backupSha": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+    "runId": "published-baseline-e2e-20260719",
+    "SHADOW_MODE_intent": true
+  },
+  "published": {
+    "runId": "published-baseline-e2e-20260719",
+    "humanReviewed": 0,
+    "total": 120,
+    "classes": {
+      "TECHNICAL_REVALIDATION_REQUIRED": 113,
+      "CONFIRMED_DATE_UNKNOWN": 2,
+      "EVIDENCE_NOT_REPRODUCIBLE": 5
+    },
+    "positiviRealiPersiAutomatici": 0,
+    "nuoviFalsiPublishedAutomatici": 0,
+    "note": "Classificazioni automatiche da re-fetch; TECHNICAL_* non contano come positivi persi."
+  },
+  "hot": {
+    "humanReviewed": 0,
+    "candidates": 50,
+    "hotConfirmedAuto": 0,
+    "reviewOrBlocked": 50,
+    "falsiHotAuto": 0,
+    "note": "Nessun HOT riconfermato automaticamente senza grafo crawl completo (canEmitHot fail-closed)."
+  },
+  "review": {
+    "corpus": 200,
+    "finalReviewOrBlocked": 198,
+    "review_rate": 0.99,
+    "target": 0.1,
+    "aboveTarget": true,
+    "topCauses": [
+      "HOT fail-closed without full crawl graph",
+      "PUB fetch unreachable / TECHNICAL_REVALIDATION",
+      "historical REVIEW retained"
+    ]
+  },
+  "gare": {
+    "Campania": {
+      "n": 50,
+      "actionable": 2,
+      "VERY_HIGH": 0,
+      "HIGH": 1,
+      "MEDIUM": 1,
+      "LOW": 0,
+      "NOT_ACTIONABLE": 48,
+      "missingDate": 48,
+      "ambiguousWinner": 0,
+      "NON_CLASSIFICATO": 38,
+      "GARE_undefined": 0,
+      "GARE_LOW_category": 0,
+      "humanReviewed": 0
+    },
+    "Veneto": {
+      "n": 50,
+      "actionable": 34,
+      "VERY_HIGH": 0,
+      "HIGH": 7,
+      "MEDIUM": 27,
+      "LOW": 0,
+      "NOT_ACTIONABLE": 16,
+      "missingDate": 0,
+      "ambiguousWinner": 0,
+      "NON_CLASSIFICATO": 16,
+      "GARE_undefined": 0,
+      "GARE_LOW_category": 0,
+      "humanReviewed": 0,
+      "source": "OFFICIAL_SHADOW_INGEST_ledger"
+    },
+    "humanReviewed": 0
+  },
+  "generatedAt": "2026-07-19T11:16:00.289101+00:00",
+  "updatedAt": "2026-07-19T11:29:27.034803+00:00"
+}

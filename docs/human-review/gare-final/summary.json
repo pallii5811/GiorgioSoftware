@@ -1,0 +1,34 @@
+{
+  "Campania": {
+    "n": 50,
+    "actionable": 2,
+    "VERY_HIGH": 0,
+    "HIGH": 1,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "NOT_ACTIONABLE": 48,
+    "missingDate": 48,
+    "ambiguousWinner": 0,
+    "NON_CLASSIFICATO": 38,
+    "GARE_undefined": 0,
+    "GARE_LOW_category": 0,
+    "humanReviewed": 0
+  },
+  "Veneto": {
+    "n": 50,
+    "actionable": 34,
+    "VERY_HIGH": 0,
+    "HIGH": 7,
+    "MEDIUM": 27,
+    "LOW": 0,
+    "NOT_ACTIONABLE": 16,
+    "missingDate": 0,
+    "ambiguousWinner": 0,
+    "NON_CLASSIFICATO": 16,
+    "GARE_undefined": 0,
+    "GARE_LOW_category": 0,
+    "humanReviewed": 0,
+    "source": "OFFICIAL_SHADOW_INGEST_ledger"
+  },
+  "humanReviewed": 0
+}
