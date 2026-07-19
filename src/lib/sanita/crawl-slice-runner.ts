@@ -525,9 +525,9 @@ export async function runCrawlSlice(opts: {
   failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
   completed = nodesAfter.filter((n) => n.state === "COMPLETED").length;
 
-  // Re-bind for TS control-flow (outcome may have been narrowed by earlier branches)
+  // Re-bind for settle; at this point outcome is EMPTY | RUN_WALL_CLOCK | PUBLISHED_SIGNAL
   let settle: SliceOutcome = outcome;
-  if (settle === "EMPTY" || settle === "SLICE_CHECKPOINTED" || settle === "PUBLISHED_SIGNAL") {
+  if (settle === "EMPTY" || settle === "PUBLISHED_SIGNAL") {
     if (!pendingWork && completed > 0 && settle !== "PUBLISHED_SIGNAL") {
       setCrawlRunFlags(crawlRunId, {
         identityVerified: true,
@@ -541,6 +541,7 @@ export async function runCrawlSlice(opts: {
       setCrawlRunFlags(crawlRunId, { timeCapReached: true });
       heartbeatCrawlRun(crawlRunId, RUN_WALL_CLOCK_EXHAUSTED);
       releaseWorkerLock(crawlRunId);
+      settle = "RUN_WALL_CLOCK";
     } else if (pendingWork || Date.now() >= deadline) {
       if (settle !== "PUBLISHED_SIGNAL") {
         stopReason = SLICE_BUDGET_EXHAUSTED;

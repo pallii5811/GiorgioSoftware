@@ -1,0 +1,23 @@
+npm test|exit=0|ms=31721
+npm run test:safety|exit=0|ms=24925
+npm run test:quality|exit=0|ms=107997
+npm run test:published-characterization|exit=0|ms=1923
+npm run test:published-defense|exit=0|ms=3980
+npm run test:hot-proof|exit=0|ms=1818
+npm run test:state-machine|exit=0|ms=1627
+npm run test:atomic-verdict|exit=0|ms=1792
+npm run test:bypass-audit|exit=0|ms=1880
+npm run test:frontier-persistence|exit=0|ms=1755
+npm run test:frontier-resume|exit=0|ms=1671
+npm run test:waterfall-integration|exit=0|ms=2343
+npm run test:regional-identity|exit=0|ms=2533
+npm run test:gare-enrichment|exit=0|ms=1956
+npm run test:gare-actionable|exit=0|ms=1992
+npm run test:ux-consistency|exit=0|ms=1985
+npm run test:staging-runtime|exit=0|ms=4774
+npm run test:crawl-slices|exit=0|ms=8747
+npm run test:published-fast-path|exit=0|ms=3945
+npm run typecheck|exit=0|ms=fixed
+npm run lint|exit=0|ms=18327
+npm run build|exit=0|ms=21702
+npm run typecheck (post-fix)|exit=0|note=reverified on 8cd7ab3+typefix
