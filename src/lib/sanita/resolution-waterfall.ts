@@ -96,7 +96,7 @@ export async function runResolutionWaterfall(opts: {
     const step = seq[i]!;
     const nextStep = seq[i + 1] ?? null;
     const t0 = Date.now();
-    let attempted = true;
+    const attempted = true;
     let success = false;
     let error: string | null = null;
     let evidenceAdded: string[] = [];
