@@ -16,6 +16,10 @@ import {
   deriveVerdict, VERDICT_META, type Verdict,
 } from "@/lib/sanita/verdict"
 import { parseEvidenceSections, policyPdfUrlsForLead, isHotPublishedExpiredEvidence, expiredDaysFromEvidence, policyHtmlSourceForLead } from "@/lib/sanita/audit"
+import {
+  readPublishedSubtype,
+  uxLabelForPublished,
+} from "@/lib/sanita/published-subtype"
 import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
 import { LeadDetail } from "@/components/lead-detail"
@@ -665,9 +669,15 @@ export function SanitaLeads() {
     }
     const m = VERDICT_UI[v]
     const Icon = m.icon
+    const subtype = v === "PUBLISHED" ? readPublishedSubtype(l.evidence) : null
+    const label = v === "PUBLISHED" ? uxLabelForPublished(subtype, m.label) : m.label
+    const expiredTone =
+      subtype === "PUBLISHED_EXPIRED" || isHotPublishedExpiredEvidence(l.evidence)
+        ? "bg-orange-50 text-orange-800 border-orange-200"
+        : m.cls
     return (
-      <Badge className={cn("flex w-fit items-center gap-1 border text-[10px]", m.cls)}>
-        <Icon className="h-3 w-3 shrink-0" /> {m.label}
+      <Badge className={cn("flex w-fit items-center gap-1 border text-[10px]", expiredTone)}>
+        <Icon className="h-3 w-3 shrink-0" /> {label}
       </Badge>
     )
   }
@@ -1485,8 +1495,8 @@ export function SanitaLeads() {
                 <li><strong className="text-foreground">Scoperta:</strong> individua case di cura, RSA e poliambulatori su tutto il territorio regionale, integrando l&apos;elenco ufficiale del Ministero della Salute.</li>
                 <li><strong className="text-foreground">Verifica:</strong> analizza il sito web di ogni struttura, con focus sulla sezione Trasparenza e sui documenti PDF allegati.</li>
                 <li><strong className="text-foreground">Classificazione:</strong>
-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700"><ShieldAlert className="h-3 w-3" />Irregolare Gelli</span> — polizza RC non pubblicata sulle fonti verificate; priorità commerciale
-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700"><ShieldCheck className="h-3 w-3" />In regola</span> — polizza trovata; opportunità rinnovo o confronto
+                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700"><ShieldAlert className="h-3 w-3" />Assenza certificata</span> — crawl completo, polizza non trovata; priorità commerciale
+                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700"><ShieldCheck className="h-3 w-3" />Polizza pubblicata</span> — verifica validità/scadenza (non assume conformità)
                   <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700"><ShieldQuestion className="h-3 w-3" />Da verificare</span> — esito non conclusivo; controllo manuale consigliato
                 </li>
               </ol>

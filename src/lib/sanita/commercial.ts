@@ -45,7 +45,7 @@ export function scoreSanitaCommercial(input: {
   } else if (input.verdict === "PUBLISHED") {
     score += 15;
     verifiedFacts.push("Polizza pubblicata e trovata");
-    reasons.push("In regola — opportunità rinnovo/confronto");
+    reasons.push("Pubblicazione trovata — verificare validità e opportunità rinnovo");
   } else {
     score += 5;
     missingInformation.push("Verdetto REVIEW — serve verifica umana");
