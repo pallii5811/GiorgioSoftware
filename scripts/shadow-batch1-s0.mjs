@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
-import { finalizeVerdict } from "../src/lib/sanita/verdict.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 import {
   deriveCrawlComplete,
   crawlBlocksTerminalVerdict,

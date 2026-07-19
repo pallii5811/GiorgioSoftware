@@ -1,12 +1,6 @@
 /**
  * Verdetto a 3 stati per la pubblicazione della polizza RC (Legge Gelli).
- *
- * Obiettivo: ZERO falsi HOT (polizza pubblicata ma non vista).
- * HOT solo se crawl esaustivo (Trasparenza + tutti i PDF policy + OCR) e polizza assente.
- * Qualsiasi dubbio → REVIEW. Senza sito → HOT solo dopo verifica portali regionali.
- *
- * Il verdetto viene salvato come prefisso compatto nel campo `evidence`
- * (es. "[V:HOT] ...") per non richiedere modifiche allo schema Prisma.
+ * Modulo client-safe: niente import di frontier/sqlite/canEmitHot/finalizeVerdict.
  */
 
 export type Verdict = "PUBLISHED" | "HOT" | "REVIEW";
@@ -59,94 +53,8 @@ export function verdictFromRegional(opts: {
   return "REVIEW";
 }
 
-import type { CrawlCompleteness } from "@/lib/evidence/contract";
-import {
-  canEmitHot,
-  explainCanEmitHot,
-  MIN_PAGES_FOR_HOT,
-} from "@/lib/sanita/can-emit-hot";
-import type { IdentityStatus } from "@/lib/sanita/identity-evidence";
-
-export { MIN_PAGES_FOR_HOT };
-
-export type FinalizeVerdictInput = {
-  verdict: Verdict;
-  evidenceBody: string;
-  pagesVisited: number;
-  websiteReachable: boolean | null;
-  website: string | null;
-  policyCompany?: string | null;
-  policyExpiry?: Date | null;
-  policyObsolete?: boolean;
-  /** Crawl BFS+PDF completato sul dominio — obbligatorio per HOT "assente". */
-  policyExhaustive?: boolean;
-  /** PDF policy non decodificabile — mai HOT assenza. */
-  needsOcrReview?: boolean;
-  /** Completezza strutturale — se presente, HOT richiede complete=true. */
-  crawlCompleteness?: CrawlCompleteness | null;
-  identityStatus?: IdentityStatus | "UNKNOWN" | null;
-  category?: string | null;
-};
-
-/**
- * Ultimo gate prima del DB: HOT solo via canEmitHot (unico controllo).
- * Polizza scaduta pubblicata non è HOT — resta PUBLISHED (sottotipo EXPIRED).
- * Incompletezza tecnica → REVIEW legacy token + STATE:RETRY_PENDING (non REVIEW_HUMAN).
- */
-export function finalizeVerdict(input: FinalizeVerdictInput): {
-  verdict: Verdict;
-  evidenceBody: string;
-  downgraded: boolean;
-  processingHint: "RETRY_PENDING" | "REVIEW_HUMAN" | null;
-} {
-  let verdict = input.verdict;
-  let evidenceBody = input.evidenceBody;
-
-  // Scaduta pubblicata → PUBLISHED (non HOT assenza).
-  if (
-    verdict === "HOT" &&
-    input.policyObsolete &&
-    (input.policyCompany || input.policyExpiry || /polizza\s+rc\s+pubblicata|scaduta\s+da/i.test(evidenceBody))
-  ) {
-    verdict = "PUBLISHED";
-    return { verdict, evidenceBody, downgraded: false, processingHint: null };
-  }
-
-  if (verdict !== "HOT") return { verdict, evidenceBody, downgraded: false, processingHint: null };
-
-  const hotEv = {
-    website: input.website,
-    websiteReachable: input.websiteReachable,
-    pagesVisited: input.pagesVisited,
-    policyExhaustive: input.policyExhaustive === true,
-    needsOcrReview: Boolean(input.needsOcrReview),
-    crawlCompleteness: input.crawlCompleteness ?? null,
-    identityStatus: input.identityStatus ?? "UNKNOWN",
-    category: input.category,
-  };
-
-  if (!canEmitHot(hotEv)) {
-    const { reasons } = explainCanEmitHot(hotEv);
-    const tech = reasons.some((r) =>
-      /OCR|incompleto|cap |URL rilevanti|PDF|JSON|script|sitemap|esaustiv|pagine insufficienti/i.test(r)
-    );
-    const identityHuman = reasons.some((r) => /identità non terminale|categoria sanitaria assente|sito assente/i.test(r));
-    const hint = tech && !identityHuman ? ("RETRY_PENDING" as const) : ("REVIEW_HUMAN" as const);
-    evidenceBody = `HOT bloccato (canEmitHot): ${reasons.join("; ")}. ${evidenceBody}`;
-    return {
-      verdict: "REVIEW",
-      evidenceBody,
-      downgraded: true,
-      processingHint: hint,
-    };
-  }
-  return { verdict, evidenceBody, downgraded: false, processingHint: null };
-}
-
 /**
  * Deriva il verdetto di un lead già salvato.
- * Usa il token in evidence se presente; altrimenti fa un fallback prudente
- * sui campi esistenti (per i dati salvati prima dell'introduzione del token).
  */
 export function deriveVerdict(lead: {
   lastScannedAt: string | Date | null;
@@ -155,11 +63,10 @@ export function deriveVerdict(lead: {
   website: string | null;
   evidence: string | null;
 }): Verdict | null {
-  if (!lead.lastScannedAt) return null; // non ancora analizzato
+  if (!lead.lastScannedAt) return null;
   const token = readVerdictToken(lead.evidence);
   if (token) return token;
   if (lead.policyFound) return "PUBLISHED";
-  // Fallback prudente: senza prova di lettura della sezione trasparenza -> REVIEW
   if (lead.website && lead.websiteReachable === false) return "REVIEW";
   return "REVIEW";
 }

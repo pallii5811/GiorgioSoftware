@@ -11,7 +11,8 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { requireShadowIsolation } from "../src/lib/shadow/guard.ts";
 import { prisma } from "../src/lib/sanita/db-ready.ts";
-import { readVerdictToken, finalizeVerdict } from "../src/lib/sanita/verdict.ts";
+import { readVerdictToken } from "../src/lib/sanita/verdict.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 import {
   isLegacyLead,
   isActionableEvidence,

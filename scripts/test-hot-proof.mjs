@@ -3,7 +3,7 @@
  */
 import { deriveCrawlComplete } from "../src/lib/evidence/contract.ts";
 import { canEmitHot, explainCanEmitHot } from "../src/lib/sanita/can-emit-hot.ts";
-import { finalizeVerdict } from "../src/lib/sanita/verdict.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 import {
   assertAtomicHotPersist,
   HotIncompleteStopError,

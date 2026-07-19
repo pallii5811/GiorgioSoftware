@@ -8,7 +8,8 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { extractJsonPolicyText, extractPageText } from "../src/lib/sanita/extract-embedded.ts";
 import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
-import { verdictFromSite, verdictFromRegional, readVerdictToken, finalizeVerdict } from "../src/lib/sanita/verdict.ts";
+import { verdictFromSite, verdictFromRegional, readVerdictToken } from "../src/lib/sanita/verdict.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 import { scoreLead } from "../src/lib/sanita/score.ts";
 import {
   deriveCrawlComplete,

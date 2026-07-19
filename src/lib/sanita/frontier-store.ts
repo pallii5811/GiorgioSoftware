@@ -585,7 +585,7 @@ export function canonicalizeUrl(raw: string): string {
   try {
     const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
     u.hash = "";
-    let path = u.pathname.replace(/\/+$/, "") || "/";
+    const path = u.pathname.replace(/\/+$/, "") || "/";
     u.pathname = path;
     return u.toString().toLowerCase();
   } catch {
