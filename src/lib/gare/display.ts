@@ -3,18 +3,30 @@ import type { GareRelevance } from "@/lib/gare/relevance";
 const CATEGORY_MAP: Record<string, GareRelevance> = {
   GARE_HIGH: "HIGH",
   GARE_MEDIUM: "MEDIUM",
-  GARE_LOW: "LOW",
+  // GARE_LOW non è più categoria valida — solo legacy read → null (non actionable)
 };
+
+/**
+ * Categoria DB per rilevanza broker nota.
+ * Missing/unresolved → NON_CLASSIFICATO (mai GARE_undefined, mai inventare GARE_LOW).
+ */
+export function relevanceCategory(relevance: GareRelevance | null | undefined): string {
+  if (relevance === "HIGH") return "GARE_HIGH";
+  if (relevance === "MEDIUM") return "GARE_MEDIUM";
+  return "NON_CLASSIFICATO";
+}
 
 export function categoryToRelevance(category: string | null | undefined): GareRelevance | null {
   if (!category) return null;
-  return CATEGORY_MAP[category.toUpperCase()] ?? null;
+  const c = category.toUpperCase();
+  if (c === "NON_CLASSIFICATO" || c === "GARE_LOW" || /undefined/i.test(c)) return null;
+  return CATEGORY_MAP[c] ?? null;
 }
 
-export function relevanceCategory(relevance: GareRelevance | null | undefined): string {
-  // Guard: never emit GARE_undefined (historical bug when relevance was missing).
-  const r = relevance === "HIGH" || relevance === "MEDIUM" || relevance === "LOW" ? relevance : "LOW";
-  return `GARE_${r}`;
+/** True se la categoria è vietata in coda / vista principale. */
+export function isNonClassifiedGareCategory(category: string | null | undefined): boolean {
+  const c = (category || "").toUpperCase();
+  return !c || c === "NON_CLASSIFICATO" || c === "GARE_LOW" || /undefined/i.test(c) || c === "GARE_";
 }
 
 export function parseTenderDatasetYear(evidence: string | null | undefined): number | null {

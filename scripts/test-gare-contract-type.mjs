@@ -22,10 +22,13 @@ assert.equal(
   "LAVORI"
 );
 
-assert.equal(relevanceCategory(undefined), "GARE_LOW");
-assert.equal(relevanceCategory(null), "GARE_LOW");
+assert.equal(relevanceCategory(undefined), "NON_CLASSIFICATO");
+assert.equal(relevanceCategory(null), "NON_CLASSIFICATO");
 assert.equal(normalizeGareRelevanceCategory("GARE_undefined", "Assicurazione RC sanitaria", "X", 100000), "GARE_HIGH");
 assert.equal(normalizeGareRelevanceCategory("GARE_HIGH"), "GARE_HIGH");
-assert.equal(normalizeGareRelevanceCategory(null, "fornitura acqua", "Y", 1000), "GARE_LOW");
+assert.equal(normalizeGareRelevanceCategory(null, "fornitura acqua", "Y", 1000), "NON_CLASSIFICATO");
+assert.equal(normalizeGareRelevanceCategory("GARE_LOW"), "NON_CLASSIFICATO");
+assert.notEqual(relevanceCategory(undefined), "GARE_LOW");
+assert.ok(!String(relevanceCategory(undefined)).includes("undefined"));
 
-console.log("✓ gare contract-type + GARE_undefined normalization");
+console.log("✓ gare contract-type + NON_CLASSIFICATO (no GARE_undefined/GARE_LOW category)");

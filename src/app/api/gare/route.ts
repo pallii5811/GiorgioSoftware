@@ -78,13 +78,17 @@ export async function GET(req: Request) {
         type: "TENDER",
         ...(region && ["Veneto", "Campania"].includes(region) ? { region } : {}),
         ...(priorityOnly
-          ? { category: { in: ["GARE_HIGH", "GARE_MEDIUM"] } }
+          ? { category: { in: ["GARE_HIGH"] } }
           : {}),
       },
       orderBy: [{ leadScore: "desc" }, { tenderAmount: "desc" }, { createdAt: "desc" }],
       take: 2000,
     });
-    const fresh = leads.filter((l) => isFreshTenderLead(l.evidence));
+    const fresh = leads.filter((l) => {
+      if (!isFreshTenderLead(l.evidence)) return false;
+      if (priorityOnly && !parseTenderAwardDateObj(l.evidence)) return false;
+      return true;
+    });
     fresh.sort((a, b) => {
       const da = parseTenderAwardDateObj(a.evidence)?.getTime() ?? 0;
       const db = parseTenderAwardDateObj(b.evidence)?.getTime() ?? 0;

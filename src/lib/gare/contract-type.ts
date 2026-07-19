@@ -129,8 +129,8 @@ export function parseContractTypeMarker(evidence: string | null | undefined): Ga
 }
 
 /**
- * Root cause GARE_undefined: `relevanceCategory(undefined)` → string "GARE_undefined".
- * Ricalcola rilevanza da oggetto/importo; mai lasciare undefined.
+ * Root cause GARE_undefined: `relevanceCategory(undefined)` → "GARE_undefined".
+ * Missing/unresolvable → NON_CLASSIFICATO (mai inventare GARE_LOW come categoria).
  */
 export function normalizeGareRelevanceCategory(
   category: string | null | undefined,
@@ -138,11 +138,15 @@ export function normalizeGareRelevanceCategory(
   companyName?: string | null,
   amount?: number | null
 ): string {
-  const c = (category || "").trim();
-  if (c === "GARE_HIGH" || c === "GARE_MEDIUM" || c === "GARE_LOW") return c;
+  const c = (category || "").trim().toUpperCase();
+  if (c === "GARE_HIGH" || c === "GARE_MEDIUM") return c;
+  if (c === "NON_CLASSIFICATO") return "NON_CLASSIFICATO";
+  if (c === "GARE_LOW") return "NON_CLASSIFICATO";
   if (!c || /undefined/i.test(c) || c === "GARE_") {
     const r = scoreGareRelevance(object || "", companyName || undefined, amount ?? undefined);
-    return `GARE_${r}`;
+    if (r === "HIGH") return "GARE_HIGH";
+    if (r === "MEDIUM") return "GARE_MEDIUM";
+    return "NON_CLASSIFICATO";
   }
-  return c;
+  return category!.trim();
 }

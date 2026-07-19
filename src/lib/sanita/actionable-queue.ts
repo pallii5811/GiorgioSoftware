@@ -44,7 +44,11 @@ export function isInActionableSalesQueue(lead: ActionableLeadLike): boolean {
 
   if (lead.type === "TENDER") {
     const cat = (lead.category || "").toUpperCase();
-    if (cat && cat !== "GARE_HIGH" && cat !== "GARE_MEDIUM") return false;
+    if (!cat || cat === "NON_CLASSIFICATO" || cat === "GARE_LOW" || /undefined/i.test(cat)) {
+      return false;
+    }
+    // Vista principale: solo rilevanza HIGH (MEDIUM via filtro esplicito non-priority)
+    if (cat !== "GARE_HIGH" && cat !== "GARE_MEDIUM") return false;
   }
 
   return true;
