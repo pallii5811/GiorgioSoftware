@@ -65,6 +65,8 @@ data/shadow/drift/
 data/shadow/batch1/
 data/shadow/ingest/
 data/shadow/crawl/
+data/baseline/*.jsonl
+data/baseline/*-full*
 *.db-shm
 *.db-wal
 
