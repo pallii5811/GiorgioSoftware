@@ -51,5 +51,17 @@ function run(cmd, args) {
 
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 run(npx, ["prisma", "generate", "--schema", schema]);
-run(npx, ["prisma", "db", "push", "--schema", schema]);
+
+// Vercel UI builds must not push to DB (often missing/unreachable Postgres tenant).
+// Hetzner scan engine runs db push explicitly via deploy scripts.
+const skipPush =
+  process.env.PRISMA_SKIP_PUSH === "1" ||
+  process.env.VERCEL === "1" ||
+  (process.env.CI === "1" && process.env.PRISMA_ALLOW_PUSH !== "1");
+
+if (skipPush) {
+  console.log("[prisma-smart] skip db push (VERCEL/CI/PRISMA_SKIP_PUSH)");
+} else {
+  run(npx, ["prisma", "db", "push", "--schema", schema]);
+}
 
