@@ -127,7 +127,8 @@ function enqueue(
 
 function pickNextNode(
   crawlRunId: string,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  opts?: { pdfOnly?: boolean }
 ): {
   id: string;
   canonicalUrl: string;
@@ -139,6 +140,7 @@ function pickNextNode(
 } | null {
   const nodes = listNodes(crawlRunId);
   const ready = nodes.filter((n) => {
+    if (opts?.pdfOnly && !(n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl))) return false;
     if (n.state === "DISCOVERED" || n.state === "QUEUED") return true;
     if (n.state === "FETCHING") return true; // crash resume
     if (n.state === "RETRY_PENDING") {
@@ -148,7 +150,7 @@ function pickNextNode(
     }
     return false;
   });
-  // Prefer policy seed URLs first — positive PUB path must not wait for full sitemap
+  // Prefer policy docs first; all PDFs before generic HTML so documents are not starved.
   ready.sort((a, b) => {
     const score = (u: string) => {
       const policyish =
@@ -156,8 +158,8 @@ function pickNextNode(
           u
         );
       if (policyish && /\.pdf/i.test(u)) return 0;
-      if (policyish) return 1;
-      if (!/\.pdf/i.test(u)) return 2;
+      if (/\.pdf/i.test(u)) return 1;
+      if (policyish) return 2;
       return 3;
     };
     return score(a.canonicalUrl) - score(b.canonicalUrl);
@@ -325,18 +327,24 @@ export async function runCrawlSlice(opts: {
       break;
     }
 
-    const node = pickNextNode(crawlRunId);
+    let node = pickNextNode(crawlRunId);
     if (!node) break;
 
-    // Cap: mark time/url cap — do NOT EXCLUDE remaining just to force HOT complete
+    // Cap HTML breadth — do NOT abort PDF drain (HOT/PUB fail-closed needs documents).
     const completedHtml = listNodes(crawlRunId).filter(
       (n) => n.state === "COMPLETED" && n.resourceType === "html"
     ).length;
-    if (completedHtml >= 40 && !/\.pdf/i.test(node.canonicalUrl)) {
+    const htmlCap = Number(process.env.CRAWL_HTML_URL_CAP || 40);
+    const nodeIsPdf = node.resourceType === "pdf" || /\.pdf/i.test(node.canonicalUrl);
+    if (Number.isFinite(htmlCap) && htmlCap > 0 && completedHtml >= htmlCap && !nodeIsPdf) {
       setCrawlRunFlags(crawlRunId, { urlCapReached: true });
-      stopReason = "URL_CAP_REACHED";
-      outcome = "RUN_WALL_CLOCK";
-      break;
+      const pdfNode = pickNextNode(crawlRunId, Date.now(), { pdfOnly: true });
+      if (!pdfNode) {
+        stopReason = "URL_CAP_REACHED";
+        outcome = "RUN_WALL_CLOCK";
+        break;
+      }
+      node = pdfNode;
     }
 
     // Cap mid-run: do not start another heavy PDF if wall clock already exhausted

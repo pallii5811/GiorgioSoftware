@@ -20,7 +20,10 @@ import {
 } from "./revalidate-checkpoint-v3.mjs";
 
 const ROOT = path.resolve(".");
-const OUT_DIR = path.join(ROOT, "data/revalidation");
+// Prefer absolute OUT_DIR so checkpoint/results/locks stay outside the app tree.
+const OUT_DIR = process.env.REVALIDATE_OUT_DIR
+  ? path.resolve(process.env.REVALIDATE_OUT_DIR)
+  : path.join(ROOT, "data/revalidation");
 const RESULTS_DIR = path.join(OUT_DIR, "results");
 const FRONTIER_DIR = path.join(OUT_DIR, "frontiers");
 const LOCK_DIR = path.join(OUT_DIR, "locks");
@@ -31,6 +34,41 @@ const WORKER = path.join(ROOT, "scripts/production-revalidate-sanita-worker.mjs"
 fs.mkdirSync(RESULTS_DIR, { recursive: true });
 fs.mkdirSync(FRONTIER_DIR, { recursive: true });
 fs.mkdirSync(LOCK_DIR, { recursive: true });
+
+/** Reclaim lock if holder PID is dead (prevents permanent lock_busy after OOM/kill). */
+function pidAlive(pid) {
+  if (!pid || !Number.isFinite(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function reclaimStaleLocks() {
+  let n = 0;
+  for (const name of fs.readdirSync(LOCK_DIR)) {
+    if (!name.endsWith(".lock")) continue;
+    const lockPath = path.join(LOCK_DIR, name);
+    try {
+      const raw = fs.readFileSync(lockPath, "utf8").trim();
+      const pid = Number(raw);
+      if (!pidAlive(pid)) {
+        fs.unlinkSync(lockPath);
+        n++;
+      }
+    } catch {
+      try {
+        fs.unlinkSync(lockPath);
+        n++;
+      } catch {
+        /* */
+      }
+    }
+  }
+  if (n) console.log(JSON.stringify({ event: "stale_locks_reclaimed", count: n }));
+}
+reclaimStaleLocks();
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL required (shadow)");
@@ -158,14 +196,32 @@ process.on("SIGTERM", () => {
 
 function acquireLeadLock(id) {
   const lockPath = path.join(LOCK_DIR, `${id}.lock`);
-  try {
-    const fd = fs.openSync(lockPath, "wx");
-    fs.writeFileSync(fd, String(process.pid));
-    fs.closeSync(fd);
-    return lockPath;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      fs.writeFileSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return lockPath;
+    } catch {
+      try {
+        const raw = fs.readFileSync(lockPath, "utf8").trim();
+        const pid = Number(raw);
+        if (!pidAlive(pid)) {
+          fs.unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+        try {
+          fs.unlinkSync(lockPath);
+          continue;
+        } catch {
+          /* */
+        }
+      }
+      return null;
+    }
   }
+  return null;
 }
 function releaseLeadLock(lockPath) {
   try {
@@ -176,16 +232,38 @@ function releaseLeadLock(lockPath) {
 }
 
 function adaptiveConcurrency(current) {
+  const totalMax = Math.min(6, Math.max(1, Number(process.env.TOTAL_WORKERS || process.env.REVALIDATE_CONCURRENCY || 2)));
   const freeMemMb = os.freemem() / (1024 * 1024);
   const load = os.loadavg()[0] || 0;
   const cpus = os.cpus().length || 2;
-  if (freeMemMb < 800 || load > cpus * 0.9) return 1;
-  if (freeMemMb > 2000 && load < cpus * 0.55 && current >= 2) return 3;
-  return Math.max(1, Math.min(2, current || 2));
+  // Auto-backoff on memory/CPU pressure
+  if (freeMemMb < 800 || load > cpus * 0.95) return 1;
+  if (freeMemMb < 1500 || load > cpus * 0.75) return Math.min(2, totalMax);
+  // Ramp only when healthy: 2 → 4 → 6
+  if (current < 2) return Math.min(2, totalMax);
+  if (current < 4 && freeMemMb > 2000 && load < cpus * 0.55) return Math.min(4, totalMax);
+  if (current < 6 && freeMemMb > 2500 && load < cpus * 0.45) return Math.min(6, totalMax);
+  return Math.min(current, totalMax);
+}
+
+/** Sliding window retry rate for auto-backoff (last N finished leads). */
+const recentOutcomes = [];
+function recordOutcome(kind) {
+  recentOutcomes.push(kind);
+  if (recentOutcomes.length > 20) recentOutcomes.shift();
+}
+function recentRetryRate() {
+  if (recentOutcomes.length < 5) return 0;
+  const retries = recentOutcomes.filter((k) => k === "retry").length;
+  return retries / recentOutcomes.length;
 }
 
 function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
   return new Promise((resolve) => {
+    const nodeOpts = [process.env.NODE_OPTIONS || "", "--max-old-space-size=3072"]
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
     const env = {
       ...process.env,
       REVALIDATE_LEAD_ID: leadId,
@@ -202,6 +280,12 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
       STAGING_MODE: "true",
       DISABLE_LIVE_DB: "true",
       DISABLE_EMAILS: "true",
+      NODE_OPTIONS: nodeOpts,
+      // Prefer PDF drain after HTML breadth cap; longer wall for exhaustive docs
+      CRAWL_HTML_URL_CAP: process.env.CRAWL_HTML_URL_CAP || "40",
+      CRAWL_RUN_MAX_WALL_CLOCK_MS: process.env.CRAWL_RUN_MAX_WALL_CLOCK_MS || "1800000",
+      CRAWL_MAX_HTML_PER_SLICE: process.env.CRAWL_MAX_HTML_PER_SLICE || "12",
+      PER_HOST_CONCURRENCY: process.env.PER_HOST_CONCURRENCY || "1",
     };
     const child = spawn("npx", ["tsx", WORKER], {
       env,
@@ -413,6 +497,7 @@ async function processLeadId(leadId) {
     delete cp.inProgress[leadId];
     delete cp.retryQueue[leadId];
     const cls = classifyResult(finalRow);
+    recordOutcome(cls.kind === "terminal" ? "terminal" : "retry");
     if (cls.kind === "terminal") {
       cp.terminal[leadId] = {
         finishedAt: finalRow.finishedAt || new Date().toISOString(),
@@ -489,8 +574,12 @@ async function processLeadId(leadId) {
   }
 }
 
-let concurrency = Number(process.env.REVALIDATE_CONCURRENCY || 2);
-concurrency = Math.min(3, Math.max(1, concurrency));
+let concurrency = Math.min(
+  6,
+  Math.max(1, Number(process.env.TOTAL_WORKERS || process.env.REVALIDATE_CONCURRENCY || 2))
+);
+// Start ramp at min(2, TOTAL_WORKERS)
+concurrency = Math.min(2, concurrency);
 
 console.log(
   JSON.stringify({
@@ -542,6 +631,14 @@ async function pump() {
       await metricsTick();
       lastMetrics = Date.now();
       concurrency = adaptiveConcurrency(concurrency);
+      const rr = recentRetryRate();
+      if (rr > 0.2) {
+        concurrency = 1;
+        console.log(JSON.stringify({ event: "concurrency_backoff", retryRate: rr, concurrency }));
+      } else if (rr > 0.15) {
+        concurrency = Math.min(concurrency, 2);
+        console.log(JSON.stringify({ event: "concurrency_soft_backoff", retryRate: rr, concurrency }));
+      }
     }
     const queue = [...dueRetryIds(), ...pendingNewIds()];
     if (limit != null && Number.isFinite(limit)) {

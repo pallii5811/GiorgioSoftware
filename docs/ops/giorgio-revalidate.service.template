@@ -1,3 +1,9 @@
+# Giorgio revalidate v3 — unit template (no secrets)
+
+Canonical data dir: `/opt/leadsniper-revalidate/data/revalidation`
+App cwd: `/opt/leadsniper-revalidate/app`
+
+```ini
 [Unit]
 Description=Giorgio Sanita shadow revalidation v3 (isolated workers)
 After=network.target
@@ -5,7 +11,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/leadsniper-revalidate/app
-Environment=DATABASE_URL=REDACTED
+Environment=DATABASE_URL=file:/opt/leadsniper-revalidate/shadow-revalidate.db
 Environment=SCAN_ENGINE_LOCAL=1
 Environment=OCR_ENABLED=1
 Environment=POLICY_EXHAUSTIVE=1
@@ -13,14 +19,21 @@ Environment=SCAN_FAST=0
 Environment=STAGING_MODE=true
 Environment=DISABLE_LIVE_DB=true
 Environment=DISABLE_EMAILS=true
+Environment=TOTAL_WORKERS=2
 Environment=REVALIDATE_CONCURRENCY=2
 Environment=REVALIDATE_DUAL_HOT=1
 Environment=REVALIDATE_CHECKPOINT=/opt/leadsniper-revalidate/data/revalidation/checkpoint.json
+Environment=REVALIDATE_OUT_DIR=/opt/leadsniper-revalidate/data/revalidation
 Environment=TESSDATA_PREFIX=/opt/leadsniper-revalidate/app/.tesseract-cache
 Environment=FRONTIER_DB_PATH=/opt/leadsniper-revalidate/data/revalidation/frontiers/boot.sqlite
 Environment=PDFTOPPM_PATH=/usr/bin/pdftoppm
-Environment=GIT_HEAD_FILE=/opt/leadsniper-revalidate/app/RELEASE_SHA
-TimeoutStopSec=900
+Environment=CRAWL_HTML_URL_CAP=40
+Environment=CRAWL_RUN_MAX_WALL_CLOCK_MS=1800000
+Environment=CRAWL_MAX_HTML_PER_SLICE=12
+Environment=PER_HOST_CONCURRENCY=1
+Environment=REVALIDATE_LEAD_WALL_MS=1800000
+Environment=NODE_OPTIONS=--max-old-space-size=3072
+TimeoutStopSec=1200
 KillMode=mixed
 KillSignal=SIGTERM
 ExecStart=/bin/bash -c 'export GIT_HEAD=$(cat RELEASE_SHA); export RELEASE_SHA=$GIT_HEAD; exec npx tsx scripts/production-revalidate-sanita-v3.mjs'
@@ -29,7 +42,10 @@ RestartSec=30
 StandardOutput=append:/opt/leadsniper-revalidate/logs/systemd-revalidate.log
 StandardError=append:/opt/leadsniper-revalidate/logs/systemd-revalidate.log
 Nice=5
-MemoryMax=6G
+MemoryMax=7G
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Ramp `TOTAL_WORKERS` 2→4→6 only when MemAvailable>2GB, no OOM, retry rate of last 20 <15%.

@@ -198,8 +198,39 @@ const validationStatus = readValidationStatus(evidence);
 let finalState = processingState;
 if (error) finalState = "RETRY_PENDING";
 else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) finalState = "HOT_VERIFIED";
-else if (!finalState && token === "PUBLISHED") finalState = businessVerdict || "PUBLISHED_DATE_UNKNOWN";
+else if (
+  /scadut|PUBLISHED_EXPIRED|policyObsolete/i.test(evidence) &&
+  /\[DOCS:\s*https?:\/\//i.test(evidence) &&
+  !/Contaminazione critica|sito errato/i.test(evidence)
+) {
+  // Positive expired evidence must not linger as RETRY
+  finalState = "PUBLISHED_EXPIRED";
+} else if (!finalState && token === "PUBLISHED") finalState = businessVerdict || "PUBLISHED_DATE_UNKNOWN";
 else if (!finalState) finalState = "RETRY_PENDING";
+
+let reasonCode = error ? "ANALYZE_ERROR_OR_TIMEOUT" : finalState;
+if (!error && finalState === "RETRY_PENDING") {
+  if (/Contaminazione critica|sito errato|IDENTITY:MISMATCH/i.test(evidence)) {
+    // Semantic conflict — do not infinite-retry wrong-site / name mismatch
+    finalState = "REVIEW_HUMAN";
+    reasonCode = "IDENTITY_MISMATCH";
+  } else if (/PDF non processati/i.test(evidence)) reasonCode = "PDF_UNPROCESSED";
+  else if (/cap URL|cap tempo|URL_CAP|RUN_WALL_CLOCK/i.test(evidence)) reasonCode = "CRAWL_CAP";
+  else if (/sitemap|ROBOTS_REFERENCED_FAILED|DISCOVERED_FAILED/i.test(evidence)) reasonCode = "SITEMAP_UNRESOLVED";
+  else if (/coda HTML non esaurita|link rilevanti non tutti/i.test(evidence)) reasonCode = "FRONTIER_INCOMPLETE";
+  else reasonCode = "RETRY_PENDING";
+}
+
+const outToken =
+  finalState === "PUBLISHED_EXPIRED" || finalState === "PUBLISHED_CURRENT" || finalState === "PUBLISHED_DATE_UNKNOWN"
+    ? "PUBLISHED"
+    : token;
+const outBv =
+  finalState === "PUBLISHED_EXPIRED"
+    ? "PUBLISHED_EXPIRED"
+    : finalState === "HOT_VERIFIED"
+      ? "HOT_VERIFIED"
+      : businessVerdict;
 
 const row = {
   id: lead.id,
@@ -214,12 +245,12 @@ const row = {
   crmStatus: lead.status,
   notes: lead.notes,
   oldVerdict: readVerdictToken(oldEvidence),
-  newVerdict: token,
+  newVerdict: outToken,
   processingState: finalState,
-  businessVerdict,
+  businessVerdict: outBv,
   validationStatus,
   fullEvidence: evidence,
-  token,
+  token: outToken,
   crawlComplete: /\[CRAWL_COMPLETE:true\]/i.test(evidence),
   website: after?.website ?? lead.website,
   websiteReachable: after?.websiteReachable ?? null,
@@ -248,7 +279,7 @@ const row = {
           frontierPath: process.env.FRONTIER_DB_PATH,
           wallMs: Date.now() - t0,
           error,
-          token,
+          token: outToken,
           processingState: finalState,
           crawlComplete: /\[CRAWL_COMPLETE:true\]/i.test(evidence),
           policyFound: after?.policyFound ?? null,
@@ -261,7 +292,7 @@ const row = {
           frontierPath: process.env.FRONTIER_DB_PATH,
           wallMs: Date.now() - t0,
           error,
-          token,
+          token: outToken,
           processingState: finalState,
           crawlComplete: /\[CRAWL_COMPLETE:true\]/i.test(evidence),
           policyFound: after?.policyFound ?? null,
@@ -269,7 +300,7 @@ const row = {
       : null,
   dualDisagreement: false,
   terminal: !error && finalState !== "RETRY_PENDING",
-  reasonCode: error ? "ANALYZE_ERROR_OR_TIMEOUT" : finalState,
+  reasonCode,
   wallMs: Date.now() - t0,
   finishedAt: new Date().toISOString(),
   error,
