@@ -9,6 +9,8 @@ export type IdentityStatus =
   | "MISMATCH"
   | "STALE_PANEL"
   | "INSUFFICIENT"
+  | "INSUFFICIENT_TECHNICAL"
+  | "INSUFFICIENT_EVIDENCE"
   | "NOT_CHECKED";
 
 export interface IdentityEvidence {
@@ -50,6 +52,9 @@ export function identityBlocksTerminalVerdict(id: IdentityEvidence | null | unde
   }
   if (id.status === "MISMATCH") {
     return `Contaminazione critica identità: ${id.conflicts.join("; ") || id.reasons.join("; ")}.`;
+  }
+  if (id.status === "INSUFFICIENT_TECHNICAL") {
+    return `Identità non valutabile per problema tecnico: ${id.reasons.join("; ")}.`;
   }
   if (!id.verified) {
     return `Identità insufficiente (${id.status}) — serve OFFICIAL_CONFIRMED o GROUP_OFFICIAL_CONFIRMED.`;

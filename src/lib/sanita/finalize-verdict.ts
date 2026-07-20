@@ -66,12 +66,23 @@ export function finalizeVerdict(input: FinalizeVerdictInput): {
   if (!canEmitHot(hotEv)) {
     const { reasons } = explainCanEmitHot(hotEv);
     const tech = reasons.some((r) =>
-      /OCR|incompleto|cap |URL rilevanti|PDF|JSON|script|sitemap|esaustiv|pagine insufficienti/i.test(r)
+      /OCR|incompleto|cap |URL rilevanti|PDF|JSON|script|sitemap|esaustiv|pagine insufficienti|crawl run|frontier|raggiungibilità|non raggiungibile|INSUFFICIENT_TECHNICAL/i.test(
+        r
+      )
     );
     const identityHuman = reasons.some((r) =>
-      /identità non terminale|categoria sanitaria assente|sito assente/i.test(r)
+      /MISMATCH|INSUFFICIENT_EVIDENCE|AMBIGUOUS|contaminazione|identità non terminale \(INSUFFICIENT\)/i.test(r)
     );
-    const hint = tech && !identityHuman ? ("RETRY_PENDING" as const) : ("REVIEW_HUMAN" as const);
+    const idStatus = input.identityStatus ?? "UNKNOWN";
+    const positiveMismatch = idStatus === "MISMATCH";
+    const technicalIdentity =
+      idStatus === "INSUFFICIENT_TECHNICAL" || idStatus === "NOT_CHECKED";
+    const hint =
+      positiveMismatch || (identityHuman && !technicalIdentity)
+        ? ("REVIEW_HUMAN" as const)
+        : tech || technicalIdentity
+          ? ("RETRY_PENDING" as const)
+          : ("REVIEW_HUMAN" as const);
     evidenceBody = `HOT bloccato (canEmitHot): ${reasons.join("; ")}. ${evidenceBody}`;
     return {
       verdict: "REVIEW",

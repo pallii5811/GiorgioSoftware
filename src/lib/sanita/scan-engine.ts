@@ -561,6 +561,14 @@ export async function analyzeLead(
   }
 
   // Identità da prove (validateSiteIdentity), MAI da verdetto precedente.
+  const crawlCompleteForIdentity = Boolean(crawl.completeness?.complete);
+  const technicalCrawlBlock =
+    !crawl.ok ||
+    !crawlCompleteForIdentity ||
+    Boolean(crawl.completeness?.failedRelevantUrls) ||
+    Boolean(crawl.completeness?.unresolvedRelevantUrls) ||
+    Boolean(crawl.needsOcrReview);
+
   let identityEv: IdentityEvidence = NOT_CHECKED_IDENTITY;
   try {
     const idRes = validateSiteIdentity(
@@ -569,6 +577,10 @@ export async function analyzeLead(
       crawl,
       lead.city
     );
+    const positiveMismatch =
+      /omonimia|errato|diverso|hotel|monastero|parcheggiato|ASL|dominio diverso|non sanitario|fondazione\/ente padre|Città sul sito/i.test(
+        idRes.reason
+      );
     if (idRes.ok) {
       identityEv = buildIdentityEvidence({
         status: "OFFICIAL_CONFIRMED",
@@ -584,11 +596,9 @@ export async function analyzeLead(
         reasons: [idRes.reason],
         conflicts: [],
       });
-    } else if (/omonimia|errato|diverso|hotel|monastero|parcheggiato|ASL/i.test(idRes.reason)) {
+    } else if (positiveMismatch) {
       identityEv = buildIdentityEvidence({
-        status: /omonimia|errato|diverso|hotel|monastero|ASL/i.test(idRes.reason)
-          ? "MISMATCH"
-          : "INSUFFICIENT",
+        status: "MISMATCH",
         matchedLegalName: false,
         matchedFacilityName: false,
         matchedAddress: false,
@@ -601,9 +611,9 @@ export async function analyzeLead(
         reasons: [idRes.reason],
         conflicts: [idRes.reason],
       });
-    } else {
+    } else if (technicalCrawlBlock) {
       identityEv = buildIdentityEvidence({
-        status: "INSUFFICIENT",
+        status: "INSUFFICIENT_TECHNICAL",
         matchedLegalName: false,
         matchedFacilityName: false,
         matchedAddress: false,
@@ -612,13 +622,41 @@ export async function analyzeLead(
         matchedTaxIdentifier: false,
         matchedOfficialRegistry: false,
         matchedGroupRelationship: false,
-        sourceUrls: [],
+        sourceUrls: crawl.pagesVisited.slice(0, 3),
+        reasons: [idRes.reason],
+        conflicts: [],
+      });
+    } else {
+      identityEv = buildIdentityEvidence({
+        status: "INSUFFICIENT_EVIDENCE",
+        matchedLegalName: false,
+        matchedFacilityName: false,
+        matchedAddress: false,
+        matchedMunicipality: false,
+        matchedPhone: false,
+        matchedTaxIdentifier: false,
+        matchedOfficialRegistry: false,
+        matchedGroupRelationship: false,
+        sourceUrls: crawl.pagesVisited.slice(0, 3),
         reasons: [idRes.reason],
         conflicts: [],
       });
     }
   } catch {
-    identityEv = NOT_CHECKED_IDENTITY;
+    identityEv = buildIdentityEvidence({
+      status: technicalCrawlBlock ? "INSUFFICIENT_TECHNICAL" : "NOT_CHECKED",
+      matchedLegalName: false,
+      matchedFacilityName: false,
+      matchedAddress: false,
+      matchedMunicipality: false,
+      matchedPhone: false,
+      matchedTaxIdentifier: false,
+      matchedOfficialRegistry: false,
+      matchedGroupRelationship: false,
+      sourceUrls: [],
+      reasons: ["Errore valutazione identità"],
+      conflicts: [],
+    });
   }
 
   const idBlock = identityBlocksTerminalVerdict(identityEv);
