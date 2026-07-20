@@ -20,16 +20,31 @@ export function captureRegionalHint(regional: RegionalCheckResult): RegionalHint
   };
 }
 
+/** Host istituzionali regionali/ASL — esclude blog commerciali e approfondimenti generici. */
+const INSTITUTIONAL_SOURCE =
+  /(?:regione\.(?:campania|veneto)\.it|soresa\.it|asl[a-z0-9.-]+\.it|aulss\d+\.veneto\.it|aziendazero\.it)/i;
+
 /** Official insurance document attributed on regional/ASL portal (not a generic mention). */
 export function isOfficialRegionalPolicyDocument(regional: RegionalCheckResult): boolean {
   if (!regional.policyFound) return false;
-  const ev = regional.evidence || "";
-  return Boolean(
-    regional.company?.trim() ||
-      regional.policyNumber?.trim() ||
-      regional.expiry ||
-      /polizz|assicur|unipol|massimale|rc\b|art\.?\s*10|documento\s+ufficial/i.test(ev)
+
+  const urls = regional.sourceUrls ?? [];
+  const institutional = urls.some((u) => INSTITUTIONAL_SOURCE.test(u));
+  const structuredProof = Boolean(
+    regional.company?.trim() || regional.policyNumber?.trim() || regional.expiry
   );
+
+  if (structuredProof && institutional) return true;
+
+  const ev = regional.evidence || "";
+  if (
+    institutional &&
+    /documento\s+ufficial|estremi\s+(?:di\s+)?polizza|polizza\s+rc\s+n\.|n\.?\s*\d+\/\d+/i.test(ev)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export type RegionalVerdictAdjustment = {

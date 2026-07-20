@@ -48,6 +48,7 @@ const { readProcessingState, readBusinessVerdict, readValidationStatus } = await
   "../src/lib/sanita/processing-state.ts"
 );
 const { openFrontierStore, deriveCrawlCompleteness } = await import("../src/lib/sanita/frontier-store.ts");
+const { sitemapStatusAllowsHot } = await import("../src/lib/evidence/contract.ts");
 const { presentSanitaLead } = await import("../src/lib/sanita/present-sanita-lead.ts");
 
 openFrontierStore(FRONTIER);
@@ -149,7 +150,7 @@ const frontier = readRun(HEIDY_ID);
 const semantic = presentSanitaLead(after || before);
 
 const gates = {
-  sitemap_terminal: frontier?.sitemapStatus === "DISCOVERED_COMPLETE",
+  sitemap_terminal: sitemapStatusAllowsHot(frontier?.sitemapStatus ?? "NOT_DISCOVERED"),
   identity_official: /\[IDENTITY:OFFICIAL_CONFIRMED\]/i.test(evidence),
   scope_verified: frontier?.scopeVerified === true,
   pending_zero: (frontier?.pending ?? 99) === 0,

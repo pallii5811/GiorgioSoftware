@@ -61,7 +61,7 @@ const regionalFull = {
   company: "Unipol",
   policyNumber: "123",
   expiry: null,
-  sourceUrls: ["https://asl.example/doc.pdf"],
+  sourceUrls: ["https://aslcaserta.it/trasparenza/polizza-rc.pdf"],
   queryCount: 1,
   confidence: 0.9,
   massimale: null,
@@ -147,6 +147,35 @@ ok(
     regionalFull: { ...regionalFull, company: null, policyNumber: null, evidence: "snippet portale" },
   });
   ok(adj.verdict === "HOT" && !adj.humanConflict, "clean_run_heidy_regional_path");
+}
+
+// generic commercial articles must not create human conflict
+{
+  const blogRegional = {
+    policyFound: true,
+    checked: true,
+    evidence: "[Portale istituzionale: https://www.zurich.it/avvisi/gelli] Assicurazione professionisti sanitari legge Gelli",
+    company: null,
+    policyNumber: null,
+    expiry: null,
+    sourceUrls: ["https://www.zurich.it/zurich-per-te/avvisi/professionisti-sanitari-legge-gelli"],
+    queryCount: 1,
+    confidence: 0.5,
+    massimale: null,
+    checkedAt: new Date(),
+    contactsFromPortals: { emails: [], pec: null, phones: [], website: null },
+  };
+  ok(!isOfficialRegionalPolicyDocument(blogRegional), "zurich blog not official regional doc");
+  const adj = applyRegionalHintAfterFinalCompleteness({
+    candidateVerdict: "HOT",
+    policyFoundOnSite: false,
+    policyObsolete: false,
+    identityVerified: true,
+    finalComplete: true,
+    hint: captureRegionalHint(blogRegional),
+    regionalFull: blogRegional,
+  });
+  ok(adj.verdict === "HOT" && !adj.humanConflict, "generic_regional_article_keeps_hot");
 }
 
 // terminal counters
