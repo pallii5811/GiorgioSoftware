@@ -1,7 +1,7 @@
 # Staging acceptance — FINAL PRODUCT CLOSURE
 
 **Branch:** `cto/final-production-grade-20260719`  
-**HEAD:** `7bcfc2a44cfcf29c42b93dfb433a2a666c7e6782`  
+**HEAD:** `d0e5ee28a862fede7f7873700b7c67563b5f667c`  
 **Verdict:** **STAGING ACCEPTANCE FAILED**
 
 ## Blockers
