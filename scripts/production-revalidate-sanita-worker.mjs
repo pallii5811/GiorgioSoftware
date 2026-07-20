@@ -188,25 +188,31 @@ try {
 
 const after = await prisma.lead.findUnique({ where: { id: leadId } });
 const evidence = after?.evidence || "";
-const processingState = error
-  ? "RETRY_PENDING"
-  : readProcessingState(evidence) || (readVerdictToken(evidence) === "HOT" ? null : null);
 const token = readVerdictToken(evidence);
 const businessVerdict = readBusinessVerdict(evidence);
 const validationStatus = readValidationStatus(evidence);
+const processingState = error
+  ? "RETRY_PENDING"
+  : readProcessingState(evidence) || (token === "HOT" ? null : null);
 
 let finalState = processingState;
-if (error) finalState = "RETRY_PENDING";
-else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) finalState = "HOT_VERIFIED";
-else if (
+// Positive expired PUB must win over STATE:RETRY_PENDING left in evidence by fail-closed HOT path
+if (
+  !error &&
   /scadut|PUBLISHED_EXPIRED|policyObsolete/i.test(evidence) &&
   /\[DOCS:\s*https?:\/\//i.test(evidence) &&
-  !/Contaminazione critica|sito errato/i.test(evidence)
+  !/Contaminazione critica|sito errato|IDENTITY:MISMATCH/i.test(evidence)
 ) {
-  // Positive expired evidence must not linger as RETRY
   finalState = "PUBLISHED_EXPIRED";
-} else if (!finalState && token === "PUBLISHED") finalState = businessVerdict || "PUBLISHED_DATE_UNKNOWN";
-else if (!finalState) finalState = "RETRY_PENDING";
+} else if (error) {
+  finalState = "RETRY_PENDING";
+} else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) {
+  finalState = "HOT_VERIFIED";
+} else if (!finalState && token === "PUBLISHED") {
+  finalState = businessVerdict || "PUBLISHED_DATE_UNKNOWN";
+} else if (!finalState) {
+  finalState = "RETRY_PENDING";
+}
 
 let reasonCode = error ? "ANALYZE_ERROR_OR_TIMEOUT" : finalState;
 if (!error && finalState === "RETRY_PENDING") {

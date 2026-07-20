@@ -142,7 +142,7 @@ function pickNextNode(
   const ready = nodes.filter((n) => {
     if (opts?.pdfOnly && !(n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl))) return false;
     if (n.state === "DISCOVERED" || n.state === "QUEUED") return true;
-    if (n.state === "FETCHING") return true; // crash resume
+    if (n.state === "FETCHING" || n.state === "FETCHED") return true; // crash/resume mid-OCR
     if (n.state === "RETRY_PENDING") {
       if (!n.nextRetryAt) return false;
       const due = Date.parse(n.nextRetryAt);

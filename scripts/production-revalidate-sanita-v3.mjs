@@ -373,12 +373,22 @@ async function processLeadId(leadId) {
     console.log(JSON.stringify({ event: "lock_busy", id: leadId }));
     return;
   }
-  const runId = `reval-p1-${leadId}-${Date.now()}`;
-  const frontierPath = path.join(FRONTIER_DIR, `${runId}.sqlite`);
+  // Resume prior frontier when retrying PDF/crawl incompleteness — createCrawlRun resumes by runId.
+  const prevRetry = cp.retryQueue[leadId];
+  const reuse =
+    prevRetry?.frontierPath &&
+    prevRetry?.lastRunId &&
+    fs.existsSync(prevRetry.frontierPath) &&
+    !String(prevRetry.lastReason || "").includes("IDENTITY");
+  const runId = reuse ? prevRetry.lastRunId : `reval-p1-${leadId}-${Date.now()}`;
+  const frontierPath = reuse ? prevRetry.frontierPath : path.join(FRONTIER_DIR, `${runId}.sqlite`);
+  if (reuse) {
+    console.log(JSON.stringify({ event: "frontier_resume", id: leadId, runId, frontierPath }));
+  }
   const outPath = path.join(RESULTS_DIR, `${leadId}.json`);
   const tmpOut = path.join(RESULTS_DIR, `${leadId}.p1.json`);
 
-  cp.inProgress[leadId] = { startedAt: new Date().toISOString(), runId, frontierPath, pass: "p1" };
+  cp.inProgress[leadId] = { startedAt: new Date().toISOString(), runId, frontierPath, pass: "p1", resumed: !!reuse };
   cp.attempts[leadId] = (cp.attempts[leadId] || 0) + 1;
   saveCheckpointAtomic(CHECKPOINT, cp);
 
