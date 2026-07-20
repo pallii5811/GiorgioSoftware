@@ -24,6 +24,9 @@ import {
   computeBackoffMs,
   canonicalizeUrl,
   getCrawlRun,
+  classifyTerminalMissingUrl,
+  isTechnicalFetchFailure,
+  persistNodeEvidence,
 } from "@/lib/sanita/frontier-store";
 import { extractPdfFullText } from "@/lib/sanita/ocr";
 import { analyzePolicy } from "@/lib/sanita/detector";
@@ -132,6 +135,7 @@ function pickNextNode(
   state: string;
   retryCount: number;
   nextRetryAt: string | null;
+  discoverySource: string | null;
 } | null {
   const nodes = listNodes(crawlRunId);
   const ready = nodes.filter((n) => {
@@ -221,7 +225,8 @@ export function seedCrawlFrontier(opts: {
   for (const path of TRANSPARENCY_SEEDS) {
     try {
       const u = new URL(path, base).toString();
-      if (enqueue(opts.crawlRunId, u, null, "seed")) created++;
+      const source = path === "/" ? "seed" : "seed_guess";
+      if (enqueue(opts.crawlRunId, u, null, source)) created++;
     } catch {
       /* */
     }
@@ -358,22 +363,33 @@ export async function runCrawlSlice(opts: {
       const retries = (node.retryCount || 0) + 1;
       const max = /\.pdf/i.test(node.canonicalUrl) ? budget.maxDocumentRetries : budget.maxUrlRetries;
       try {
-        // Missing paths: retry then TECHNICAL_BLOCKED — never fake EXCLUDE for HOT
         if (fetched.status === 404 || fetched.status === 410) {
-          if (retries >= max) {
-            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+          const decision = classifyTerminalMissingUrl({
+            status: fetched.status as 404 | 410,
+            discoverySource: node.discoverySource || "html-link",
+            retryCount: node.retryCount || 0,
+          });
+          if (decision.state === "EXCLUDED") {
+            transitionFrontierNode(node.id, "EXCLUDED", {
               httpStatus: fetched.status,
-              lastError: `http_${fetched.status}`,
+              exclusionReason: decision.reasonCode,
+              lastError: decision.reasonCode,
               bumpRetry: true,
             });
           } else {
             transitionFrontierNode(node.id, "RETRY_PENDING", {
               httpStatus: fetched.status,
-              lastError: `http_${fetched.status}`,
+              lastError: decision.reasonCode,
               bumpRetry: true,
               nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
             });
           }
+        } else if (retries >= max && isTechnicalFetchFailure(fetched.status, fetched.error)) {
+          transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+            httpStatus: fetched.status || null,
+            lastError: fetched.error || `http_${fetched.status}`,
+            bumpRetry: true,
+          });
         } else if (retries >= max) {
           transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
             lastError: fetched.error || `http_${fetched.status}`,
@@ -480,6 +496,23 @@ export async function runCrawlSlice(opts: {
       policyUrl = node.canonicalUrl;
       policyText = text.slice(0, 40_000);
       contentHash = hash;
+    }
+
+    try {
+      persistNodeEvidence({
+        crawlRunId,
+        nodeId: node.id,
+        canonicalUrl: node.canonicalUrl,
+        contentHash: hash,
+        resourceType: node.resourceType || "html",
+        normalizedText: text,
+        policyText: analysis.policyFound ? text.slice(0, 40_000) : "",
+        policyFound: Boolean(analysis.policyFound),
+        policySignalsJson: analysis.policyFound ? analysis : undefined,
+        ocrStatus: ocrUsed ? "USED" : null,
+      });
+    } catch {
+      /* evidence persistence must not abort crawl */
     }
 
     try {

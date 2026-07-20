@@ -147,6 +147,25 @@ export function openFrontierStore(dbPath: string): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_node_run_state ON CrawlFrontierNode(crawlRunId, state);
     CREATE INDEX IF NOT EXISTS idx_run_retry ON CrawlFrontierNode(nextRetryAt);
+    CREATE TABLE IF NOT EXISTS CrawlNodeEvidence (
+      id TEXT PRIMARY KEY,
+      crawlRunId TEXT NOT NULL,
+      nodeId TEXT NOT NULL,
+      canonicalUrl TEXT NOT NULL,
+      contentHash TEXT NOT NULL,
+      resourceType TEXT NOT NULL,
+      normalizedText TEXT NOT NULL DEFAULT '',
+      policyText TEXT NOT NULL DEFAULT '',
+      policyFound INTEGER NOT NULL DEFAULT 0,
+      policySignalsJson TEXT,
+      extractedEntityJson TEXT,
+      ocrStatus TEXT,
+      playwrightSource TEXT,
+      extractedAt TEXT NOT NULL,
+      UNIQUE(crawlRunId, contentHash),
+      FOREIGN KEY(crawlRunId) REFERENCES CrawlRun(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_evidence_run ON CrawlNodeEvidence(crawlRunId);
   `);
   slot.db = db;
   slot.path = abs;
@@ -429,7 +448,7 @@ export function releaseWorkerLock(crawlRunId: string): void {
   );
 }
 
-export function listNodes(crawlRunId: string): Array<{
+export type FrontierNodeRow = {
   id: string;
   canonicalUrl: string;
   state: FrontierNodeState;
@@ -437,20 +456,186 @@ export function listNodes(crawlRunId: string): Array<{
   resourceType: string;
   retryCount: number;
   nextRetryAt: string | null;
-}> {
+  discoverySource: string | null;
+  exclusionReason: string | null;
+  lastError: string | null;
+  httpStatus: number | null;
+};
+
+export function listNodes(crawlRunId: string): FrontierNodeRow[] {
   return db()
     .prepare(
-      `SELECT id, canonicalUrl, state, relevance, resourceType, retryCount, nextRetryAt FROM CrawlFrontierNode WHERE crawlRunId = ? ORDER BY discoveredAt`
+      `SELECT id, canonicalUrl, state, relevance, resourceType, retryCount, nextRetryAt,
+              discoverySource, exclusionReason, lastError, httpStatus
+       FROM CrawlFrontierNode WHERE crawlRunId = ? ORDER BY discoveredAt`
+    )
+    .all(crawlRunId) as FrontierNodeRow[];
+}
+
+export type TerminalMissingUrlDecision = {
+  state: "EXCLUDED" | "RETRY_PENDING";
+  reasonCode: string;
+};
+
+/** 404/410 on guessed seeds, sitemap, internal links → EXCLUDED (not TECHNICAL_BLOCKED). */
+export function classifyTerminalMissingUrl(opts: {
+  status: 404 | 410;
+  discoverySource: string;
+  retryCount: number;
+}): TerminalMissingUrlDecision {
+  const maxBrief = 1;
+  if (opts.retryCount < maxBrief) {
+    return { state: "RETRY_PENDING", reasonCode: `HTTP_${opts.status}` };
+  }
+  const src = opts.discoverySource || "html-link";
+  if (src === "seed_guess") {
+    return { state: "EXCLUDED", reasonCode: "SEED_NOT_PRESENT" };
+  }
+  if (/sitemap|robots-sitemap/i.test(src)) {
+    return { state: "EXCLUDED", reasonCode: "STALE_SITEMAP_URL" };
+  }
+  if (src === "historical_doc" || src === "extra") {
+    return { state: "EXCLUDED", reasonCode: "HISTORICAL_DOC_MISSING" };
+  }
+  if (src === "seed") {
+    return { state: "EXCLUDED", reasonCode: "SEED_NOT_PRESENT" };
+  }
+  if (src === "html-link" || src === "bfs" || /playwright/i.test(src)) {
+    return { state: "EXCLUDED", reasonCode: "BROKEN_INTERNAL_LINK" };
+  }
+  return { state: "EXCLUDED", reasonCode: "BROKEN_INTERNAL_LINK" };
+}
+
+export function isTechnicalFetchFailure(status: number, error?: string | null): boolean {
+  if (status === 403 || status === 429) return true;
+  if (status >= 500 && status < 600) return true;
+  if (status === 0 && error) {
+    return /timeout|dns|tls|certificate|econn|enotfound|waf|bot|blocked|reset/i.test(error);
+  }
+  return false;
+}
+
+const MAX_CORPUS_CHARS = 400_000;
+
+export type PersistedEvidenceAggregate = {
+  pagesText: string;
+  policyText: string;
+  policyUrl: string | null;
+  policyFound: boolean;
+  contentHash: string | null;
+};
+
+export function persistNodeEvidence(input: {
+  crawlRunId: string;
+  nodeId: string;
+  canonicalUrl: string;
+  contentHash: string;
+  resourceType: string;
+  normalizedText: string;
+  policyText?: string;
+  policyFound?: boolean;
+  policySignalsJson?: unknown;
+  extractedEntityJson?: unknown;
+  ocrStatus?: string | null;
+  playwrightSource?: string | null;
+}): void {
+  const d = db();
+  const existing = d
+    .prepare(`SELECT id FROM CrawlNodeEvidence WHERE crawlRunId = ? AND contentHash = ?`)
+    .get(input.crawlRunId, input.contentHash) as { id: string } | undefined;
+  if (existing) return;
+  d.prepare(
+    `INSERT INTO CrawlNodeEvidence (
+      id, crawlRunId, nodeId, canonicalUrl, contentHash, resourceType,
+      normalizedText, policyText, policyFound, policySignalsJson, extractedEntityJson,
+      ocrStatus, playwrightSource, extractedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    uid("ev"),
+    input.crawlRunId,
+    input.nodeId,
+    input.canonicalUrl,
+    input.contentHash,
+    input.resourceType,
+    input.normalizedText.slice(0, 120_000),
+    (input.policyText || "").slice(0, 40_000),
+    input.policyFound ? 1 : 0,
+    input.policySignalsJson != null ? JSON.stringify(input.policySignalsJson) : null,
+    input.extractedEntityJson != null ? JSON.stringify(input.extractedEntityJson) : null,
+    input.ocrStatus ?? null,
+    input.playwrightSource ?? null,
+    new Date().toISOString()
+  );
+}
+
+function evidencePriority(url: string, resourceType: string, policyFound: boolean): number {
+  if (policyFound) return 0;
+  const u = url.toLowerCase();
+  if (/trasparen|polizz|assicur|amministraz|gelli|rischio|parm|pars|massimale/i.test(u)) return 1;
+  if (resourceType === "pdf") return 2;
+  if (u.endsWith("/") || /\/(index\.html?)?$/.test(u)) return 3;
+  if (/chi-siamo|contatti|about/i.test(u)) return 4;
+  return 5;
+}
+
+/** Aggregate bounded corpus from all persisted node evidence (survives slice/resume). */
+export function aggregatePersistedEvidence(crawlRunId: string): PersistedEvidenceAggregate {
+  const rows = db()
+    .prepare(
+      `SELECT canonicalUrl, contentHash, resourceType, normalizedText, policyText, policyFound
+       FROM CrawlNodeEvidence WHERE crawlRunId = ?`
     )
     .all(crawlRunId) as Array<{
-    id: string;
     canonicalUrl: string;
-    state: FrontierNodeState;
-    relevance: string;
+    contentHash: string;
     resourceType: string;
-    retryCount: number;
-    nextRetryAt: string | null;
+    normalizedText: string;
+    policyText: string;
+    policyFound: number;
   }>;
+
+  rows.sort((a, b) => {
+    const pa = evidencePriority(a.canonicalUrl, a.resourceType, Boolean(a.policyFound));
+    const pb = evidencePriority(b.canonicalUrl, b.resourceType, Boolean(b.policyFound));
+    return pa - pb;
+  });
+
+  let pagesText = "";
+  let policyText = "";
+  let policyUrl: string | null = null;
+  let policyFound = false;
+  let contentHash: string | null = null;
+
+  for (const r of rows) {
+    const chunk = r.normalizedText?.trim();
+    if (chunk) {
+      const room = MAX_CORPUS_CHARS - pagesText.length;
+      if (room > 0) pagesText = `${pagesText}\n${chunk}`.slice(0, MAX_CORPUS_CHARS);
+    }
+    if (r.policyFound && r.policyText?.trim()) {
+      policyFound = true;
+      policyText = r.policyText.slice(0, 40_000);
+      policyUrl = r.canonicalUrl;
+      contentHash = r.contentHash;
+    }
+  }
+
+  if (!policyFound) {
+    for (const r of rows) {
+      const pt = r.policyText?.trim() || r.normalizedText?.trim();
+      if (!pt) continue;
+      const analysis = /polizz|assicuraz|unipol|massimale|scadenz|rc\b/i.test(pt);
+      if (analysis) {
+        policyText = pt.slice(0, 40_000);
+        policyUrl = r.canonicalUrl;
+        contentHash = r.contentHash;
+        policyFound = true;
+        break;
+      }
+    }
+  }
+
+  return { pagesText: pagesText.trim(), policyText, policyUrl, policyFound, contentHash };
 }
 
 export function getCrawlRun(crawlRunId: string): Record<string, unknown> | null {

@@ -13,6 +13,7 @@ import {
   deriveCrawlCompleteness,
   defaultFrontierDbPath,
   getCrawlRun,
+  aggregatePersistedEvidence,
 } from "@/lib/sanita/frontier-store";
 import {
   runCrawlUntilSettled,
@@ -45,15 +46,18 @@ function aggregateCrawlResult(
   const nodes = listNodes(crawlRunId);
   const completed = nodes.filter((n) => n.state === "COMPLETED").map((n) => n.canonicalUrl);
   const completeness = deriveCrawlCompleteness(crawlRunId);
-  const text = final.pagesText || "";
-  const policyText = final.policyText || "";
+  const persisted = aggregatePersistedEvidence(crawlRunId);
+  const text = persisted.pagesText || final.pagesText || "";
+  const policyText = persisted.policyText || final.policyText || "";
+  const policyUrl = persisted.policyUrl || final.policyUrl;
+  const policyFoundPersisted = persisted.policyFound || final.policyFound;
   const foundRelevant = completed.some((u) =>
     /trasparen|polizz|assicur|amministraz|gelli|rischio|document/i.test(u)
   );
   const pdfs = nodes.filter((n) => n.resourceType === "pdf");
   const pdfsRead = pdfs.filter((n) => n.state === "COMPLETED").length;
   const pdfsQueued = pdfs.length;
-  const analysis = analyzePolicy(policyText || text, final.policyUrl || undefined);
+  const analysis = analyzePolicy(policyText || text, policyUrl || undefined);
 
   const ok = completed.length > 0 || final.outcome === "PUBLISHED_SIGNAL";
   let error: string | null = null;
@@ -70,13 +74,13 @@ function aggregateCrawlResult(
     pagesVisited: completed.length ? completed : [website],
     ok,
     error,
-    foundRelevantPage: foundRelevant || Boolean(final.policyFound),
+    foundRelevantPage: foundRelevant || Boolean(policyFoundPersisted),
     policyExhaustive: pdfsQueued === 0 || pdfsRead >= pdfsQueued,
     policyPdfsQueued: pdfsQueued,
     policyPdfsRead: pdfsRead,
-    needsOcrReview: Boolean(final.ocrUsed && !final.policyFound),
-    policyPdfAnalysis: final.policyFound ? analysis : null,
-    policyPdfUrl: final.policyUrl,
+    needsOcrReview: Boolean(final.ocrUsed && !policyFoundPersisted),
+    policyPdfAnalysis: policyFoundPersisted ? analysis : null,
+    policyPdfUrl: policyUrl,
     emails: [],
     pec: null,
     phones: [],
