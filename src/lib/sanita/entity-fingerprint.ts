@@ -1,6 +1,6 @@
 /**
  * EntityFingerprint — attribuzione documento↔struttura.
- * Nome simile da solo non basta.
+ * Nome simile da solo non basta. Il fingerprint documento NON copia campi lead.
  */
 
 export type EntityFingerprint = {
@@ -17,6 +17,7 @@ export type EntityFingerprint = {
   seatPageUrl?: string | null;
   regionalCode?: string | null;
   groupSeatVerified?: boolean;
+  insuredSeats?: string[] | null;
 };
 
 export type AttributionDecision = {
@@ -30,7 +31,112 @@ function present(v: string | null | undefined): boolean {
   return Boolean(v && String(v).trim().length >= 2);
 }
 
-/** Regola terminale: 1 forte OPPURE ≥3 medi coerenti. */
+/**
+ * Extract entity fields ONLY from document text/metadata/URL host context.
+ * Never copy lead/facility fields into the document fingerprint.
+ */
+export function extractDocumentEntityFingerprint(
+  text: string,
+  metadata?: { title?: string | null; author?: string | null } | null,
+  url?: string | null
+): EntityFingerprint {
+  const hay = `${metadata?.title || ""}\n${metadata?.author || ""}\n${text || ""}`;
+  const vat =
+    hay.match(/(?:p\.?\s*iva|partita\s+iva|vat)[^\d]{0,16}(\d{11})\b/i)?.[1] || null;
+  const tax =
+    hay.match(/(?:codice\s+fiscale|c\.?\s*f\.?)[^\w]{0,12}([A-Z0-9]{11,16})\b/i)?.[1] || null;
+  const phone =
+    hay
+      .match(/(?:tel(?:efono)?|phone)[^\d+]{0,12}((?:\+39)?[\s.]?\d[\d\s./-]{7,})\b/i)?.[1]
+      ?.replace(/\s+/g, " ")
+      .trim() || null;
+  const municipality =
+    hay.match(/(?:comune|citt[aà]|sede\s+(?:legale|operativa)\s+(?:in|di))\s+([A-ZÀ-Ú][a-zà-ú' ]{2,40})/i)?.[1]?.trim() ||
+    hay.match(/\b(\d{5})\s+([A-ZÀ-Ú][a-zà-ú' ]{2,40})(?:\s*\(([A-Z]{2})\))?/i)?.[2]?.trim() ||
+    null;
+  const province =
+    hay.match(/\b\d{5}\s+[A-ZÀ-Ú][a-zà-ú' ]{2,40}\s*\(([A-Z]{2})\)/i)?.[1] ||
+    hay.match(/\bprovincia\s+(?:di\s+)?([A-ZÀ-Ú][a-zà-ú']{2,30})/i)?.[1] ||
+    null;
+  const address =
+    hay.match(/(?:via|viale|piazza|corso|largo)\s+[A-ZÀ-Ú0-9][^,;\n]{4,60}/i)?.[0]?.trim() || null;
+
+  const insured =
+    hay.match(/(?:contraente|assicurato|intestatario|denominazione)[:\s]+([A-ZÀ-Ú][^,\n;]{3,80})/i)?.[1]?.trim() ||
+    null;
+  const manager =
+    hay.match(/(?:gestore|soggetto\s+gestore|direzione)[:\s]+([A-ZÀ-Ú][^,\n;]{3,80})/i)?.[1]?.trim() ||
+    null;
+  const legal =
+    hay.match(
+      /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
+    )?.[1]?.trim() || null;
+  const regional =
+    hay.match(/(?:codice\s+struttura|codice\s+regionale|codice\s+STS)[^\w]{0,8}([A-Z0-9/-]{4,20})/i)?.[1] ||
+    null;
+
+  const seats: string[] = [];
+  for (const m of hay.matchAll(/sede\s+(?:di|operativa|secondaria)?\s*:?\s*([A-ZÀ-Ú][^\n;,]{3,50})/gi)) {
+    seats.push(m[1]!.trim());
+  }
+
+  let domain: string | null = null;
+  try {
+    if (url) domain = new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    domain = null;
+  }
+
+  return {
+    facilityName: insured || legal || null,
+    legalName: legal || insured || null,
+    manager: manager || null,
+    vatId: vat,
+    taxCode: tax,
+    address,
+    municipality,
+    province,
+    phone,
+    domain,
+    seatPageUrl: url || null,
+    regionalCode: regional,
+    groupSeatVerified: seats.length > 0,
+    insuredSeats: seats.length ? seats : null,
+  };
+}
+
+/** Facility fingerprint from lead + official site signals (not from document body). */
+export function buildFacilityFingerprint(input: {
+  companyName: string;
+  city?: string | null;
+  phone?: string | null;
+  piva?: string | null;
+  website?: string | null;
+  address?: string | null;
+  taxCode?: string | null;
+  groupSeatVerified?: boolean;
+}): EntityFingerprint {
+  let domain: string | null = null;
+  try {
+    domain = input.website ? new URL(input.website).hostname.replace(/^www\./i, "") : null;
+  } catch {
+    domain = null;
+  }
+  return {
+    facilityName: input.companyName,
+    legalName: input.companyName,
+    municipality: input.city,
+    phone: input.phone,
+    vatId: input.piva,
+    taxCode: input.taxCode,
+    address: input.address,
+    domain,
+    seatPageUrl: input.website || null,
+    groupSeatVerified: input.groupSeatVerified === true,
+  };
+}
+
+/** Regola terminale: 1 forte OPPURE ≥3 medi coerenti (o combo esplicite). */
 export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFingerprint): AttributionDecision {
   const strong: string[] = [];
   const medium: string[] = [];
@@ -50,7 +156,7 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
     strong.push("regionalCode");
   }
   if (present(doc.seatPageUrl) && present(facility.seatPageUrl) && sameHost(doc.seatPageUrl!, facility.seatPageUrl!)) {
-    strong.push("seatPage");
+    medium.push("seatPage");
   }
   if (present(doc.domain) && present(facility.domain) && sameHost(doc.domain!, facility.domain!)) {
     medium.push("domain");
@@ -73,18 +179,26 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
   if (facility.groupSeatVerified === true && doc.groupSeatVerified === true) {
     medium.push("groupSeat");
   }
+  if (present(doc.manager) && present(facility.manager) && softMatch(doc.manager!, facility.manager!)) {
+    medium.push("manager");
+  }
+
+  const nameGeoDomain =
+    medium.includes("name") && medium.includes("geo") && medium.includes("domain");
+  const nameManagerSeat =
+    medium.includes("name") && medium.includes("manager") && medium.includes("groupSeat");
 
   if (strong.length >= 1) {
     return { ok: true, strongIds: strong, mediumIds: medium, reasons: [] };
   }
-  if (medium.length >= 3) {
+  if (nameGeoDomain || nameManagerSeat || medium.length >= 3) {
     return { ok: true, strongIds: strong, mediumIds: medium, reasons: [] };
   }
-  reasons.push(
-    strong.length === 0 && medium.length < 3
-      ? `attribuzione insufficiente (strong=${strong.length}, medium=${medium.length})`
-      : "attribuzione fallita"
-  );
+  if (medium.length === 1 && medium[0] === "domain") {
+    reasons.push("dominio first-party insufficiente senza identità estratta dal documento");
+  } else {
+    reasons.push(`attribuzione insufficiente (strong=${strong.length}, medium=${medium.length})`);
+  }
   return { ok: false, strongIds: strong, mediumIds: medium, reasons };
 }
 

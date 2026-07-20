@@ -27,6 +27,7 @@ import {
 } from "@/lib/sanita/frontier-store";
 import { extractPdfFullText } from "@/lib/sanita/ocr";
 import { analyzePolicy } from "@/lib/sanita/detector";
+import { shouldActivatePlaywright, type PlaywrightMode } from "@/lib/sanita/playwright-adaptive";
 
 const TRANSPARENCY_SEEDS = [
   "/",
@@ -75,10 +76,19 @@ export type CrawlSliceResult = {
 };
 
 function relevanceFor(url: string): "critical" | "relevant" | "low" {
-  if (/\.pdf/i.test(url) || /trasparen|polizz|assicur|amministraz|gelli|rischio|document/i.test(url)) {
-    return "critical";
-  }
+  const policyish =
+    /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
+      url
+    );
+  if (/\.pdf/i.test(url)) return policyish ? "critical" : "low";
+  if (policyish || /document/i.test(url)) return "critical";
   return "relevant";
+}
+
+function pdfNeedsOcr(url: string): boolean {
+  return /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
+    url
+  );
 }
 
 function sameHost(a: string, b: string): boolean {
@@ -135,7 +145,16 @@ function pickNextNode(
     return false;
   });
   ready.sort((a, b) => {
-    const score = (u: string) => (/\.pdf/i.test(u) ? 0 : /trasparen|polizz|assicur/i.test(u) ? 1 : 2);
+    const score = (u: string) => {
+      const policyish =
+        /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
+          u
+        );
+      if (policyish && /\.pdf/i.test(u)) return 0;
+      if (policyish) return 1;
+      if (!/\.pdf/i.test(u)) return 2;
+      return 3; // non-policy PDFs (magazine/newsletter) last — still processed, no OCR
+    };
     return score(a.canonicalUrl) - score(b.canonicalUrl);
   });
   return ready[0] ?? null;
@@ -229,7 +248,7 @@ export async function runCrawlSlice(opts: {
   workerId?: string;
   runStartedAtMs?: number;
   seedExtraUrls?: string[];
-  enablePlaywright?: boolean;
+  enablePlaywright?: PlaywrightMode;
   /** When false, only seed URLs are processed (stable HOT completeness path). */
   discoverLinks?: boolean;
   budget?: Partial<CrawlBudgetConfig>;
@@ -285,8 +304,11 @@ export async function runCrawlSlice(opts: {
   let pdfProcessed = 0;
   let ocrUsed = false;
   let playwrightUsed = false;
+  let playwrightError: string | null = null;
   let stopReason: string | null = null;
   let outcome: SliceOutcome = "EMPTY";
+  const htmlSamples: string[] = [];
+  let linksDiscoveredTotal = 0;
 
   const deadline = t0 + budget.sliceBudgetMs;
 
@@ -307,6 +329,14 @@ export async function runCrawlSlice(opts: {
     if (completedHtml >= 40 && !/\.pdf/i.test(node.canonicalUrl)) {
       setCrawlRunFlags(crawlRunId, { urlCapReached: true });
       stopReason = "URL_CAP_REACHED";
+      outcome = "RUN_WALL_CLOCK";
+      break;
+    }
+
+    // Cap mid-run: do not start another heavy PDF if wall clock already exhausted
+    if (Date.now() - runStarted >= budget.runMaxWallClockMs) {
+      setCrawlRunFlags(crawlRunId, { timeCapReached: true });
+      stopReason = RUN_WALL_CLOCK_EXHAUSTED;
       outcome = "RUN_WALL_CLOCK";
       break;
     }
@@ -377,8 +407,10 @@ export async function runCrawlSlice(opts: {
     if (/\.pdf/i.test(node.canonicalUrl) || fetched.contentType.includes("pdf")) {
       pdfProcessed++;
       const prev = process.env.OCR_JOB_TIMEOUT_MS;
+      const prevOcr = process.env.OCR_ENABLED;
+      // Magazine/newsletter PDFs from sitemap: process digitally, OCR only policy-ish URLs
+      process.env.OCR_ENABLED = pdfNeedsOcr(node.canonicalUrl) ? "1" : "0";
       process.env.OCR_JOB_TIMEOUT_MS = String(budget.ocrTimeoutMs);
-      process.env.OCR_ENABLED = "1";
       try {
         const extracted = await extractPdfFullText(fetched.buf);
         text = extracted.text || "";
@@ -396,12 +428,17 @@ export async function runCrawlSlice(opts: {
       } finally {
         if (prev == null) delete process.env.OCR_JOB_TIMEOUT_MS;
         else process.env.OCR_JOB_TIMEOUT_MS = prev;
+        if (prevOcr == null) delete process.env.OCR_ENABLED;
+        else process.env.OCR_ENABLED = prevOcr;
       }
     } else {
       const html = fetched.buf.toString("utf8");
+      if (htmlSamples.length < 3) htmlSamples.push(html.slice(0, 8000));
       text = cheerio.load(html).text().replace(/\s+/g, " ").trim();
       if (opts.discoverLinks !== false) {
-        discovered += discoverLinks(html, node.canonicalUrl, crawlRunId);
+        const nLinks = discoverLinks(html, node.canonicalUrl, crawlRunId);
+        discovered += nLinks;
+        linksDiscoveredTotal += nLinks;
         for (const n of listNodes(crawlRunId)) {
           if (n.state === "DISCOVERED") {
             try {
@@ -444,13 +481,27 @@ export async function runCrawlSlice(opts: {
     await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
   }
 
-  // Optional Playwright enrich once per run if enabled and little text
-  if (
-    opts.enablePlaywright &&
-    !policyFound &&
-    pagesText.length < 500 &&
-    Date.now() < deadline
-  ) {
+  // Adaptive / forced Playwright — never silent swallow
+  const completedHtmlCount = listNodes(crawlRunId).filter(
+    (n) => n.state === "COMPLETED" && n.resourceType === "html"
+  ).length;
+  const pwDecision = shouldActivatePlaywright({
+    mode: opts.enablePlaywright ?? "adaptive",
+    pagesText,
+    htmlSamples,
+    completedHtml: completedHtmlCount,
+    policyFound,
+    linksDiscovered: linksDiscoveredTotal,
+  });
+  if (pwDecision.activate && !policyFound && Date.now() < deadline) {
+    const pwBudgetMs = Math.min(
+      budget.browserNavigationTimeoutMs,
+      Math.max(1000, deadline - Date.now()),
+      Math.max(1000, budget.runMaxWallClockMs - (Date.now() - runStarted))
+    );
+    if (pwBudgetMs < 5_000) {
+      heartbeatCrawlRun(crawlRunId, "playwright_skipped:wall_clock");
+    } else {
     try {
       const { enrichCrawlWithPlaywright } = await import("@/lib/sanita/policy-playwright");
       const seedCrawl = {
@@ -465,14 +516,21 @@ export async function runCrawlSlice(opts: {
         policyText: "",
         needsOcrReview: false,
       };
-      process.env.PLAYWRIGHT_POLICY_MAX_MS = String(
-        Math.min(budget.browserNavigationTimeoutMs, deadline - Date.now())
-      );
-      const enriched = await enrichCrawlWithPlaywright(opts.website, seedCrawl as never);
+      process.env.PLAYWRIGHT_POLICY_MAX_MS = String(pwBudgetMs);
+      heartbeatCrawlRun(crawlRunId, `playwright_start:${pwDecision.reason || "adaptive"}`);
+      const enriched = await enrichCrawlWithPlaywright(opts.website, seedCrawl as never, {
+        surfaceErrors: true,
+      });
       playwrightUsed = true;
+      if (enriched?.error && /playwright|browser|timeout|launch/i.test(enriched.error)) {
+        throw new Error(enriched.error);
+      }
       if (enriched?.text) pagesText = `${pagesText}\n${enriched.text}`.slice(0, 200_000);
       for (const u of enriched?.pagesVisited || []) {
-        if (enqueue(crawlRunId, u, opts.website, "playwright")) discovered++;
+        const isJson = /\.json(?:$|\?)|\/api\/|application\/json/i.test(u);
+        if (enqueue(crawlRunId, u, opts.website, isJson ? "playwright_xhr" : "playwright")) {
+          discovered++;
+        }
       }
       for (const n of listNodes(crawlRunId)) {
         if (n.state === "DISCOVERED") {
@@ -483,8 +541,30 @@ export async function runCrawlSlice(opts: {
           }
         }
       }
-    } catch {
-      /* PW optional */
+      heartbeatCrawlRun(crawlRunId, `playwright:${pwDecision.reason || "ok"}`);
+    } catch (e) {
+      playwrightError = e instanceof Error ? e.message : String(e);
+      heartbeatCrawlRun(crawlRunId, `playwright_error:${playwrightError.slice(0, 80)}`);
+      // Surface as RETRY_PENDING (new node — COMPLETED cannot transition back)
+      if (enqueue(crawlRunId, opts.website, opts.website, "playwright_error")) {
+        const fresh = listNodes(crawlRunId)
+          .filter((x) => x.state === "DISCOVERED")
+          .slice(-1)[0];
+        if (fresh) {
+          try {
+            transitionFrontierNode(fresh.id, "RETRY_PENDING", {
+              lastError: `PLAYWRIGHT_ERROR:${playwrightError.slice(0, 180)}`,
+              nextRetryAt: new Date(Date.now() + 60_000).toISOString(),
+              bumpRetry: true,
+            });
+          } catch {
+            /* */
+          }
+        }
+      }
+      stopReason = `playwright_error:${playwrightError.slice(0, 60)}`;
+      outcome = "SLICE_CHECKPOINTED";
+    }
     }
   }
 
@@ -559,7 +639,7 @@ export async function runCrawlUntilSettled(opts: {
   website: string;
   workerId?: string;
   seedExtraUrls?: string[];
-  enablePlaywright?: boolean;
+  enablePlaywright?: PlaywrightMode;
   discoverLinks?: boolean;
   maxSlices?: number;
   budget?: Partial<CrawlBudgetConfig>;

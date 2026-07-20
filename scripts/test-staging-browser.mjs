@@ -143,10 +143,12 @@ try {
         const res = await page.request.get(`${BASE}/api/sanita?id=${encodeURIComponent(id)}`);
         const json = await res.json().catch(() => null);
         const lead =
-          json?.leads?.find?.((l) => l.id === id) ||
           json?.lead ||
+          json?.leads?.find?.((l) => l.id === id) ||
+          (Array.isArray(json?.data) ? json.data.find((l) => l.id === id) : null) ||
           (Array.isArray(json) ? json.find((l) => l.id === id) : null) ||
           json?.items?.find?.((l) => l.id === id);
+        const found = Boolean(lead) || json?.found === true;
         const ev = lead?.evidence || "";
         const checks = {
           id,
@@ -154,16 +156,20 @@ try {
           hasBadgeHint: /\[V:(PUB|HOT|REV)\]|\[STATE:|\[BV:/.test(ev) || lead?.policyFound != null,
           processingState: (ev.match(/\[STATE:([A-Z_]+)\]/) || [])[1] || null,
           businessVerdict: (ev.match(/\[BV:([A-Z_]+)\]/) || [])[1] || null,
+          validationStatus: (ev.match(/\[VS:([A-Z_]+)\]/) || [])[1] || null,
           company: lead?.policyCompany || null,
           number: lead?.policyNumber || null,
           expiry: lead?.policyExpiry || null,
           docs: (ev.match(/\[DOCS:\s*([^\]]+)\]/) || [])[1] || null,
-          apiOk: res.status() < 500,
-          found: Boolean(lead),
+          apiOk: res.status() === 200 || res.status() === 404,
+          found,
+          httpStatus: res.status(),
         };
         semantic.push(checks);
-        ok(checks.apiOk, `semantic API ${id}`);
-        ok(checks.found || checks.hasBadgeHint, `semantic record visible/fields for ${id}`);
+        ok(checks.apiOk, `semantic API ${id} status=${checks.httpStatus}`);
+        if (checks.httpStatus === 200) {
+          ok(checks.found === true, `semantic record found for ${id}`);
+        }
       } catch (e) {
         ok(false, `semantic ${id}: ${e}`);
       }

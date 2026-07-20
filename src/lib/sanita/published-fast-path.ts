@@ -17,7 +17,7 @@ import {
 } from "@/lib/sanita/processing-state";
 import { readCrawlBudgetConfig } from "@/lib/sanita/crawl-budget";
 import { classifyNegativeInsuranceDocument } from "@/lib/sanita/negative-document";
-import { canAttributeEntity, type EntityFingerprint } from "@/lib/sanita/entity-fingerprint";
+import { canAttributeEntity, extractDocumentEntityFingerprint, buildFacilityFingerprint, type EntityFingerprint } from "@/lib/sanita/entity-fingerprint";
 
 export type PublishedFastPathInput = {
   leadId: string;
@@ -62,42 +62,13 @@ function sleep(ms: number) {
 
 function facilityFp(input: PublishedFastPathInput): EntityFingerprint {
   if (input.facilityFingerprint) return input.facilityFingerprint;
-  let domain: string | null = null;
-  try {
-    domain = input.website ? new URL(input.website).hostname.replace(/^www\./i, "") : null;
-  } catch {
-    domain = null;
-  }
-  return {
-    facilityName: input.companyName,
-    legalName: input.companyName,
-    municipality: input.city,
+  return buildFacilityFingerprint({
+    companyName: input.companyName,
+    city: input.city,
     phone: input.phone,
-    vatId: input.piva,
-    domain,
-  };
-}
-
-function docFpFromText(text: string, url: string, facility: EntityFingerprint): EntityFingerprint {
-  const vat =
-    text.match(/(?:p\.?\s*iva|partita\s+iva)[^\d]{0,12}(\d{11})/i)?.[1] ||
-    text.match(/\b(\d{11})\b/)?.[1] ||
-    null;
-  let domain: string | null = null;
-  try {
-    domain = new URL(url).hostname.replace(/^www\./i, "");
-  } catch {
-    domain = null;
-  }
-  return {
-    facilityName: facility.facilityName,
-    legalName: facility.legalName,
-    municipality: facility.municipality,
-    phone: facility.phone,
-    vatId: vat,
-    domain,
-    seatPageUrl: url,
-  };
+    piva: input.piva,
+    website: input.website,
+  });
 }
 
 export async function runPublishedFastPath(
@@ -260,7 +231,7 @@ export async function runPublishedFastPath(
             }
           })());
 
-      const docFp = docFpFromText(text, url, facility);
+      const docFp = extractDocumentEntityFingerprint(text, { title: url }, url);
       const attr = canAttributeEntity(docFp, facility);
       const identityStatus =
         input.identityStatus === "OFFICIAL_CONFIRMED" ||

@@ -587,11 +587,14 @@ export function canonicalizeUrl(raw: string): string {
   try {
     const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
     u.hash = "";
+    // Hostname is case-insensitive; path/query MUST keep case (Linux hosts 404 on lowercased PDF paths).
+    u.hostname = u.hostname.toLowerCase();
+    u.protocol = u.protocol.toLowerCase();
     const path = u.pathname.replace(/\/+$/, "") || "/";
     u.pathname = path;
-    return u.toString().toLowerCase();
+    return u.toString();
   } catch {
-    return raw.trim().toLowerCase();
+    return raw.trim();
   }
 }
 

@@ -27,7 +27,12 @@
     "test:ux-consistency": "tsx scripts/test-ux-consistency.mjs",
     "test:staging-runtime": "tsx scripts/test-staging-runtime.mjs",
     "test:crawl-slices": "tsx scripts/test-crawl-slices.mjs",
+    "test:sitemap-pipeline": "tsx scripts/test-sitemap-pipeline.mjs",
+    "test:entity-fingerprint": "tsx scripts/test-entity-fingerprint.mjs",
+    "test:published-gold": "tsx scripts/test-published-gold.mjs",
+    "test:playwright-adaptive": "tsx scripts/test-playwright-adaptive.mjs",
     "test:stop-ship": "tsx scripts/test-stop-ship.mjs",
+    "staging:analyzelead": "tsx scripts/staging-analyzelead-acceptance.mjs",
     "test:staging-browser": "tsx scripts/test-staging-browser.mjs",
     "test:published-fast-path": "tsx scripts/test-published-fast-path.mjs",
     "test:waterfall": "tsx scripts/test-resolution-waterfall.mjs",
@@ -61,7 +66,8 @@
     "certify:gare": "tsx scripts/gare-certification.mjs",
     "certify:full": "tsx scripts/quality-gate.mjs && tsx scripts/delivery-certification.mjs",
     "refresh:analyzed": "tsx scripts/refresh-analyzed-leads.mjs",
-    "audit:strict": "tsx scripts/strict-audit-all.mjs"
+    "audit:strict": "tsx scripts/strict-audit-all.mjs",
+    "test:canonicalize-case": "tsx scripts/test-canonicalize-case.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -46,6 +46,10 @@ import {
   PublishedGateError,
 } from "@/lib/sanita/verdict-gateway";
 import {
+  extractDocumentEntityFingerprint,
+  buildFacilityFingerprint,
+} from "@/lib/sanita/entity-fingerprint";
+import {
   buildFrontierFromCrawl,
   stampFrontierSummary,
 } from "@/lib/sanita/crawl-frontier-ledger";
@@ -773,29 +777,23 @@ export async function analyzeLead(
   let prepared;
   try {
     if (verdict === "PUBLISHED") {
+      const docFingerprint = extractDocumentEntityFingerprint(corpus, { title: policyUrl }, policyUrl);
+      const facilityFingerprint = buildFacilityFingerprint({
+        companyName: lead.companyName,
+        city: lead.city,
+        phone,
+        piva: piva || lead.piva,
+        website,
+        groupSeatVerified: identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
+      });
       const publishedEvidence = buildPublishedEmitEvidence({
         identityStatus: identityEv.status,
         pageUrl: policyUrl,
         facilityWebsite: website,
         contentFetched: crawl.ok,
         contentExcerpt: corpus.slice(0, 4000),
-        docFingerprint: {
-          facilityName: lead.companyName,
-          vatId: piva,
-          municipality: lead.city,
-          phone,
-          domain: website,
-          seatPageUrl: website,
-        },
-        facilityFingerprint: {
-          facilityName: lead.companyName,
-          vatId: piva || lead.piva,
-          municipality: lead.city,
-          phone,
-          domain: website,
-          seatPageUrl: website,
-          groupSeatVerified: identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
-        },
+        docFingerprint,
+        facilityFingerprint,
         policyObsolete: analysis.policyObsolete,
         hasCoverageEnd: Boolean(analysis.expiry),
         analogousMeasure: /autoassicuraz|misura analoga|gestione\s+diretta/i.test(corpus),
@@ -827,10 +825,16 @@ export async function analyzeLead(
       verdict = prepared.legacyVerdict;
     } else {
       if (!fin.processingHint) {
+        // REVIEW senza policy certificata ≠ CURRENT_VERIFIED
+        const incomplete =
+          !ccStamp.complete ||
+          (crawl.policyPdfsQueued ?? 0) > (crawl.policyPdfsRead ?? 0) ||
+          ccStamp.urlCapReached ||
+          ccStamp.timeCapReached;
         evidenceBody = stampProcessingMeta(evidenceBody, {
           state: "REVIEW_HUMAN",
           businessVerdict: "REVIEW_HUMAN",
-          validationStatus: "CURRENT_VERIFIED",
+          validationStatus: incomplete ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
         });
       }
     }
@@ -1248,28 +1252,21 @@ export async function analyzeRegional(
         category: lead.category,
         siteText: evidenceBody,
       });
+      const pageUrl = audit.policyPdfUrl || audit.policySourceUrl || website;
       const publishedEvidence = buildPublishedEmitEvidence({
         identityStatus: regionalId.status,
-        pageUrl: audit.policyPdfUrl || audit.policySourceUrl || website,
+        pageUrl,
         facilityWebsite: website,
         contentFetched: websiteReachable === true,
         contentExcerpt: evidenceBody.slice(0, 4000),
-        docFingerprint: {
-          facilityName: lead.companyName,
-          municipality: lead.city,
-          domain: website,
-          seatPageUrl: website,
-          vatId: piva,
+        docFingerprint: extractDocumentEntityFingerprint(evidenceBody, { title: pageUrl }, pageUrl),
+        facilityFingerprint: buildFacilityFingerprint({
+          companyName: lead.companyName,
+          city: lead.city,
           phone,
-        },
-        facilityFingerprint: {
-          facilityName: lead.companyName,
-          municipality: lead.city,
-          domain: website,
-          seatPageUrl: website,
-          vatId: piva,
-          phone,
-        },
+          piva,
+          website,
+        }),
         policyObsolete: crawlPolicyObsolete,
         hasCoverageEnd: Boolean(policyExpiry),
         category: lead.category,
@@ -1326,10 +1323,14 @@ export async function analyzeRegional(
       verdict = prepared.legacyVerdict;
       }
     } else if (!finReg.processingHint) {
+      const incomplete =
+        (audit.policyPdfsQueued ?? 0) > (audit.policyPdfsRead ?? 0) ||
+        websiteReachable === false ||
+        pagesVisited === 0;
       evidenceBody = stampProcessingMeta(evidenceBody, {
         state: "REVIEW_HUMAN",
         businessVerdict: "REVIEW_HUMAN",
-        validationStatus: "CURRENT_VERIFIED",
+        validationStatus: incomplete ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
       });
     }
   } catch (e) {

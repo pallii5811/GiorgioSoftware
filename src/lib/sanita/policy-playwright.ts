@@ -119,7 +119,8 @@ export function needsPlaywrightPolicyPass(crawl: CrawlResult): boolean {
 /** Arricchisce il crawl con HTML renderizzato + link PDF da pagine Trasparenza. */
 export async function enrichCrawlWithPlaywright(
   baseUrl: string,
-  crawl: CrawlResult
+  crawl: CrawlResult,
+  opts?: { surfaceErrors?: boolean }
 ): Promise<CrawlResult> {
   if (!needsPlaywrightPolicyPass(crawl)) return crawl;
   const maxMs = PLAYWRIGHT_POLICY_MAX_MS;
@@ -134,8 +135,12 @@ export async function enrichCrawlWithPlaywright(
     const result = await enrichCrawlWithPlaywrightInner(baseUrl, crawl, () => aborted);
     if (aborted && !result.policyPdfAnalysis?.policyFound) return crawl;
     return result;
-  } catch {
-    return crawl;
+  } catch (e) {
+    if (opts?.surfaceErrors) throw e;
+    return {
+      ...crawl,
+      error: crawl.error || (e instanceof Error ? e.message : String(e)),
+    };
   } finally {
     if (timer) clearTimeout(timer);
     aborted = true;
@@ -152,12 +157,32 @@ async function enrichCrawlWithPlaywrightInner(
   const { launchMapsBrowser } = await import("@/lib/sanita/playwright-maps");
   const { browser, context, page } = await launchMapsBrowser();
   const extraPages: string[] = [];
+  const jsonEndpoints: string[] = [];
   let combined = crawl.text;
   let policyText = crawl.policyText;
   let foundRelevantPage = crawl.foundRelevantPage;
   const pdfUrls = new Set<string>();
 
   try {
+    const baseHost = new URL(baseUrl).hostname.replace(/^www\./, "");
+    page.on("response", (res) => {
+      try {
+        const u = res.url();
+        const ct = (res.headers()["content-type"] || "").toLowerCase();
+        const host = new URL(u).hostname.replace(/^www\./, "");
+        if (host !== baseHost) return;
+        if (
+          ct.includes("application/json") ||
+          /\.json(?:$|\?)/i.test(u) ||
+          /\/api\//i.test(u)
+        ) {
+          if (!jsonEndpoints.includes(u)) jsonEndpoints.push(u);
+        }
+      } catch {
+        /* */
+      }
+    });
+
     const urls = new Set<string>();
     for (const p of crawl.pagesVisited) {
       if (POLICY_PATH.test(p)) urls.add(p);
@@ -301,7 +326,7 @@ async function enrichCrawlWithPlaywrightInner(
     await browser.close().catch(() => {});
   }
 
-  if (extraPages.length === 0 && pdfUrls.size === 0) return crawl;
+  if (extraPages.length === 0 && pdfUrls.size === 0 && jsonEndpoints.length === 0) return crawl;
 
   if (isAborted()) return crawl;
 
@@ -317,10 +342,14 @@ async function enrichCrawlWithPlaywrightInner(
 
   for (const pdfUrl of sortPdfQueue(pdfUrls).slice(0, MAX_PLAYWRIGHT_PDFS)) {
     if (isAborted()) break;
-    const { text, needsOcr } = await fetchPdfTextWithRetry(pdfUrl, { forceOcr: true });
+    const policyish =
+      /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura/i.test(
+        pdfUrl
+      );
+    const { text, needsOcr } = await fetchPdfTextWithRetry(pdfUrl, { forceOcr: policyish });
     policyPdfsRead++;
     extraPages.push(pdfUrl);
-    if (needsOcr && !text?.trim() && /polizz|assicuraz|rc|rct|parm|pars/i.test(pdfUrl)) needsOcrReview = true;
+    if (needsOcr && !text?.trim() && policyish) needsOcrReview = true;
     if (!text?.trim()) continue;
     policyText = policyText ? `${policyText} \n ${text}` : text;
     foundRelevantPage = true;
@@ -335,11 +364,12 @@ async function enrichCrawlWithPlaywrightInner(
     }
   }
 
-  const gotContent = extraPages.length > 0;
+  const gotContent = extraPages.length > 0 || jsonEndpoints.length > 0;
   const allPdfsRead = policyPdfsQueued === 0 || policyPdfsRead >= policyPdfsQueued;
   const mergedVisited = [
     ...crawl.pagesVisited,
     ...extraPages.filter((p) => !crawl.pagesVisited.includes(p)),
+    ...jsonEndpoints.filter((p) => !crawl.pagesVisited.includes(p) && !extraPages.includes(p)),
   ];
   const htmlPageCount = mergedVisited.filter((u) => !/\.pdf(?:$|\?|#)/i.test(u)).length;
   const bfsComplete = htmlPageCount >= 12 || (!crawl.ok && gotContent && htmlPageCount >= 5);

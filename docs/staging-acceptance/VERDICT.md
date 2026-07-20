@@ -1,24 +1,29 @@
-# Staging Acceptance Verdict — runtime recovery 2026-07-19
+# Staging acceptance — FINAL PRODUCT CLOSURE (progress)
 
-## Verdetto
+**Branch:** `cto/final-production-grade-20260719`  
+**HEAD at run:** see `analyzelead-acceptance.json`  
+**Verdict:** **STAGING ACCEPTANCE FAILED**
 
-**PRODUCTION RELEASE CANDIDATE — HUMAN SIGN-OFF REQUIRED**
+## Gates
 
-*(soggetto a conferma suite `npm ci` su worktree pulito — aggiornare dopo clean install)*
+| Gate | Result | Evidence |
+|------|--------|----------|
+| Sitemap pipeline real | PASS (unit 12/12) | `discoverAndProcessSitemaps`; Clotilde `DISCOVERED_COMPLETE` / Minerva `ROBOTS_REFERENCED_COMPLETE` |
+| Playwright adaptive default | PASS (unit 6/6) | `enablePlaywright="adaptive"` in `lead-crawl-runtime` |
+| Document fingerprint extracted | PASS (unit 12/12) | `extractDocumentEntityFingerprint` — no lead-field copy |
+| Exact gold 4/4 | **FAIL 3/4** | Antoniano/Minerva/Villa → not CURRENT; **Clotilde** stuck REVIEW (scanned PDF OCR unreadable without poppler) |
+| analyzeLead real path | PASS | `scripts/staging-analyzelead-acceptance.mjs` |
+| false CURRENT / false HOT | PASS 0/0 | after VS fix (REVIEW no longer stamps `CURRENT_VERIFIED`) |
+| npm ci full | PASS | clean worktree + `NODE_EXTRA_CA_CERTS` (Windows Root export) + sqlite `DATABASE_URL` for prisma-smart |
+| Canonicalize path case | PASS | was lowercasing PDF paths → 404 on Clotilde Assicurazione PDF |
 
-## Root cause timeout 45s
+## Remaining blocker (honest)
 
-Harness `crawlSiteIsolated(..., 45_000)` in `scripts/staging-acceptance-run.mjs` uccideva l’intero crawl.
-Documentato in `timeout-root-cause.md`. Sostituito da slice runner + PUB fast-path.
+Fondazione Clotilde PDF is 38-page **scanned** (`Assicurazione-Rischi-Avversi-…pdf`).  
+Digital extract is page markers only. Without `pdftoppm` (poppler), OCR falls back to JPEG carving → garbage text → `policyFound=false` → cannot emit `PUBLISHED_EXPIRED`.
 
-## Recovery run
+**Not verified end-to-end for PRC:** HOT complete≥1, browser semantic re-run, Gare 25+25, full suite on clean HEAD commit.
 
-- Run ID: `staging-runtime-recovery-20260719`
-- `docs/staging-acceptance/recovery-summary.json` → `gatePass: true`
-- PUB content+proof 4/4; HOT complete=true 4, HOT_VERIFIED 3; hard 4/4; timeout45=0
-- Playwright JS fixture + OCR pipeline; Gare 20/20; Veneto DB 10/10
-- Browser local `http://127.0.0.1:4310` PASS
+## Do not claim
 
-## Sicurezza
-
-write/deploy/email/webhook/notifiche/cron live: **0**
+PRODUCTION RELEASE CANDIDATE — HUMAN SIGN-OFF REQUIRED

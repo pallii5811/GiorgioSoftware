@@ -19,8 +19,9 @@ import {
   seedCrawlFrontier,
   type CrawlSliceResult,
 } from "@/lib/sanita/crawl-slice-runner";
-import { externalFetch } from "@/lib/http";
+import { discoverAndProcessSitemaps } from "@/lib/sanita/sitemap-pipeline";
 import { analyzePolicy } from "@/lib/sanita/detector";
+import type { PlaywrightMode } from "@/lib/sanita/playwright-adaptive";
 
 export function resolveProductFrontierPath(): string {
   if (process.env.FRONTIER_DB_PATH?.trim()) return process.env.FRONTIER_DB_PATH.trim();
@@ -29,49 +30,6 @@ export function resolveProductFrontierPath(): string {
     process.env.SANITA_RUN_ID ||
     (process.env.SHADOW_MODE === "true" || process.env.SHADOW_MODE === "1" ? "shadow" : "product");
   return defaultFrontierDbPath(runId);
-}
-
-/** Probe robots/sitemap once — sets NOT_PRESENT or DISCOVERED_PARTIAL; never fake COMPLETE. */
-export async function probeSitemapStatus(
-  crawlRunId: string,
-  website: string
-): Promise<"NOT_PRESENT" | "DISCOVERED_PARTIAL" | "DISCOVERED_FAILED" | "NOT_DISCOVERED"> {
-  const base = website.endsWith("/") ? website : `${website}/`;
-  try {
-    const robotsUrl = new URL("/robots.txt", base).toString();
-    const smUrl = new URL("/sitemap.xml", base).toString();
-    let robotsOk = false;
-    let smStatus = 0;
-    try {
-      const r = await externalFetch(robotsUrl, { timeoutMs: 8_000, redirect: "follow" });
-      robotsOk = r.ok;
-    } catch {
-      /* */
-    }
-    try {
-      const s = await externalFetch(smUrl, { timeoutMs: 8_000, redirect: "follow" });
-      smStatus = s.status;
-      if (s.ok) {
-        setCrawlRunFlags(crawlRunId, { sitemapStatus: "DISCOVERED_PARTIAL" });
-        return "DISCOVERED_PARTIAL";
-      }
-    } catch {
-      smStatus = 0;
-    }
-    if (smStatus === 404 && (!robotsOk || smStatus === 404)) {
-      setCrawlRunFlags(crawlRunId, { sitemapStatus: "NOT_PRESENT" });
-      return "NOT_PRESENT";
-    }
-    if (smStatus === 0) {
-      setCrawlRunFlags(crawlRunId, { sitemapStatus: "DISCOVERED_FAILED" });
-      return "DISCOVERED_FAILED";
-    }
-    setCrawlRunFlags(crawlRunId, { sitemapStatus: "NOT_DISCOVERED" });
-    return "NOT_DISCOVERED";
-  } catch {
-    setCrawlRunFlags(crawlRunId, { sitemapStatus: "DISCOVERED_FAILED" });
-    return "DISCOVERED_FAILED";
-  }
 }
 
 function historicalDocUrls(evidence: string | null | undefined): string[] {
@@ -127,17 +85,20 @@ function aggregateCrawlResult(
   };
 }
 
+/**
+ * Real product crawl: CrawlRun + frontier seed BEFORE first HTTP, then slices until settled.
+ */
 export type LeadCrawlRuntimeResult = {
   crawl: CrawlResult;
   crawlRunId: string;
   slices: CrawlSliceResult[];
   final: CrawlSliceResult;
   frontierCreatedBeforeFetch: true;
+  sitemapStatus?: string;
+  sitemapTrace?: unknown;
+  playwrightMode?: PlaywrightMode;
 };
 
-/**
- * Real product crawl: CrawlRun + frontier seed BEFORE first HTTP, then slices until settled.
- */
 export async function crawlLeadViaSlices(opts: {
   leadId: string;
   website: string;
@@ -145,8 +106,8 @@ export async function crawlLeadViaSlices(opts: {
   runId?: string;
   maxSlices?: number;
   discoverLinks?: boolean;
-  enablePlaywright?: boolean;
-  /** Identity/scope flags — only from real identity engine, never defaults true. */
+  /** Product default: adaptive. */
+  enablePlaywright?: PlaywrightMode;
   identityVerified?: boolean;
   scopeVerified?: boolean;
 }): Promise<LeadCrawlRuntimeResult> {
@@ -161,7 +122,6 @@ export async function crawlLeadViaSlices(opts: {
     workerId: "scan-engine-slices",
   });
 
-  // Frontier must exist before any HTTP (sitemap probe counts as first fetch after create)
   if (!getCrawlRun(crawlRunId)) {
     throw new Error("CrawlRun missing before fetch");
   }
@@ -170,7 +130,8 @@ export async function crawlLeadViaSlices(opts: {
     website: opts.website,
     extraUrls: historicalDocUrls(opts.evidence),
   });
-  await probeSitemapStatus(crawlRunId, opts.website);
+  const sitemap = await discoverAndProcessSitemaps(crawlRunId, opts.website);
+  const pwMode: PlaywrightMode = opts.enablePlaywright ?? "adaptive";
 
   const settled = await runCrawlUntilSettled({
     leadId: opts.leadId,
@@ -179,7 +140,7 @@ export async function crawlLeadViaSlices(opts: {
     workerId: "scan-engine-slices",
     seedExtraUrls: historicalDocUrls(opts.evidence),
     discoverLinks: opts.discoverLinks ?? true,
-    enablePlaywright: opts.enablePlaywright ?? false,
+    enablePlaywright: pwMode,
     maxSlices: opts.maxSlices ?? 24,
   });
 
@@ -197,6 +158,9 @@ export async function crawlLeadViaSlices(opts: {
     slices: settled.slices,
     final: settled.final,
     frontierCreatedBeforeFetch: true,
+    sitemapStatus: sitemap.status,
+    sitemapTrace: sitemap.traces,
+    playwrightMode: pwMode,
   };
 }
 

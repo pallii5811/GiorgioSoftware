@@ -1,0 +1,38 @@
+{
+  "version": "published-revalidation-gold-v1",
+  "seed": "staging-sanita-acceptance-20260719",
+  "notes": "Exact gold — do not promote historical labels. Gate is exact match 4/4, not PUB proof 4/4.",
+  "records": [
+    {
+      "id": "cmqn2xibt000nmhc2s7aalaif",
+      "companyName": "Fondazione Clotilde",
+      "expectedClassification": "PUBLISHED_EXPIRED",
+      "requires": ["real_entity_attribution", "rc_insurance_proof"],
+      "forbidden": ["CURRENT_VERIFIED_without_attribution"],
+      "notes": "Historical expiry 2023-12-30 — expired if RC proof attributed"
+    },
+    {
+      "id": "cmqo5x33c0025aa3v6q32x57y",
+      "companyName": "Fondazione Istituto Antoniano",
+      "expectedClassification": "NOT_CURRENT_VERIFIED",
+      "negativeDocument": "CCNL",
+      "forbiddenDocs": ["CCNLarisrsa.pdf"],
+      "preserveHistoricalSeparately": true,
+      "notes": "CCNL is not insurance proof"
+    },
+    {
+      "id": "cmqp5g0d7000510ohy3zt1x80",
+      "companyName": "Clinica Minerva S.p.A",
+      "expectedClassification": "NOT_CURRENT_VERIFIED",
+      "negativeDocument": "BILANCIO_OR_PARM",
+      "notes": "Bilancio/PARM alone is not insurance proof unless another real RC document is found"
+    },
+    {
+      "id": "cmqn3iyjo00061272bi8z4fmv",
+      "companyName": "Villa Del Sole",
+      "expectedClassification": "NOT_CURRENT_VERIFIED",
+      "negativeDocument": "PARM_PARS_SENZA_PROVA",
+      "notes": "PARM/PARS alone insufficient without concrete insurer/number/coverage"
+    }
+  ]
+}

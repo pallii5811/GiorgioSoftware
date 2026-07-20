@@ -22,12 +22,17 @@ function tessdataLangPath(): string {
 const POLICY_EXHAUSTIVE =
   process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false";
 
-/** Pagine massime OCR per PDF — esaustivo: tutte le pagine policy (no PDF saltati). */
-export const MAX_OCR_PAGES = POLICY_EXHAUSTIVE
-  ? 48
-  : process.env.SCAN_FAST === "0" || process.env.SCAN_FAST === "false"
-    ? 12
-    : 4;
+/** Pagine massime OCR per PDF. OCR_MAX_PAGES env vince; default basso — polizza è nelle prime pagine. */
+export const MAX_OCR_PAGES = (() => {
+  const raw = process.env.OCR_MAX_PAGES;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return Math.min(n, 48);
+  }
+  if (POLICY_EXHAUSTIVE) return 12;
+  if (process.env.SCAN_FAST === "0" || process.env.SCAN_FAST === "false") return 8;
+  return 4;
+})();
 
 const MIN_IMAGE_BYTES = 12_000;
 const MAX_IMAGE_BYTES = 30_000_000;
@@ -365,20 +370,37 @@ async function runOcrPdfJob(pdfBuffer: Buffer): Promise<string | null> {
   const worker = await createIsolatedWorker();
   if (!worker) return null;
 
-    try {
-      let combined = "";
-      let emptyStreak = 0;
-      for (const img of images) {
-        const text = await recognizeImage(img, worker);
-        if (!text.trim()) {
-          emptyStreak++;
-          // PDF corrotto / solo artefatti JPEG — non macinare ore su immagini vuote.
-          if (emptyStreak >= 6 && !combined.trim()) break;
-          continue;
-        }
-        emptyStreak = 0;
-        combined += text + "\n";
+  // Cap pages: polizza fields are almost always in the first sheets; 38-page magazines hang forever.
+  const maxPages = Math.max(
+    1,
+    Number.parseInt(process.env.OCR_MAX_PAGES || "12", 10) || 12
+  );
+  const slice = images.slice(0, maxPages);
+
+  try {
+    let combined = "";
+    let emptyStreak = 0;
+    const t0 = Date.now();
+    const hardMs = ocrJobTimeoutMs();
+    for (const img of slice) {
+      if (hardMs > 0 && Date.now() - t0 > hardMs) break;
+      const text = await recognizeImage(img, worker);
+      if (!text.trim()) {
+        emptyStreak++;
+        // PDF corrotto / solo artefatti JPEG — non macinare ore su immagini vuote.
+        if (emptyStreak >= 6 && !combined.trim()) break;
+        continue;
       }
+      emptyStreak = 0;
+      combined += text + "\n";
+      // Early stop once insurance fields are readable
+      if (
+        /polizza|assicuraz|unipol|generali|zurich|massimale|scadenz/i.test(combined) &&
+        combined.replace(/\s+/g, " ").trim().length > 400
+      ) {
+        break;
+      }
+    }
     const normalized = combined.replace(/\s+/g, " ").trim();
     return normalized || null;
   } finally {
@@ -390,10 +412,16 @@ export async function ocrPdfText(pdfBuffer: Buffer): Promise<string | null> {
   if (!isOcrEnabled()) return null;
 
   return enqueueOcr(async () => {
-    const job = runOcrPdfJob(pdfBuffer);
     const ms = ocrJobTimeoutMs();
+    const job = runOcrPdfJob(pdfBuffer);
     if (ms <= 0) return job.catch(() => null);
-    return withTimeout(job, ms, "OCR PDF").catch(() => null);
+    try {
+      return await withTimeout(job, ms, "OCR PDF");
+    } catch {
+      // Timeout: do not await the orphaned job (would hang the process).
+      void job.catch(() => null);
+      return null;
+    }
   });
 }
 

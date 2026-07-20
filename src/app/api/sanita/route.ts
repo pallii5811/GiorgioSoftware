@@ -131,6 +131,26 @@ export async function GET(req: Request) {
 
   try {
     const url = new URL(req.url);
+    const leadId = url.searchParams.get("id");
+    if (leadId?.trim()) {
+      const lead = await prisma.lead.findUnique({ where: { id: leadId.trim() } });
+      if (!lead || lead.type !== "HEALTHCARE") {
+        return NextResponse.json(
+          { success: false, error: "Lead non trovato", found: false },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        found: true,
+        lead,
+        data: [lead],
+        meta: {
+          actionable: isInActionableSalesQueue(lead),
+          queueStatus: isInActionableSalesQueue(lead) ? "CURRENT" : "RESCAN_REQUIRED",
+        },
+      });
+    }
     const includePending = url.searchParams.get("includePending") === "1";
     const region = url.searchParams.get("region");
     const regionFilter =
