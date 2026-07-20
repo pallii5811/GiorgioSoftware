@@ -8,6 +8,7 @@ import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
 import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
 import { crawlLeadViaSlices, applyIdentityToCrawlRun } from "@/lib/sanita/lead-crawl-runtime";
+import { deriveCrawlCompleteness } from "@/lib/sanita/frontier-store";
 
 function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
   const blob = `${crawlError || ""} ${stopReason || ""}`;
@@ -61,6 +62,19 @@ import {
 } from "@/lib/sanita/crawl-frontier-ledger";
 import { runProductionWaterfall } from "@/lib/sanita/production-waterfall";
 import { resolveRegionalIdentity } from "@/lib/sanita/regional-identity";
+import {
+  captureRegionalHint,
+  applyRegionalHintAfterFinalCompleteness,
+  type RegionalHintCapture,
+} from "@/lib/sanita/regional-hint";
+import type { RegionalCheckResult } from "@/lib/sanita/regional-check";
+import {
+  resolveTerminalProcessing,
+  stampCompletenessMarkers,
+  assertCompletenessInvariant,
+  type TerminalCounterKind,
+} from "@/lib/sanita/terminal-processing";
+import type { PersistSanitaDecision } from "@/lib/sanita/verdict-gateway";
 import type { Lead } from "@prisma/client";
 
 import type { PolicyAnalysis } from "@/lib/sanita/detector";
@@ -475,23 +489,14 @@ export async function analyzeLead(
     evidenceBody = `${reconciled.note} ${evidenceBody}`.trim();
   }
 
+  let regionalHint: RegionalHintCapture | null = null;
+  let regionalResult: RegionalCheckResult | null = null;
   if (verdict === "HOT" && isRegionalCheckAvailable()) {
     audit.crossCheckRegional = true;
-    const regional = await checkRegionalPolicy(lead.companyName, lead.city, lead.region);
-    audit.regionalQueries = regional.queryCount;
-    audit.regionalUrls = regional.sourceUrls;
-    if (analysis.policyObsolete) {
-      evidenceBody = reconciled.note ?? analysis.evidence ?? evidenceBody;
-    } else if (regional.policyFound) {
-      if (crawl.completeness?.complete && !analysis.policyFound) {
-        evidenceBody = `Crawl first-party completo: assenza polizza RC sul sito. Nota portale regionale (non bloccante HOT): ${regional.evidence || ""} ${evidenceBody}`.trim();
-      } else {
-        verdict = "REVIEW";
-        evidenceBody = `Portale regionale/ASL: possibile polizza ma PDF RC non sul sito — verifica manuale. ${regional.evidence || ""}`;
-      }
-    } else if (regional.checked) {
-      evidenceBody = `Sito: polizza non pubblicata in Trasparenza. Portali ASL/regionali: confermata assenza pubblicazione. ${analysis.evidence || ""}`;
-    }
+    regionalResult = await checkRegionalPolicy(lead.companyName, lead.city, lead.region);
+    audit.regionalQueries = regionalResult.queryCount;
+    audit.regionalUrls = regionalResult.sourceUrls;
+    regionalHint = captureRegionalHint(regionalResult);
   }
 
   // Polizza assente su .it/.com Maps — prova il TLD gemello (stesso brand nel nome).
@@ -684,41 +689,10 @@ export async function analyzeLead(
     evidenceBody = `${idBlock} ${evidenceBody}`.trim();
   }
 
-  const fin = finalizeVerdict({
-    verdict,
-    evidenceBody,
-    pagesVisited: crawl.pagesVisited.length,
-    websiteReachable: true,
-    website,
-    policyCompany: analysis.company,
-    policyExpiry: analysis.expiry,
-    policyObsolete: analysis.policyObsolete,
-    policyExhaustive: crawl.policyExhaustive,
-    needsOcrReview: crawl.needsOcrReview,
-    identityStatus: identityEv.status,
-    category: lead.category,
-    crawlCompleteness: deriveCrawlComplete({
-      ...(crawl.completeness ?? {
-        identityVerified: false,
-        sitemapStatus: "NOT_DISCOVERED" as const,
-        htmlQueueExhausted: false,
-        relevantLinksProcessed: false,
-        relevantDocumentsProcessed: false,
-        jsonEndpointsProcessed: false,
-        sameHostScriptsProcessed: false,
-        unresolvedRelevantUrls: 0,
-        failedRelevantUrls: 0,
-        unreadableRelevantDocuments: 0,
-        criticalOcrDoubts: 0,
-        urlCapReached: false,
-        timeCapReached: false,
-      }),
-      identityVerified: identityEv.verified,
-      sitemapStatus: crawl.completeness?.sitemapStatus ?? "NOT_DISCOVERED",
-    }),
-  });
-  verdict = fin.verdict;
-  const ccStamp = deriveCrawlComplete({
+  evidenceBody = appendVersionMarker(evidenceBody, currentMarkers("CURRENT"));
+
+  const crawlRunId: string | null = productCrawlRunId;
+  let finalCompleteness = deriveCrawlComplete({
     ...(crawl.completeness ?? {
       identityVerified: false,
       sitemapStatus: "NOT_DISCOVERED" as const,
@@ -737,47 +711,16 @@ export async function analyzeLead(
     identityVerified: identityEv.verified,
     sitemapStatus: crawl.completeness?.sitemapStatus ?? "NOT_DISCOVERED",
   });
-  evidenceBody = appendVersionMarker(fin.evidenceBody, currentMarkers("CURRENT"));
-  evidenceBody = `${evidenceBody} [IDENTITY:${identityEv.status}] [CRAWL_COMPLETE:${ccStamp.complete}]`.trim();
 
-  if (fin.processingHint === "RETRY_PENDING") {
-    evidenceBody = stampProcessingMeta(evidenceBody, {
-      state: "RETRY_PENDING",
-      businessVerdict: "NONE",
-      validationStatus: "REVALIDATION_PENDING",
-    });
-  } else if (fin.processingHint === "REVIEW_HUMAN") {
-    evidenceBody = stampProcessingMeta(evidenceBody, {
-      state: "REVIEW_HUMAN",
-      businessVerdict: "REVIEW_HUMAN",
-      validationStatus: "CONFLICT_FOUND",
-    });
-  }
-
-  const frontier = buildFrontierFromCrawl({
-    baseUrl: website,
-    pagesVisited: crawl.pagesVisited,
-    policyPdfsQueued: crawl.policyPdfsQueued ?? 0,
-    policyPdfsRead: crawl.policyPdfsRead ?? 0,
-    needsOcrReview: Boolean(crawl.needsOcrReview),
-    completeness: ccStamp,
-    scanKey: lead.id,
-  });
-  evidenceBody = stampFrontierSummary(evidenceBody, frontier);
-
-  const crawlRunId: string | null = productCrawlRunId;
   if (crawlRunId) {
     try {
-      const ccLive = applyIdentityToCrawlRun(crawlRunId, {
+      applyIdentityToCrawlRun(crawlRunId, {
         identityVerified: identityEv.verified,
         scopeVerified: identityEv.verified,
       });
-      Object.assign(ccStamp, ccLive);
-      const wf = await runProductionWaterfall({
-        website,
-        crawlRunId,
-      });
+      const wf = await runProductionWaterfall({ website, crawlRunId });
       evidenceBody = `${evidenceBody} [WATERFALL:${wf.traversed.length}/${wf.wiredCount}:${wf.technicalStatus}]`.trim();
+      finalCompleteness = deriveCrawlCompleteness(crawlRunId);
     } catch (e) {
       evidenceBody = `${evidenceBody} [FRONTIER_PERSIST_ERR:${e instanceof Error ? e.message : "x"}]`.trim();
     }
@@ -785,11 +728,27 @@ export async function analyzeLead(
     evidenceBody = `${evidenceBody} [FRONTIER:missing]`.trim();
   }
 
+  const regionalAdj = applyRegionalHintAfterFinalCompleteness({
+    candidateVerdict: verdict,
+    policyFoundOnSite: analysis.policyFound,
+    policyObsolete: Boolean(analysis.policyObsolete),
+    identityVerified: identityEv.verified,
+    finalComplete: finalCompleteness.complete,
+    hint: regionalHint,
+    regionalFull: regionalResult,
+  });
+  verdict = regionalAdj.verdict;
+  let humanConflict = regionalAdj.humanConflict;
+  if (regionalAdj.evidenceAppend) {
+    evidenceBody = `${regionalAdj.evidenceAppend} ${evidenceBody}`.trim();
+  }
+
   // Candidato PUB da polizza sul sito: resta PUB solo se gateway/canEmitPublished ok.
   if (
     verdict === "REVIEW" &&
     analysis.policyFound &&
     identityEv.verified &&
+    !humanConflict &&
     !/dominio diverso|non attribuibile|Contaminazione critica|Identità/i.test(evidenceBody)
   ) {
     const certified =
@@ -798,9 +757,36 @@ export async function analyzeLead(
       (crawl.foundRelevantPage && crawl.pagesVisited.length >= 4);
     if (certified) {
       verdict = "PUBLISHED";
-      evidenceBody = appendVersionMarker(evidenceBody, currentMarkers("CURRENT"));
     }
   }
+
+  const frontier = buildFrontierFromCrawl({
+    baseUrl: website,
+    pagesVisited: crawl.pagesVisited,
+    policyPdfsQueued: crawl.policyPdfsQueued ?? 0,
+    policyPdfsRead: crawl.policyPdfsRead ?? 0,
+    needsOcrReview: Boolean(crawl.needsOcrReview),
+    completeness: finalCompleteness,
+    scanKey: lead.id,
+  });
+
+  const fin = finalizeVerdict({
+    verdict,
+    evidenceBody,
+    pagesVisited: crawl.pagesVisited.length,
+    websiteReachable: true,
+    website,
+    policyCompany: analysis.company,
+    policyExpiry: analysis.expiry,
+    policyObsolete: analysis.policyObsolete,
+    policyExhaustive: crawl.policyExhaustive,
+    needsOcrReview: crawl.needsOcrReview,
+    identityStatus: identityEv.status,
+    category: lead.category,
+    crawlCompleteness: finalCompleteness,
+  });
+  verdict = fin.verdict;
+  evidenceBody = fin.evidenceBody;
 
   const nonPec = crawl.emails.filter((e) => e !== crawl.pec);
   let phone = pickBestPhone([crawl.phones[0], lead.phone], lead.region);
@@ -829,7 +815,7 @@ export async function analyzeLead(
     pagesVisited: crawl.pagesVisited.length,
     policyExhaustive: crawl.policyExhaustive === true,
     needsOcrReview: Boolean(crawl.needsOcrReview),
-    crawlCompleteness: ccStamp,
+    crawlCompleteness: finalCompleteness,
     identityStatus: identityEv.status,
     category: lead.category,
     frontier,
@@ -837,7 +823,10 @@ export async function analyzeLead(
     requirePersistedCompleteness: Boolean(crawlRunId),
   };
 
-  let prepared;
+  let gatewayDecision: PersistSanitaDecision | null = null;
+  let publishedSubtype: ReturnType<typeof derivePublishedSubtype> | null = null;
+  const ocrTech = ocrTechReason(crawl.error, sliceRun.final?.stopReason);
+
   try {
     if (verdict === "PUBLISHED") {
       const docFingerprint = extractDocumentEntityFingerprint(corpus, { title: policyUrl }, policyUrl);
@@ -862,74 +851,41 @@ export async function analyzeLead(
         analogousMeasure: /autoassicuraz|misura analoga|gestione\s+diretta/i.test(corpus),
         category: lead.category,
       });
-      prepared = prepareSanitaVerdictPersist({
+      gatewayDecision = prepareSanitaVerdictPersist({
         legacyVerdict: "PUBLISHED",
         evidenceBody,
         publishedEvidence,
       });
-      const subtype = derivePublishedSubtype({
+      publishedSubtype = derivePublishedSubtype({
         policyObsolete: analysis.policyObsolete,
         policyExpiry: analysis.expiry,
         policyCompany: analysis.company,
         policyNumber: analysis.policyNumber,
         policyMassimale: analysis.massimale,
-        evidenceBody: prepared.evidenceBody,
+        evidenceBody: gatewayDecision.evidenceBody,
       });
-      evidenceBody = stampPublishedSubtype(prepared.evidenceBody, subtype);
-      verdict = prepared.legacyVerdict;
+      evidenceBody = stampPublishedSubtype(gatewayDecision.evidenceBody, publishedSubtype);
+      verdict = gatewayDecision.legacyVerdict;
     } else if (verdict === "HOT") {
       assertAtomicHotPersist(verdict, hotEvidence);
-      prepared = prepareSanitaVerdictPersist({
+      assertCompletenessInvariant(
+        finalCompleteness.complete,
+        frontier,
+        finalCompleteness.complete
+      );
+      gatewayDecision = prepareSanitaVerdictPersist({
         legacyVerdict: "HOT",
         evidenceBody,
         hotEvidence,
       });
-      evidenceBody = prepared.evidenceBody;
-      verdict = prepared.legacyVerdict;
-    } else {
-      if (!fin.processingHint) {
-        // REVIEW senza policy certificata ≠ CURRENT_VERIFIED
-        const ocrTech = ocrTechReason(crawl.error, sliceRun.final?.stopReason);
-        if (ocrTech) {
-          evidenceBody = stampProcessingMeta(
-            `${evidenceBody} [REASON:${ocrTech}]`.trim(),
-            {
-              state: "TECHNICAL_BLOCKED",
-              businessVerdict: "NONE",
-              validationStatus: "TECHNICAL_BLOCKED",
-            }
-          );
-          bumpCounter(counters, "technicalBlocked");
-        } else {
-          const incomplete =
-            !ccStamp.complete ||
-            (crawl.policyPdfsQueued ?? 0) > (crawl.policyPdfsRead ?? 0) ||
-            ccStamp.urlCapReached ||
-            ccStamp.timeCapReached;
-          const technicalReview =
-            identityEv.status === "INSUFFICIENT_TECHNICAL" ||
-            !crawl.ok ||
-            incomplete;
-          evidenceBody = stampProcessingMeta(evidenceBody, {
-            state: technicalReview ? "RETRY_PENDING" : "REVIEW_HUMAN",
-            businessVerdict: technicalReview ? "NONE" : "REVIEW_HUMAN",
-            validationStatus: technicalReview ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
-          });
-          if (technicalReview) bumpCounter(counters, "retryPending");
-        }
-      }
+      evidenceBody = gatewayDecision.evidenceBody;
+      verdict = gatewayDecision.legacyVerdict;
     }
   } catch (e) {
     if (e instanceof PublishedGateError) {
       verdict = "REVIEW";
-      evidenceBody = stampProcessingMeta(
-        `PUBLISHED gate: ${e.reasons.join("; ")}. ${evidenceBody}`,
-        {
-          state: "REVIEW_HUMAN",
-          businessVerdict: "REVIEW_HUMAN",
-          validationStatus: "CONFLICT_FOUND",
-        }
-      );
+      humanConflict = true;
+      evidenceBody = `PUBLISHED gate: ${e.reasons.join("; ")}. ${evidenceBody}`;
     } else if (e instanceof HotIncompleteStopError) {
       throw e;
     } else {
@@ -937,17 +893,51 @@ export async function analyzeLead(
     }
   }
 
-  if (verdict === "PUBLISHED") bumpCounter(counters, "published");
-  else if (verdict === "HOT") bumpCounter(counters, "hot");
-  else if (fin.processingHint === "RETRY_PENDING") bumpCounter(counters, "retryPending");
-  else if (/\[STATE:TECHNICAL_BLOCKED\]/i.test(evidenceBody)) {
-    if (!counters.technicalBlocked) bumpCounter(counters, "technicalBlocked");
-  } else bumpCounter(counters, "reviewHuman");
+  if (ocrTech) {
+    evidenceBody = `${evidenceBody} [REASON:${ocrTech}]`.trim();
+  }
 
-  const finalEvidence =
-    fin.processingHint === "RETRY_PENDING"
-      ? packRetryPendingEvidence(evidenceBody)
-      : packEvidence(verdict, evidenceBody, audit);
+  const terminal = resolveTerminalProcessing({
+    legacyVerdict: verdict,
+    gatewayDecision,
+    finProcessingHint: fin.processingHint,
+    ocrTechReason: ocrTech,
+    identityStatus: identityEv.status,
+    finalComplete: finalCompleteness.complete,
+    crawlOk: crawl.ok,
+    humanConflict,
+    publishedSubtype,
+  });
+
+  evidenceBody = stampCompletenessMarkers(evidenceBody, identityEv.status, finalCompleteness.complete);
+  evidenceBody = stampFrontierSummary(evidenceBody, frontier);
+
+  if (verdict === "HOT") {
+    assertCompletenessInvariant(
+      finalCompleteness.complete,
+      frontier,
+      finalCompleteness.complete
+    );
+  }
+
+  if (!gatewayDecision) {
+    evidenceBody = stampProcessingMeta(evidenceBody, {
+      state: terminal.processingState,
+      businessVerdict: terminal.businessVerdict,
+      validationStatus: terminal.validationStatus,
+    });
+  }
+
+  if (terminal.counterKind !== "none") {
+    bumpCounter(
+      counters,
+      terminal.counterKind as Exclude<TerminalCounterKind, "none">
+    );
+  }
+
+  const finalEvidence = terminal.packAsRetry
+    ? packRetryPendingEvidence(evidenceBody)
+    : packEvidence(verdict, evidenceBody, audit);
 
   await prisma.lead.update({
     where: { id: lead.id },

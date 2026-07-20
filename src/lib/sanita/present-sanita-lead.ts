@@ -16,6 +16,7 @@ import {
   type SanitaProcessingState,
   type ValidationStatus,
 } from "@/lib/sanita/processing-state";
+import { readCrawlCompleteFromEvidence } from "@/lib/sanita/terminal-processing";
 import {
   derivePublishedSubtype,
   readPublishedSubtype,
@@ -71,9 +72,7 @@ function readIdentityStatus(evidence: string | null | undefined): IdentityStatus
 }
 
 function readCrawlComplete(evidence: string | null | undefined): boolean | null {
-  const m = evidence?.match(/\[CRAWL_COMPLETE:(true|false)\]/i);
-  if (!m) return null;
-  return m[1]!.toLowerCase() === "true";
+  return readCrawlCompleteFromEvidence(evidence);
 }
 
 function formatExpiry(d: Date | string | null | undefined): string | null {

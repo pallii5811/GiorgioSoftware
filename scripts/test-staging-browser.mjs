@@ -175,6 +175,67 @@ try {
       }
     }
     ok(semantic.length >= 4, `browser_semantic_acceptance covered ${semantic.length} IDs`);
+
+    // Last-mile semantic parity — fail on any mismatch
+    const LASTMILE = {
+      clotilde: "cmqn2xibt000nmhc2s7aalaif",
+      minerva: "cmqp5g0d7000510ohy3zt1x80",
+      antoniano: "cmqo5x33c0025aa3v6q32x57y",
+      villa: "cmqn3iyjo00061272bi8z4fmv",
+      heidy: "cmqo8aopr002waa3v4cgcbhpv",
+    };
+    async function fetchLeadSemantic(id) {
+      const res = await page.request.get(`${BASE}/api/sanita?id=${encodeURIComponent(id)}`);
+      const json = await res.json().catch(() => null);
+      return { status: res.status(), json, sem: json?.semantic, lead: json?.lead };
+    }
+
+    const clotilde = await fetchLeadSemantic(LASTMILE.clotilde);
+    ok(clotilde.status === 200, "Clotilde API 200");
+    ok(clotilde.sem?.processingState === "PUBLISHED_EXPIRED", "Clotilde PUBLISHED_EXPIRED");
+    ok(clotilde.sem?.validationStatus === "CURRENT_VERIFIED", "Clotilde CURRENT_VERIFIED");
+    ok(/unipol/i.test(clotilde.lead?.policyCompany || ""), "Clotilde UnipolSai");
+    ok(
+      clotilde.sem?.policyExpiry === "2023-12-30" ||
+        String(clotilde.lead?.policyExpiry || "").includes("2023-12-30"),
+      "Clotilde expiry 2023-12-30"
+    );
+    ok(/scadut/i.test(clotilde.sem?.clientLabel || ""), "Clotilde badge Polizza scaduta");
+    ok(!/in regola/i.test(clotilde.sem?.clientLabel || ""), "Clotilde never In regola");
+
+    const heidy = await fetchLeadSemantic(LASTMILE.heidy);
+    ok(heidy.status === 200, "Heidy API 200");
+    ok(heidy.sem?.processingState === "HOT_VERIFIED", "Heidy HOT_VERIFIED");
+    ok(heidy.sem?.businessVerdict === "HOT_VERIFIED", "Heidy business HOT_VERIFIED");
+    ok(heidy.sem?.validationStatus === "CURRENT_VERIFIED", "Heidy CURRENT_VERIFIED");
+    ok(heidy.sem?.crawlComplete === true, "Heidy crawlComplete true");
+    ok(Boolean(heidy.sem?.clientExplanation?.length), "Heidy completeness proof visible");
+    ok(/first-party|sito/i.test(heidy.sem?.clientExplanation || heidy.lead?.evidence || ""), "Heidy first-party source");
+    ok(Boolean(heidy.lead?.lastScannedAt), "Heidy scan date");
+    ok(
+      /portale regionale|Portali ASL|first-party/i.test(heidy.lead?.evidence || ""),
+      "Heidy regional hint labeled non first-party"
+    );
+
+    for (const [name, id] of [
+      ["Minerva", LASTMILE.minerva],
+      ["Antoniano", LASTMILE.antoniano],
+      ["Villa", LASTMILE.villa],
+    ]) {
+      const row = await fetchLeadSemantic(id);
+      ok(row.status === 200, `${name} API 200`);
+      ok(row.sem?.validationStatus !== "CURRENT_VERIFIED", `${name} not CURRENT_VERIFIED`);
+      ok(row.sem?.verdictToken !== "PUBLISHED", `${name} not PUBLISHED`);
+      ok(Boolean(row.sem?.clientExplanation?.length), `${name} motivation visible`);
+    }
+
+    const queueRes = await page.request.get(`${BASE}/api/sanita?actionable=1`);
+    const queueJson = await queueRes.json().catch(() => null);
+    const queueLeads = queueJson?.data || queueJson?.leads || [];
+    const techInQueue = queueLeads.filter((l) =>
+      /RETRY_PENDING|TECHNICAL_BLOCKED|REVALIDATION_PENDING/i.test(l.evidence || "")
+    );
+    ok(techInQueue.length === 0, "technical states absent from commercial queue");
   } else {
     ok(false, "browser_semantic_acceptance: sample-sanita.json missing");
   }
