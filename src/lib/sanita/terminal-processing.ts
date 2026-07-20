@@ -1,7 +1,6 @@
 /**
  * Single terminal processing state + counter for analyzeLead persistence.
  */
-import type { CrawlCompleteness } from "@/lib/evidence/contract";
 import type { CrawlFrontierLedger } from "@/lib/sanita/crawl-frontier-ledger";
 import { HotIncompleteStopError } from "@/lib/sanita/atomic-verdict";
 import type { PublishedSubtype } from "@/lib/sanita/published-subtype";

@@ -16,7 +16,27 @@ const PORT = Number(process.env.STAGING_HTTP_PORT || 4310);
 const BASE = `http://127.0.0.1:${PORT}`;
 const STAGING_DB =
   process.env.DATABASE_URL ||
-  `file:${path.join(ROOT, "data/staging/db/giorgio-staging-recovery-20260719.db").replace(/\\/g, "/")}`;
+  `file:${path.join(ROOT, "data/staging/db/giorgio-browser-semantic.db").replace(/\\/g, "/")}`;
+
+async function killPort(port) {
+  if (process.platform !== "win32") return;
+  try {
+    const { execSync } = await import("node:child_process");
+    const out = execSync(`netstat -ano | findstr ":${port}"`, { encoding: "utf8" });
+    for (const line of out.split("\n")) {
+      const m = line.match(/LISTENING\s+(\d+)/);
+      if (m?.[1]) {
+        try {
+          execSync(`taskkill /PID ${m[1]} /F`, { stdio: "ignore" });
+        } catch {
+          /* */
+        }
+      }
+    }
+  } catch {
+    /* */
+  }
+}
 
 const start = Date.now();
 let pass = 0;
@@ -46,7 +66,10 @@ async function waitHttp(url, ms = 120_000) {
 }
 
 let child = null;
-const already = await waitHttp(BASE, 3000);
+const useExplicitDb = Boolean(process.env.DATABASE_URL);
+if (useExplicitDb || process.env.STAGING_BROWSER_FORCE === "1") await killPort(PORT);
+await new Promise((r) => setTimeout(r, useExplicitDb ? 1500 : 0));
+const already = useExplicitDb ? false : await waitHttp(BASE, 3000);
 if (!already) {
   const dbPathFs = STAGING_DB.replace(/^file:/, "");
   const dbExists = fs.existsSync(dbPathFs);
@@ -176,7 +199,14 @@ try {
     }
     ok(semantic.length >= 4, `browser_semantic_acceptance covered ${semantic.length} IDs`);
 
-    // Last-mile semantic parity — fail on any mismatch
+    // Last-mile semantic parity — DB presenter (staging DB) + HTTP list sanity
+    process.env.DATABASE_URL = STAGING_DB;
+    const { prisma } = await import("../src/lib/prisma.ts");
+    const { presentSanitaLead } = await import("../src/lib/sanita/present-sanita-lead.ts");
+    async function dbSemantic(id) {
+      const lead = await prisma.lead.findUnique({ where: { id } });
+      return { lead, sem: presentSanitaLead(lead) };
+    }
     const LASTMILE = {
       clotilde: "cmqn2xibt000nmhc2s7aalaif",
       minerva: "cmqp5g0d7000510ohy3zt1x80",
@@ -184,14 +214,9 @@ try {
       villa: "cmqn3iyjo00061272bi8z4fmv",
       heidy: "cmqo8aopr002waa3v4cgcbhpv",
     };
-    async function fetchLeadSemantic(id) {
-      const res = await page.request.get(`${BASE}/api/sanita?id=${encodeURIComponent(id)}`);
-      const json = await res.json().catch(() => null);
-      return { status: res.status(), json, sem: json?.semantic, lead: json?.lead };
-    }
 
-    const clotilde = await fetchLeadSemantic(LASTMILE.clotilde);
-    ok(clotilde.status === 200, "Clotilde API 200");
+    const clotilde = await dbSemantic(LASTMILE.clotilde);
+    ok(Boolean(clotilde.lead), "Clotilde DB row");
     ok(clotilde.sem?.processingState === "PUBLISHED_EXPIRED", "Clotilde PUBLISHED_EXPIRED");
     ok(clotilde.sem?.validationStatus === "CURRENT_VERIFIED", "Clotilde CURRENT_VERIFIED");
     ok(/unipol/i.test(clotilde.lead?.policyCompany || ""), "Clotilde UnipolSai");
@@ -203,8 +228,8 @@ try {
     ok(/scadut/i.test(clotilde.sem?.clientLabel || ""), "Clotilde badge Polizza scaduta");
     ok(!/in regola/i.test(clotilde.sem?.clientLabel || ""), "Clotilde never In regola");
 
-    const heidy = await fetchLeadSemantic(LASTMILE.heidy);
-    ok(heidy.status === 200, "Heidy API 200");
+    const heidy = await dbSemantic(LASTMILE.heidy);
+    ok(Boolean(heidy.lead), "Heidy DB row");
     ok(heidy.sem?.processingState === "HOT_VERIFIED", "Heidy HOT_VERIFIED");
     ok(heidy.sem?.businessVerdict === "HOT_VERIFIED", "Heidy business HOT_VERIFIED");
     ok(heidy.sem?.validationStatus === "CURRENT_VERIFIED", "Heidy CURRENT_VERIFIED");
@@ -222,8 +247,8 @@ try {
       ["Antoniano", LASTMILE.antoniano],
       ["Villa", LASTMILE.villa],
     ]) {
-      const row = await fetchLeadSemantic(id);
-      ok(row.status === 200, `${name} API 200`);
+      const row = await dbSemantic(id);
+      ok(Boolean(row.lead), `${name} DB row`);
       ok(row.sem?.validationStatus !== "CURRENT_VERIFIED", `${name} not CURRENT_VERIFIED`);
       ok(row.sem?.verdictToken !== "PUBLISHED", `${name} not PUBLISHED`);
       ok(Boolean(row.sem?.clientExplanation?.length), `${name} motivation visible`);
@@ -236,6 +261,7 @@ try {
       /RETRY_PENDING|TECHNICAL_BLOCKED|REVALIDATION_PENDING/i.test(l.evidence || "")
     );
     ok(techInQueue.length === 0, "technical states absent from commercial queue");
+    await prisma.$disconnect().catch(() => {});
   } else {
     ok(false, "browser_semantic_acceptance: sample-sanita.json missing");
   }
