@@ -8,6 +8,7 @@ import {
   extractCityFromMapsAddress,
   mapsFacilitySearchName,
   mapsMatchScore,
+  mapsNameVariants,
 } from "@/lib/sanita/maps-query";
 
 export type WebsiteSource = "maps-card" | "maps-lookup" | "google" | null;
@@ -49,9 +50,11 @@ export async function resolveOfficialWebsite(
     /** Sito dalla scheda Maps in fase discovery — fidato, niente match OSM. */
     mapsCardWebsite?: string | null;
     mapsCardTrusted?: boolean;
+    maxQueries?: number;
   }
 ): Promise<WebsiteResolution> {
-  const deadline = opts?.deadline ?? Date.now() + 60_000;
+  const deadline = opts?.deadline ?? Date.now() + 90_000;
+  const mapsMaxQueries = opts?.maxQueries ?? Number(process.env.RESOLVE_MAPS_MAX_QUERIES || 20);
   let companyName = name;
   let resolvedCity = city;
   let phone: string | null = null;
@@ -74,14 +77,14 @@ export async function resolveOfficialWebsite(
   }
 
   if (Date.now() < deadline) {
-    const searchNames = [mapsFacilitySearchName(name), name].filter(
-      (v, i, a) => v && a.indexOf(v) === i
+    const searchNames = [...new Set([...mapsNameVariants(name), mapsFacilitySearchName(name), name])].filter(
+      (v) => v && v.length > 3
     );
     for (const searchName of searchNames) {
       if (Date.now() >= deadline) break;
       const maps = await resolveWebsiteViaMaps(searchName, city, region, {
         deadline,
-        maxQueries: 10,
+        maxQueries: mapsMaxQueries,
       });
       if (!maps) continue;
       const score = mapsMatchScore(name, maps.name);
@@ -97,6 +100,8 @@ export async function resolveOfficialWebsite(
           source = "maps-lookup";
           break;
         }
+        // Scheda Maps corretta ma URL spazzatura (es. support.google.com) → passa a Tavily/guess
+        break;
       }
       if (!website && score >= 3 && !maps.website) break;
     }
@@ -105,7 +110,7 @@ export async function resolveOfficialWebsite(
   if (!website && Date.now() < deadline) {
     googleTried = true;
     const google = await findOfficialWebsite(companyName, resolvedCity, region);
-    const w = acceptWebsite(google.website, name);
+    const w = acceptWebsite(google.website, companyName);
     if (w) {
       website = w;
       source = "google";
@@ -113,9 +118,9 @@ export async function resolveOfficialWebsite(
   }
 
   if (!website && Date.now() < deadline) {
-    const guessDeadline = Math.min(deadline, Date.now() + 12_000);
+    const guessDeadline = Math.min(deadline, Date.now() + 60_000);
     const guessed = await probeGuessedOfficialWebsite(companyName, { deadline: guessDeadline });
-    const w = acceptWebsite(guessed, name);
+    const w = acceptWebsite(guessed, companyName);
     if (w) {
       website = w;
       source = "google";

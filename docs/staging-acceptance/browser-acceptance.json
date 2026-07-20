@@ -1,0 +1,142 @@
+{
+  "base": "http://127.0.0.1:4310",
+  "apiUi": [
+    {
+      "api": "/api/sanita",
+      "status": 200,
+      "hasData": true
+    },
+    {
+      "api": "/api/gare",
+      "status": 200,
+      "hasData": true
+    }
+  ],
+  "semantic": [
+    {
+      "id": "cmqn2xibt000nmhc2s7aalaif",
+      "companyName": "Fondazione Clotilde",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": "UnipolSai",
+      "number": "1/139602/65/184419847/1",
+      "expiry": "2023-12-30T00:00:00.000Z",
+      "docs": "https://www.fondazioneclotilde.it/wp-content/uploads/2024/12/Assicurazione-Rischi-Avversi-Fondazione-Clotilde.pdf",
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqp5g0d7000510ohy3zt1x80",
+      "companyName": "Clinica Minerva S.p.A",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": "Autoassicurazione / gestione diretta del rischio",
+      "number": null,
+      "expiry": "2025-12-31T00:00:00.000Z",
+      "docs": "https://www.clinicaminerva.it/download/PARM_2026.pdf",
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqo5x33c0025aa3v6q32x57y",
+      "companyName": "Fondazione Istituto Antoniano",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": "Vittoria",
+      "number": null,
+      "expiry": "2072-12-30T00:00:00.000Z",
+      "docs": "https://www.istitutoantoniano.it/wp-content/uploads/2024/07/CCNLarisrsa.pdf",
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqn3iyjo00061272bi8z4fmv",
+      "companyName": "Villa Del Sole",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": "Autoassicurazione / gestione diretta del rischio",
+      "number": null,
+      "expiry": null,
+      "docs": "http://villadelsole.org/wp-content/uploads/2025/04/PARS-2025.pdf",
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqo8aopr002waa3v4cgcbhpv",
+      "companyName": "Heidy società cooperativa sociale",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": null,
+      "number": null,
+      "expiry": null,
+      "docs": null,
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqn3iyi200041272wj07lzg8",
+      "companyName": "Centro Diagnostico Progenia",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": null,
+      "number": null,
+      "expiry": null,
+      "docs": null,
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqpfl9lv00bk109jnimvoitz",
+      "companyName": "Simamed Poliambulatorio",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": null,
+      "number": null,
+      "expiry": null,
+      "docs": null,
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    },
+    {
+      "id": "cmqots2uz007paa3vdko4kxvu",
+      "companyName": "Dimora Marigold",
+      "hasBadgeHint": true,
+      "processingState": null,
+      "businessVerdict": null,
+      "validationStatus": null,
+      "company": null,
+      "number": null,
+      "expiry": null,
+      "docs": null,
+      "apiOk": true,
+      "found": true,
+      "httpStatus": 200
+    }
+  ],
+  "screenshots": [
+    "sanita-list.png",
+    "gare-list.png"
+  ],
+  "note": "local staging HTTP — semantic + API/UI parity — no live side effects"
+}

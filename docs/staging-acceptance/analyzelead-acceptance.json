@@ -1,0 +1,448 @@
+{
+  "head": "3f7264a442581c07ad1c265d7be3666cc190727c",
+  "startedAt": "2026-07-20T09:22:10.815Z",
+  "only": "published",
+  "ids": [
+    "cmqn2xibt000nmhc2s7aalaif",
+    "cmqp5g0d7000510ohy3zt1x80",
+    "cmqo5x33c0025aa3v6q32x57y",
+    "cmqn3iyjo00061272bi8z4fmv"
+  ],
+  "results": [
+    {
+      "id": "cmqn2xibt000nmhc2s7aalaif",
+      "companyName": "Fondazione Clotilde",
+      "website": "http://www.fondazioneclotilde.it/",
+      "input": {
+        "website": "http://www.fondazioneclotilde.it/",
+        "city": "Roccarainola",
+        "piva": "09386371216"
+      },
+      "token": "PUBLISHED",
+      "businessVerdict": "PUBLISHED_EXPIRED",
+      "validationStatus": "CURRENT_VERIFIED",
+      "processingState": "PUBLISHED_EXPIRED",
+      "policyCompany": "UnipolSai",
+      "policyNumber": null,
+      "policyExpiry": "2023-12-30T00:00:00.000Z",
+      "evidenceSnippet": "[V:PUB] [PS:PUBLISHED_EXPIRED] Polizza RC pubblicata sul sito ma scaduta da 933 giorni — opportunità urgente (Art. 10). Polizza RC pubblicata sul sito ma scaduta da 933 giorni. Art. 10 L. 24/2017 richiede pubblicazione aggiornata — irregolarità normativa. [EV_V:2 VD_V:2 LEGACY:CURRENT] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=82,f=0,pdf=0,ocr=0,n=1] [WATERFALL:20/20:RESOLVED_CANDIDATE] [STATE:PUBLISHED_EXPIRED] [BV:PUBLISHED_EXPIRED] [VS:CURRENT_VERIFIED] — [DOCS: https://www.fondazioneclotilde.it/wp-content/uploads/2024/12/Assicurazione-Rischi-Avversi-Fondazione-Clotilde.pdf] [FONTI: sito web (1 pagina: /wp-content/uploads/2024/12/Assicurazione-Rischi-Avversi-Fondazione-Clotilde.pdf) · fonte polizza PDF: https://www.fondazioneclotilde.it/wp-content/uploads/202",
+      "crawlComplete": false,
+      "frontier": {
+        "crawlRunId": "cr_mrt0n671_ag3trff5",
+        "sitemapStatus": "ROBOTS_REFERENCED_COMPLETE",
+        "urlCapReached": false,
+        "timeCapReached": false,
+        "identityVerified": true,
+        "scopeVerified": true,
+        "nodeCount": 83,
+        "retryPending": 0,
+        "failed": 0,
+        "playwrightSources": 0,
+        "xhrJson": 0,
+        "sampleUrls": [
+          {
+            "url": "https://www.fondazioneclotilde.it/wp-content/uploads/2024/12/Assicurazione-Rischi-Avversi-Fondazione-Clotilde.pdf",
+            "state": "COMPLETED",
+            "src": "extra"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/trasparenza",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/amministrazione-trasparente",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/societa-trasparente",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/note-legali",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/assicurazione",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/assicurazione-rct",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/documenti",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/download",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/chi-siamo",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.fondazioneclotilde.it/privacy",
+            "state": "QUEUED",
+            "src": "seed"
+          }
+        ]
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 1,
+        "published": 1,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0
+      },
+      "wallMs": 88364
+    },
+    {
+      "id": "cmqp5g0d7000510ohy3zt1x80",
+      "companyName": "Clinica Minerva S.p.A",
+      "website": "https://www.clinicaminerva.it/",
+      "input": {
+        "website": "https://www.clinicaminerva.it/",
+        "city": "Succivo",
+        "piva": null
+      },
+      "token": "REVIEW",
+      "businessVerdict": "REVIEW_HUMAN",
+      "validationStatus": "CONFLICT_FOUND",
+      "processingState": "REVIEW_HUMAN",
+      "policyCompany": null,
+      "policyNumber": null,
+      "policyExpiry": null,
+      "evidenceSnippet": "[V:REV] PUBLISHED gate: segnali assicurativi insufficienti. Polizza RC certificata da PDF: https://www.clinicaminerva.it/download/PARM_2026.pdf le professioni sanitarie: La legge n 24 dell’8 marzo 2017 (Gelli-Bianco) “Disposizioni in materia di sicurezza delle cure e della persona assistita, nonché in materia di responsabilità professionale degli esercenti le professioni sanitarie [EV_V:2 VD_V:2 LEGACY:CURRENT] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=21,f=0,pdf=0,ocr=0,n=1] [WATERFALL:20/20:RESOLVED_CANDIDATE] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:CONFLICT_FOUND] — [FONTI: sito web (1 pagina: /download/PARM_2026.pdf) · fonte polizza PDF: https://www.clinicaminerva.it/download/PARM_2026.pdf · PDF polizza letti 1/1 · Google Maps (sito e telefono struttura)]",
+      "crawlComplete": false,
+      "frontier": {
+        "crawlRunId": "cr_mrt0p0du_nljo1t8p",
+        "sitemapStatus": "ROBOTS_REFERENCED_COMPLETE",
+        "urlCapReached": false,
+        "timeCapReached": false,
+        "identityVerified": true,
+        "scopeVerified": true,
+        "nodeCount": 22,
+        "retryPending": 0,
+        "failed": 0,
+        "playwrightSources": 0,
+        "xhrJson": 0,
+        "sampleUrls": [
+          {
+            "url": "https://www.clinicaminerva.it/download/PARM_2026.pdf",
+            "state": "COMPLETED",
+            "src": "extra"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/trasparenza",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/amministrazione-trasparente",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/societa-trasparente",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/note-legali",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/assicurazione",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/assicurazione-rct",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/documenti",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/download",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/chi-siamo",
+            "state": "QUEUED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.clinicaminerva.it/privacy",
+            "state": "QUEUED",
+            "src": "seed"
+          }
+        ]
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 1,
+        "reviewHuman": 1,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0
+      },
+      "wallMs": 9606
+    },
+    {
+      "id": "cmqo5x33c0025aa3v6q32x57y",
+      "companyName": "Fondazione Istituto Antoniano",
+      "website": "http://www.istitutoantoniano.it/",
+      "input": {
+        "website": "http://www.istitutoantoniano.it/",
+        "city": "Ercolano",
+        "piva": null
+      },
+      "token": "REVIEW",
+      "businessVerdict": "REVIEW_HUMAN",
+      "validationStatus": "REVALIDATION_PENDING",
+      "processingState": "REVIEW_HUMAN",
+      "policyCompany": null,
+      "policyNumber": null,
+      "policyExpiry": null,
+      "evidenceSnippet": "[V:REV] Impossibile certificare assenza polizza: ERRORE CRAWL: 34 PDF non processati; crawl incompleto (2/36 PDF); Crawl non esaustivo (2/36 PDF). [EV_V:2 VD_V:2 LEGACY:CURRENT] [IDENTITY:MISMATCH] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=127,f=12,pdf=34,ocr=0,n=42] [WATERFALL:20/20:RESOLVED_CANDIDATE] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:REVALIDATION_PENDING] — [FONTI: sito web (42 pagine, sezione Trasparenza letta: /, /amministrazione-trasparente) · fonte polizza PDF: https://www.istitutoantoniano.it/wp-content/uploads/2024/10/PARM.pdf · PDF polizza letti 2/36 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-20 09:40]",
+      "crawlComplete": false,
+      "frontier": {
+        "crawlRunId": "cr_mrt0p7sp_ozbdfow4",
+        "sitemapStatus": "DISCOVERED_FAILED",
+        "urlCapReached": true,
+        "timeCapReached": true,
+        "identityVerified": false,
+        "scopeVerified": false,
+        "nodeCount": 245,
+        "retryPending": 0,
+        "failed": 12,
+        "playwrightSources": 6,
+        "xhrJson": 0,
+        "sampleUrls": [
+          {
+            "url": "http://www.istitutoantoniano.it/",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.istitutoantoniano.it/amministrazione-trasparente",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.istitutoantoniano.it/chi-siamo",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.istitutoantoniano.it/privacy",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.istitutoantoniano.it/contatti",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://www.istitutoantoniano.it/servizi",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/premio-goffredo-scuccimarra-2024",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/la-ministra-per-le-disabilita-alessandra-locatelli-in-visita-a-casa-del-sole",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/giornata-mondiale-della-consapevolezza-dellautismo-2024",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/incontri-formativi-per-famiglie",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/corso-post-laurea-intensivo-sul-trattamento-della-malattia-di-parkinson-per-fisioterapisti",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          },
+          {
+            "url": "https://www.istitutoantoniano.it/corso-di-formazione-aba-it-tecnico-comportamentale-aba-it",
+            "state": "COMPLETED",
+            "src": "sitemap"
+          }
+        ]
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 1,
+        "reviewHuman": 1,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0
+      },
+      "wallMs": 1028409
+    },
+    {
+      "id": "cmqn3iyjo00061272bi8z4fmv",
+      "companyName": "Villa Del Sole",
+      "website": "http://villadelsole.org/",
+      "input": {
+        "website": "http://villadelsole.org/",
+        "city": "Valva",
+        "piva": null
+      },
+      "token": "REVIEW",
+      "businessVerdict": "REVIEW_HUMAN",
+      "validationStatus": "REVALIDATION_PENDING",
+      "processingState": "REVIEW_HUMAN",
+      "policyCompany": null,
+      "policyNumber": null,
+      "policyExpiry": null,
+      "evidenceSnippet": "[V:REV] Impossibile certificare assenza polizza: ERRORE CRAWL: 58 PDF non processati; crawl incompleto (4/62 PDF); Crawl non esaustivo (4/62 PDF). [EV_V:2 VD_V:2 LEGACY:CURRENT] [IDENTITY:MISMATCH] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=192,f=9,pdf=58,ocr=0,n=30] [WATERFALL:20/20:RESOLVED_CANDIDATE] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:REVALIDATION_PENDING] — [FONTI: sito web (30 pagine, sezione Trasparenza letta: /, /societa-trasparente) · fonte polizza PDF: http://villadelsole.org/wp-content/uploads/2025/04/PARS-2025.pdf · PDF polizza letti 4/62 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-20 09:56]",
+      "crawlComplete": false,
+      "frontier": {
+        "crawlRunId": "cr_mrt1b9bo_tewfcery",
+        "sitemapStatus": "ROBOTS_REFERENCED_COMPLETE",
+        "urlCapReached": false,
+        "timeCapReached": true,
+        "identityVerified": false,
+        "scopeVerified": false,
+        "nodeCount": 289,
+        "retryPending": 0,
+        "failed": 9,
+        "playwrightSources": 0,
+        "xhrJson": 0,
+        "sampleUrls": [
+          {
+            "url": "http://villadelsole.org/",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/societa-trasparente",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/chi-siamo",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/privacy",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/cookie-policy",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/contatti",
+            "state": "COMPLETED",
+            "src": "seed"
+          },
+          {
+            "url": "http://villadelsole.org/wp-content/uploads/2025/04/PARS-2025.pdf",
+            "state": "COMPLETED",
+            "src": "extra"
+          },
+          {
+            "url": "http://villadelsole.org/insalute",
+            "state": "COMPLETED",
+            "src": "robots-sitemap"
+          },
+          {
+            "url": "http://villadelsole.org/neuromed-news",
+            "state": "COMPLETED",
+            "src": "robots-sitemap"
+          },
+          {
+            "url": "http://villadelsole.org/insalute-2",
+            "state": "COMPLETED",
+            "src": "robots-sitemap"
+          },
+          {
+            "url": "http://villadelsole.org/il-gruppo-neuromed",
+            "state": "COMPLETED",
+            "src": "robots-sitemap"
+          },
+          {
+            "url": "http://villadelsole.org/lavoro-si-seleziona-esperto-neonatologia",
+            "state": "COMPLETED",
+            "src": "robots-sitemap"
+          }
+        ]
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 1,
+        "reviewHuman": 1,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0
+      },
+      "wallMs": 914131
+    }
+  ],
+  "gates": {
+    "false_published": true,
+    "false_hot": true,
+    "tech_as_human": true,
+    "gold_exact": true
+  },
+  "failures": [],
+  "endedAt": "2026-07-20T09:56:11.335Z",
+  "gatePass": true,
+  "hotComplete": 0,
+  "goldExact": 4
+}

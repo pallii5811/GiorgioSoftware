@@ -1,0 +1,18 @@
+{
+  "head": "7bcfc2a44cfcf29c42b93dfb433a2a666c7e6782",
+  "campania": 25,
+  "veneto": 25,
+  "actionableCampania": 0,
+  "actionableVeneto": 25,
+  "gates": {
+    "sample50": true,
+    "noUndefined": true,
+    "noLow": true,
+    "noMissingDateHigh": true,
+    "noInvented": true,
+    "noUnawardedActionable": true,
+    "noUnverifiedActionable": true
+  },
+  "failures": [],
+  "gatePass": true
+}

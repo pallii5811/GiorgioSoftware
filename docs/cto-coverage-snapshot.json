@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-07-18T16:40:00Z",
+  "branch": "cto/campania-veneto-production-grade-20260718",
+  "verdict": "NOT READY",
+  "sanitaLiveApprox": {
+    "campania": { "total": 511, "pub": 72, "hot": 285, "review": 154 },
+    "veneto": { "total": 366, "pub": 48, "hot": 230, "review": 88 },
+    "note": "Snapshot Hetzner precedente — riconciliare dopo riscan con nuovi gate"
+  },
+  "gareLiveApprox": {
+    "priority": 48,
+    "veneto": 2,
+    "campania": 46,
+    "minAwardDate": "2024-01-01",
+    "cauzioneDisplay": "ESTIMATE"
+  },
+  "gates": {
+    "zeroFalseHotInGold": "NOT_RUN",
+    "sourceCoverageComplete": false,
+    "humanReviewHot100pct": false,
+    "shadow": false,
+    "canary": false
+  },
+  "implementedModules": [
+    "src/lib/evidence/contract.ts",
+    "src/lib/sanita/source-registry.ts",
+    "src/lib/gare/source-registry.ts",
+    "src/lib/sanita/commercial.ts",
+    "src/lib/gare/commercial.ts"
+  ]
+}

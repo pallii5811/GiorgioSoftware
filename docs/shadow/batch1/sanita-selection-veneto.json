@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "seed": 20260718,
+    "region": "Veneto",
+    "n": 25,
+    "verdictDist": {
+      "HOT": 15,
+      "PUBLISHED": 4,
+      "REVIEW": 6
+    },
+    "cityDist": {
+      "Meduna di Livenza": 2,
+      "Garda": 1,
+      "Concamarise": 1,
+      "Porto Viro": 1,
+      "Palermo": 1,
+      "Trevignano": 1,
+      "Tombolo": 1,
+      "Oppido Mamertina": 1,
+      "Schio": 1,
+      "Montegrotto Terme": 1,
+      "Pressana": 1,
+      "Castegnero": 1,
+      "Auronzo di Cadore": 1,
+      "Cavarzere": 1,
+      "Nove": 1,
+      "Torri di Quartesolo": 1,
+      "Bressanvido": 1,
+      "Affi": 1,
+      "Castel d'Azzano": 1,
+      "Saccolongo": 1
+    },
+    "flagDist": {
+      "pdf": 19,
+      "complex": 20,
+      "group": 16,
+      "nosite": 5
+    },
+    "query": "SELECT * FROM Lead WHERE type='HEALTHCARE' AND region=? ORDER BY stable_hash(seed,id)"
+  },
+  "ids": [
+    "cmqpavuzs007d109jxy32i5w3",
+    "cmqpapjep007a109jpepx2v6s",
+    "cmqpfotfl00br109jsb2cetfr",
+    "cmqpqg5c400iw109jv3q9enqb",
+    "cmqpkikci00fc109j604w0twf",
+    "cmqppu1mp00iq109j9otzmtrv",
+    "cmqpcm3um0090109jzu9xg1gq",
+    "cmqpetmyq00aw109jbzulaaqo",
+    "cmqpgf39300db109ju8060ufy",
+    "cmqphtshy00dq109j9x72fjeo",
+    "cmqpnlxik00hd109jnewbykj4",
+    "cmqp5mr2k003u109j51bn559d",
+    "cmqp2cnd0002o109jvy3o0bsz",
+    "cmqp7256u004n109jl3j6bzmg",
+    "cmqpkikcp00fh109jwxk74w4s",
+    "cmqpp200500ig109jijxh3xeh",
+    "cmqpfotfm00bs109ju3gahj10",
+    "cmqpcy936009c109jyhbeg6v3",
+    "cmqp0pdz4001e109jn327nkgz",
+    "cmqp8ha7e005v109jzewxi40b",
+    "cmqp3dyjg002x109j8qu96f9y",
+    "cmqp4egge003h109jqebrkyfa",
+    "cmqpam4js0077109ji9dpurnl",
+    "cmqp8yjt80064109jrmjaswxx",
+    "cmqp95pgz006g109j6t8oughl"
+  ]
+}

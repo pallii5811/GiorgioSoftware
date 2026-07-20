@@ -1,0 +1,25 @@
+{
+  "humanReviewed": 0,
+  "packs": [
+    {
+      "file": "sanita-campania-priority",
+      "rows": 90,
+      "humanReviewed": 0
+    },
+    {
+      "file": "gare-campania-priority",
+      "rows": 100,
+      "humanReviewed": 0
+    },
+    {
+      "file": "sanita-veneto-priority",
+      "rows": 90,
+      "humanReviewed": 0
+    },
+    {
+      "file": "gare-veneto-priority",
+      "rows": 2,
+      "humanReviewed": 0
+    }
+  ]
+}

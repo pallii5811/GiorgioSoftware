@@ -1,12 +1,6 @@
 /**
  * Verdetto a 3 stati per la pubblicazione della polizza RC (Legge Gelli).
- *
- * Obiettivo: ZERO falsi HOT (polizza pubblicata ma non vista).
- * HOT solo se crawl esaustivo (Trasparenza + tutti i PDF policy + OCR) e polizza assente.
- * Qualsiasi dubbio → REVIEW. Senza sito → HOT solo dopo verifica portali regionali.
- *
- * Il verdetto viene salvato come prefisso compatto nel campo `evidence`
- * (es. "[V:HOT] ...") per non richiedere modifiche allo schema Prisma.
+ * Modulo client-safe: niente import di frontier/sqlite/canEmitHot/finalizeVerdict.
  */
 
 export type Verdict = "PUBLISHED" | "HOT" | "REVIEW";
@@ -49,21 +43,18 @@ export function verdictFromSite(opts: {
   return "REVIEW";
 }
 
-/** Verdetto per struttura senza sito crawlato — mai HOT senza aver letto il sito. */
+/** Verdetto per struttura senza sito crawlato — mai HOT senza crawl esaustivo del sito. */
 export function verdictFromRegional(opts: {
   checked: boolean;
   policyFound: boolean;
   hasWebsite?: boolean;
 }): Verdict {
   if (opts.policyFound) return "PUBLISHED";
-  if (opts.hasWebsite && opts.checked) return "HOT";
   return "REVIEW";
 }
 
 /**
  * Deriva il verdetto di un lead già salvato.
- * Usa il token in evidence se presente; altrimenti fa un fallback prudente
- * sui campi esistenti (per i dati salvati prima dell'introduzione del token).
  */
 export function deriveVerdict(lead: {
   lastScannedAt: string | Date | null;
@@ -72,11 +63,14 @@ export function deriveVerdict(lead: {
   website: string | null;
   evidence: string | null;
 }): Verdict | null {
-  if (!lead.lastScannedAt) return null; // non ancora analizzato
+  if (!lead.lastScannedAt) return null;
+  // Technical queues are not REVIEW — filter via processingState, not legacy token.
+  if (/\[STATE:(RETRY_PENDING|TECHNICAL_BLOCKED|CRAWL_RUNNING)\]/i.test(lead.evidence || "")) {
+    return null;
+  }
   const token = readVerdictToken(lead.evidence);
   if (token) return token;
   if (lead.policyFound) return "PUBLISHED";
-  // Fallback prudente: senza prova di lettura della sezione trasparenza -> REVIEW
   if (lead.website && lead.websiteReachable === false) return "REVIEW";
   return "REVIEW";
 }
@@ -86,20 +80,20 @@ export const VERDICT_META: Record<
   { label: string; subtitle: string; tone: string; commercial: string }
 > = {
   PUBLISHED: {
-    label: "In regola · polizza pubblicata",
-    subtitle: "Art. 10 L. 24/2017 — copertura trovata sulle fonti verificate",
+    label: "Polizza pubblicata",
+    subtitle: "Art. 10 L. 24/2017 — pubblicazione trovata (controllare validità/scadenza)",
     tone: "emerald",
-    commercial: "Rinnovo / confronto condizioni prima della scadenza",
+    commercial: "Verificare scadenza e opportunità rinnovo — non assume conformità automatica",
   },
   HOT: {
-    label: "Irregolare Gelli · lead certificato",
-    subtitle: "Sito verificato (identità + Trasparenza/PDF) — polizza NON pubblicata",
+    label: "Assenza verificata dopo scansione completa",
+    subtitle: "Crawl completo + identità ufficiale — polizza NON trovata sul sito",
     tone: "red",
     commercial: "Vendita RC e messa in regola — chiamare subito",
   },
   REVIEW: {
-    label: "Da verificare manualmente",
-    subtitle: "Controllo automatico non conclusivo — serve l'esperienza dell'agente",
+    label: "Verifica umana necessaria",
+    subtitle: "Ambiguo dopo waterfall — non è un errore tecnico temporaneo",
     tone: "amber",
     commercial: "Verifica manuale su sito o portale ASL prima della chiamata",
   },

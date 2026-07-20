@@ -1,0 +1,28 @@
+{
+  "ms": 21324,
+  "status": "OCR_SUCCESS",
+  "textLen": 3700,
+  "snip": "-- 1 of 38 -- -- 2 of 38 -- -- 3 of 38 -- -- 4 of 38 -- -- 5 of 38 -- -- 6 of 38 -- -- 7 of 38 -- -- 8 of 38 -- -- 9 of 38 -- -- 10 of 38 -- -- 11 of 38 -- -- 12 of 38 -- -- 13 of 38 -- -- 14 of 38 -- -- 15 of 38 -- -- 16 of 38 -- -- 17 of 38 -- -- 18 of 38 -- -- 19 of 38 -- -- 20 of 38 -- -- 21 of 38 -- -- 22 of 38 -- -- 23 of 38 -- -- 24 of 38 -- -- 25 of 38 -- -- 26 of 38 -- -- 27 of 38 -- -- 2",
+  "neg": {
+    "blocked": false,
+    "kind": null,
+    "reasons": []
+  },
+  "analysis": {
+    "found": false,
+    "company": null,
+    "number": null,
+    "expiry": null,
+    "obsolete": false
+  },
+  "attr": {
+    "ok": true,
+    "strongIds": [],
+    "mediumIds": [
+      "seatPage",
+      "domain",
+      "name"
+    ],
+    "reasons": []
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "backupShaImmutable": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+  "leadTotal": 1237,
+  "sanita": 877,
+  "gare": 360,
+  "hotToken": 515,
+  "pubToken": 120,
+  "revToken": 242,
+  "sanitaQuarantine": 877,
+  "gareQuarantine": 0,
+  "shadowHist": 877,
+  "legacyCurrent": 0,
+  "legacyActionable": 0,
+  "deletedVsBackup": 0,
+  "gates": {
+    "leadTotal_1237": true,
+    "sanita_877": true,
+    "gare_360": true,
+    "sanitaQuarantine_877": true,
+    "gareQuarantine_0": true,
+    "legacyActionable_0": true,
+    "noDeletes": true,
+    "histPreserved": true,
+    "noCurrentInvented": true
+  },
+  "pass": true
+}

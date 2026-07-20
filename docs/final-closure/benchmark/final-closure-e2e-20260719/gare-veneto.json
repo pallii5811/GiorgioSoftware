@@ -1,0 +1,397 @@
+{
+  "region": "Veneto",
+  "selected": 25,
+  "processed": 25,
+  "actionable": 0,
+  "high": 0,
+  "pending": 0,
+  "notActionable": 0,
+  "gareUndefined": 0,
+  "gareLow": 0,
+  "missingDateHigh": 0,
+  "rows": [
+    {
+      "id": "ingest-veneto-906143116B",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-04-14T12:00:00.000Z",
+      "winner": "SETINA COSTRUZIONI EDILI SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9062394C19",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-03-02T12:00:00.000Z",
+      "winner": "IDROTERMICA F.LLI SOLDERA SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-91031350A6",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-03-22T12:00:00.000Z",
+      "winner": "COLSER SOCIETA COOPERATIVA",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9200633A88",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ENRICHMENT_COMPLETE",
+      "awardDate": "2022-09-05T12:00:00.000Z",
+      "winner": "EURORISTORAZIONE S.R.L.",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-912382201A",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-07-05T12:00:00.000Z",
+      "winner": "ALBERGHINI MARIA ELENA",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-91281958CE",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-01T12:00:00.000Z",
+      "winner": "E-GEOS S.P.A",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9130789572",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-07-19T12:00:00.000Z",
+      "winner": "MOSE' S.R.L.",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9175492F84",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-09T12:00:00.000Z",
+      "winner": "SCARMA S.R.L.",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-918199779F",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-08T12:00:00.000Z",
+      "winner": "ALPERIA SMART SERVICES SRL",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9195011B1C",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-01T12:00:00.000Z",
+      "winner": "EURORISTORAZIONE S.R.L.",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-921879022C",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-01T12:00:00.000Z",
+      "winner": "TECNOLOGIE SANITARIE S.P.A.",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9221887DE2",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-11-04T12:00:00.000Z",
+      "winner": "TONIN GASTONE SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-922740035E",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ENRICHMENT_COMPLETE",
+      "awardDate": "2022-07-19T12:00:00.000Z",
+      "winner": "ECIS SRL",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9229562B7F",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ENRICHMENT_COMPLETE",
+      "awardDate": "2022-07-04T12:00:00.000Z",
+      "winner": "LND IMPIANTI SRL",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9231725478",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-20T12:00:00.000Z",
+      "winner": "LA CASALINDA SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-92340356BD",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-08-12T12:00:00.000Z",
+      "winner": "DOMPÈ FARMACEUTICI S.P.A.",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9237627AF2",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ENRICHMENT_COMPLETE",
+      "awardDate": "2022-06-14T12:00:00.000Z",
+      "winner": "C.E.V. CONSORZIO EDILI VENETI SOC.COOP.",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-92376741BE",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-15T12:00:00.000Z",
+      "winner": "CONSORZIO SOCIALE UNITARIO G. ZORZETTO SOC. COOP.",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9241021BC3",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ENRICHMENT_COMPLETE",
+      "awardDate": "2022-11-10T12:00:00.000Z",
+      "winner": "BOSTON SCIENTIFIC SPA",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9243619BB3",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-11-02T12:00:00.000Z",
+      "winner": "OFFICINA ALBERTI SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9244114432",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-10-18T12:00:00.000Z",
+      "winner": "JURINA E RADAELLI STUDIO ASSOCIATO",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-92469822F2",
+      "region": "Veneto",
+      "category": "NON_CLASSIFICATO",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-06-24T12:00:00.000Z",
+      "winner": "ENEL ENERGIA SPA",
+      "actionable": false,
+      "tier": "NOT_ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "NON_CLASSIFICATO escluso dalla Actionable Sales Queue",
+        "tier NOT_ACTIONABLE escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9247773FAF",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-08-08T12:00:00.000Z",
+      "winner": "CASAGRANDE SCAVI SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-92494095C4",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-07-12T12:00:00.000Z",
+      "winner": "COVIM COSTRUZIONI SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "ingest-veneto-9249842B15",
+      "region": "Veneto",
+      "category": "GARE_MEDIUM",
+      "rawCategory": null,
+      "enrich": "ACTIONABLE",
+      "awardDate": "2022-08-22T12:00:00.000Z",
+      "winner": "SOLOGAS SRL",
+      "actionable": false,
+      "tier": "LOW",
+      "insurance": "DOCUMENTED",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "proved": true,
+  "url": "http://127.0.0.1:51839/",
+  "durationMs": 27512,
+  "pages": 1,
+  "textSample": "",
+  "module": "enrichCrawlWithPlaywright",
+  "note": "local JS fixture — render + XHR /api/links in staging worker"
+}

@@ -24,6 +24,11 @@ npm -v
 echo ">>> Dipendenze Playwright (Chromium)..."
 npx --yes playwright install-deps chromium 2>/dev/null || true
 
+echo ">>> Poppler (pdftoppm) + Tesseract deps for OCR scanned PDF..."
+apt-get install -y -qq poppler-utils
+command -v pdftoppm
+pdftoppm -v 2>&1 | head -1 || true
+
 echo ">>> Cartella app..."
 APP_DIR="${APP_DIR:-/opt/leadsniper}"
 mkdir -p "$APP_DIR"
@@ -34,7 +39,10 @@ echo "   1. git clone <repo> $APP_DIR  (oppure rsync dal PC)"
 echo "   2. cd $APP_DIR && npm ci"
 echo "   3. npx playwright install chromium"
 echo "   4. npx tsx scripts/download-tessdata.mjs"
-echo "   5. cp .env.example .env  → inserire TAVILY_API_KEY"
-echo "   6. npx prisma db push"
-echo "   7. bash scripts/hetzner-scan.sh   (batch veloce)"
-echo "   8. npm run build && npm run start  (UI produzione)"
+echo "   5. npm run preflight:ocr   # must exit 0 (pdftoppm + tessdata)"
+echo "   6. cp .env.example .env  → inserire TAVILY_API_KEY"
+echo "   7. npx prisma db push"
+echo "   8. bash scripts/hetzner-scan.sh   (batch veloce)"
+echo "   9. npm run build && npm run start  (UI produzione)"
+echo ""
+echo "OCR: export PDFTOPPM_PATH=\$(command -v pdftoppm) se non in PATH"

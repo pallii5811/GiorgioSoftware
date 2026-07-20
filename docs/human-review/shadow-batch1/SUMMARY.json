@@ -1,0 +1,25 @@
+{
+  "humanReviewed": 0,
+  "packs": {
+    "sanita-campania": {
+      "rows": 25,
+      "csv": "sanita-campania.csv",
+      "html": "sanita-campania.html"
+    },
+    "sanita-veneto": {
+      "rows": 25,
+      "csv": "sanita-veneto.csv",
+      "html": "sanita-veneto.html"
+    },
+    "gare-campania": {
+      "rows": 25,
+      "csv": "gare-campania.csv",
+      "html": "gare-campania.html"
+    },
+    "gare-veneto": {
+      "rows": 2,
+      "csv": "gare-veneto.csv",
+      "html": "gare-veneto.html"
+    }
+  }
+}

@@ -214,21 +214,22 @@ async function collectYearAwards(
 }
 
 /**
- * Scarica aggiudicazioni ANAC per regione (anni corrente + precedente).
+ * Scarica aggiudicazioni ANAC per regione (anni corrente + precedente di default).
  * Deduplica per CIG tenendo il record più recente.
  */
 export async function fetchAnacAwards(
   region: string,
-  opts: { max?: number } = {}
+  opts: { max?: number; years?: number[] } = {}
 ): Promise<{ awards: AnacAward[]; year: number | null; years: number[]; scanned: number }> {
   const max = opts.max ?? 60;
   const unlimited = max <= 0;
   const now = new Date().getFullYear();
+  const yearList = opts.years?.length ? opts.years : [now, now - 1];
   const yearsTried: number[] = [];
   const merged = new Map<string, AnacAward>();
   let totalScanned = 0;
 
-  for (const year of [now, now - 1]) {
+  for (const year of yearList) {
     const { awards, scanned } = await collectYearAwards(region, year, unlimited ? undefined : max);
     if (scanned === 0 && awards.length === 0) continue;
     yearsTried.push(year);
@@ -248,6 +249,9 @@ export async function fetchAnacAwards(
   });
 
   if (!unlimited && awards.length > max) awards = awards.slice(0, max);
+
+  const minAward = new Date("2024-01-01T00:00:00Z");
+  awards = awards.filter((a) => !a.awardDate || a.awardDate >= minAward);
 
   const lastYear = yearsTried[0] ?? null;
   return { awards, year: lastYear, years: yearsTried, scanned: totalScanned };

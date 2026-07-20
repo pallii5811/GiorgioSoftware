@@ -1,0 +1,11 @@
+{
+  "suite": "preflight:ocr",
+  "exitCode": 0,
+  "pdftoppm": "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe",
+  "version": "pdftoppm version 24.08.0",
+  "tessdata": ".tesseract-cache",
+  "rasterizeMs": 2946,
+  "ocrStatus": "OCR_SUCCESS",
+  "ocrTextLen": 3700,
+  "note": "Requires PDFTOPPM_PATH on Windows staging; Hetzner uses poppler-utils package"
+}

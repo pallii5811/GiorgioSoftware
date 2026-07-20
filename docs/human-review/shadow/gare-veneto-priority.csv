@@ -1,0 +1,3 @@
+id,region,province_or_city,companyName,website,old_verdict,new_status,leadScore,stratum,reviewer,reviewed_at,entity_correct,official_website_correct,identity_correct,source_correct,verdict_correct,commercial_value_real,false_positive,false_negative,critical_contamination,notes,corrected_value
+cmqz6i8ki00arkpvx8abi9bk3,Veneto,VENEZIA,SEPRO SRL,https://www.sepro.it/,GARE_MEDIUM,SHADOW_UNVERIFIED,65,HIGH,,,,,,,,,,,,,
+cmqz6i8ep008vkpvxb5clehkx,Veneto,BASSANO DEL GRAPPA,EDIL ALTA SRL,http://www.edilalta.it/,GARE_MEDIUM,SHADOW_UNVERIFIED,65,HIGH,,,,,,,,,,,,,

@@ -1,27 +1,39 @@
-import { PrismaClient } from "@prisma/client";
-import { parseEvidenceSections } from "../src/lib/sanita/audit.ts";
+/** Breakdown motivi REVIEW — npx tsx scripts/review-breakdown.mjs Campania */
+import { prisma } from "../src/lib/sanita/db-ready.ts";
+import { readVerdictToken } from "../src/lib/sanita/verdict.ts";
 
-const p = new PrismaClient();
-const region = "Campania";
+const region = process.argv[2] || "Campania";
 
-const rev = await p.lead.findMany({
+const leads = await prisma.lead.findMany({
   where: { type: "HEALTHCARE", region, evidence: { startsWith: "[V:REV]" } },
-  select: { evidence: true, companyName: true, website: true },
+  select: { companyName: true, website: true, websiteReachable: true, pagesVisited: true, evidence: true },
 });
 
-const reasons = {};
-for (const l of rev) {
-  const body = parseEvidenceSections(l.evidence).body || "";
-  let k = "altro";
-  if (/irraggiungibile/i.test(body)) k = "irraggiungibile";
-  else if (/Trasparenza non visitata|non trovata|polizza non trovata/i.test(body)) k = "no_trasparenza";
-  else if (/PDF non processati|crawl incompleto/i.test(body)) k = "crawl_incompleto";
-  else if (/sito errato|omonimia|assente nel sito/i.test(body)) k = "sito_errato";
-  else if (/OCR/i.test(body)) k = "ocr";
-  else if (/insufficienti|verifica manuale/i.test(body)) k = "policy_incerta";
-  else if (/non trovato|senza sito/i.test(body)) k = "no_sito";
-  reasons[k] = (reasons[k] || 0) + 1;
+const buckets = {};
+function bucket(l) {
+  const ev = (l.evidence || "").toLowerCase();
+  if (!l.website) return "senza_sito";
+  if (ev.includes("timeout") || ev.includes("interrotta")) return "timeout";
+  if (ev.includes("non esaustivo") || ev.includes("crawl insufficiente")) return "crawl_non_esaustivo";
+  if (ev.includes("sito errato") || ev.includes("omonimia") || ev.includes("probabilmente errato"))
+    return "sito_errato";
+  if (l.websiteReachable === false || ev.includes("irraggiungibile") || ev.includes("waf") || ev.includes("blocca"))
+    return "sito_bloccato";
+  if (ev.includes("manutenzione")) return "manutenzione";
+  if (ev.includes("ocr")) return "ocr";
+  if (ev.includes("non individuato")) return "discovery_fallita";
+  if (ev.includes("impossibile certificare")) return "non_certificabile";
+  return "altro";
 }
-console.log("REVIEW total:", rev.length);
-console.log(JSON.stringify(reasons, null, 2));
-await p.$disconnect();
+
+for (const l of leads) {
+  const b = bucket(l);
+  buckets[b] = (buckets[b] || 0) + 1;
+}
+
+console.log(`\n${region} REVIEW=${leads.length}\n`);
+for (const [k, n] of Object.entries(buckets).sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${String(n).padStart(3)} — ${k}`);
+}
+
+await prisma.$disconnect();

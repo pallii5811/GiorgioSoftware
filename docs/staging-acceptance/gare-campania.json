@@ -1,0 +1,477 @@
+[
+  {
+    "id": "cmqi64p4p00002qzylujav4z0",
+    "cig": "93784058A1",
+    "category": "GARE_MEDIUM",
+    "winner": "RI.LA.CO. SRL",
+    "amount": 51179.75,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 50,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p4w00012qzy00vc6kkj",
+    "cig": "939821003E",
+    "category": "FORNITURE",
+    "winner": "SCOGNAMIGLIO SRL",
+    "amount": 1750195,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 45,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p4z00022qzymkr4og68",
+    "cig": "9277064B63",
+    "category": "NON_CLASSIFICATO",
+    "winner": "ALFA INTES S.R.L.",
+    "amount": 213675,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 35,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5100032qzyl04sn7mb",
+    "cig": "92954808C1",
+    "category": "NON_CLASSIFICATO",
+    "winner": "ING. DETTA ANTONIO",
+    "amount": 8387.71,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5300042qzywenqun7l",
+    "cig": "93820096BF",
+    "category": "NON_CLASSIFICATO",
+    "winner": "TOSCHI PAOLO",
+    "amount": 147348.07,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 35,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5500052qzy0tj0q9dx",
+    "cig": "92954331FA",
+    "category": "NON_CLASSIFICATO",
+    "winner": "ING. DAVIDE BIANCULLI",
+    "amount": 7607.8,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5700062qzymk9ym272",
+    "cig": "A00E4F62A0",
+    "category": "SERVIZI",
+    "winner": "DEDAGROUP PUBLIC SERVICE SRL",
+    "amount": 67500,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5b00072qzyaapl8k1l",
+    "cig": "A0111814AD",
+    "category": "NON_CLASSIFICATO",
+    "winner": "ING. DI LEVA ANTONIO",
+    "amount": 2417.87,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5e00082qzy9sp5lp0v",
+    "cig": "9390383531",
+    "category": "NON_CLASSIFICATO",
+    "winner": "COSTRUZIONI NARDONE SRL",
+    "amount": 585846.95,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5g00092qzyzs0z1gqg",
+    "cig": "9295253D6C",
+    "category": "NON_CLASSIFICATO",
+    "winner": "ING. RAFFAELE DE BIASE",
+    "amount": 10245.9,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5i000a2qzyffnt7ran",
+    "cig": "9159860B96",
+    "category": "FORNITURE",
+    "winner": "BIOH GROUP FILTRAZIONE SRL",
+    "amount": 354195.4,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5k000b2qzy9ddau8kj",
+    "cig": "9200141487",
+    "category": "SERVIZI",
+    "winner": "DM TECHNOLOGY",
+    "amount": 6017163.15,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 35,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5m000c2qzy1bohvsfr",
+    "cig": "9381923FC4",
+    "category": "NON_CLASSIFICATO",
+    "winner": "SVAS BIOSANA SPA",
+    "amount": 534600,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5n000d2qzy1tpstisv",
+    "cig": "9399926852",
+    "category": "LAVORI",
+    "winner": "BY LUONGO IMPIANTI",
+    "amount": 5000,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5q000e2qzyome73l06",
+    "cig": "933698214C",
+    "category": "SERVIZI",
+    "winner": "ROMEO GESTIONI S.P.A.",
+    "amount": 3228286.22,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 45,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5t000f2qzyhit8zln9",
+    "cig": "9429483F85",
+    "category": "NON_CLASSIFICATO",
+    "winner": "SELC MEDICAL TECHNOLOGY SRL",
+    "amount": 20900,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "WEAKLY_INFERRED",
+    "score": 30,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5v000g2qzy7p62nf8z",
+    "cig": "9343087F49",
+    "category": "GARE_MEDIUM",
+    "winner": "ALSCO ITALIA SRL",
+    "amount": 5017248.65,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 65,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5x000h2qzya3k9e3zs",
+    "cig": "94031740AA",
+    "category": "SERVIZI",
+    "winner": "MIORELLI SERVICE S.P.A A SOCIO UNICO",
+    "amount": 1994400,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 45,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p5z000i2qzyrmutvwlg",
+    "cig": "9256724A4A",
+    "category": "GARE_MEDIUM",
+    "winner": "SA.GE. IMPIANTI",
+    "amount": 454047.42,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 60,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p61000j2qzyigl95e7v",
+    "cig": "93115641B3",
+    "category": "NON_CLASSIFICATO",
+    "winner": "OLYMPUS ITALIA S.R.L.",
+    "amount": 367864.49,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p63000k2qzy0wuvkedh",
+    "cig": "9408285A62",
+    "category": "SERVIZI",
+    "winner": "VELIA AMBIENTE S.R.L.",
+    "amount": 2915384.4,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 45,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p65000l2qzyvu2qg0jr",
+    "cig": "98784090FE",
+    "category": "NON_CLASSIFICATO",
+    "winner": "PHILIPS S.P.A.",
+    "amount": 826560,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p67000m2qzycssznnq5",
+    "cig": "9395949666",
+    "category": "SERVIZI",
+    "winner": "JOHNSON & JOHNSON MEDICAL S.P.A.",
+    "amount": 93600,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 35,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p69000n2qzysglp00gj",
+    "cig": "93438336EA",
+    "category": "SERVIZI",
+    "winner": "LIFE TECHNOLOGIES ITALIA",
+    "amount": 249804.91,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 35,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  },
+  {
+    "id": "cmqi64p6b000o2qzy4x9umz02",
+    "cig": "9305776948",
+    "category": "LAVORI",
+    "winner": "ZETA COSTRUZIONI SAS",
+    "amount": 320400,
+    "tier": "NOT_ACTIONABLE",
+    "actionable": false,
+    "enrichmentState": "ENRICHMENT_PENDING",
+    "awardDate": null,
+    "officialSource": false,
+    "insuranceNeed": "STRONGLY_INFERRED",
+    "score": 40,
+    "provenance": {
+      "awardDate": "missing",
+      "category": "db",
+      "officialSource": "unverified"
+    }
+  }
+]

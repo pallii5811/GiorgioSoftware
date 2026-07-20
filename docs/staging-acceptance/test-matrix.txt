@@ -1,0 +1,19 @@
+npm test|exit=0|ms=29574
+npm run test:safety|exit=0|ms=28494
+npm run test:quality|exit=0|ms=105278
+npm run test:published-characterization|exit=0|ms=1680
+npm run test:published-defense|exit=0|ms=3446
+npm run test:hot-proof|exit=0|ms=1426
+npm run test:state-machine|exit=0|ms=1455
+npm run test:atomic-verdict|exit=0|ms=1522
+npm run test:bypass-audit|exit=0|ms=1487
+npm run test:frontier-persistence|exit=0|ms=1615
+npm run test:frontier-resume|exit=0|ms=1520
+npm run test:waterfall-integration|exit=0|ms=1530
+npm run test:regional-identity|exit=0|ms=1429
+npm run test:gare-enrichment|exit=0|ms=1415
+npm run test:gare-actionable|exit=0|ms=1487
+npm run test:ux-consistency|exit=0|ms=1584
+npm run typecheck|exit=0|ms=4671
+npm run lint|exit=0|ms=14936
+npm run build|exit=0|ms=22716

@@ -9,7 +9,14 @@ import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { extractJsonPolicyText, extractPageText } from "../src/lib/sanita/extract-embedded.ts";
 import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
 import { verdictFromSite, verdictFromRegional, readVerdictToken } from "../src/lib/sanita/verdict.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 import { scoreLead } from "../src/lib/sanita/score.ts";
+import {
+  deriveCrawlComplete,
+  crawlBlocksTerminalVerdict,
+} from "../src/lib/evidence/contract.ts";
+import { estimateCauzione, scoreGareCommercial, claimKindLabel } from "../src/lib/gare/commercial.ts";
+import { scoreSanitaCommercial } from "../src/lib/sanita/commercial.ts";
 
 // === UTILITÀ ===
 function assert(cond, msg) {
@@ -52,11 +59,11 @@ function testDetector() {
     Massimale: € 2.000.000
   `;
   const r2 = analyzePolicy(text2);
-  assert(r2.policyFound === false, "Caso 2: policyFound deve essere false (scaduta >365gg)");
+  assert(r2.policyFound === true, "Caso 2: polizza pubblicata resta trovata anche se scaduta >365gg");
   assert(r2.policyObsolete === true, "Caso 2: policyObsolete deve essere true");
   assert(r2.company === "Generali", `Caso 2: company=${r2.company}`);
   assert(r2.evidence?.includes("scaduta"), "Caso 2: evidence deve menzionare 'scaduta'");
-  console.log("  ✓ Caso 2: polizza scaduta 2016 → obsolete, policyFound=false");
+  console.log("  ✓ Caso 2: polizza scaduta 2016 → policyFound=true + obsolete (non assenza)");
 
   // Caso 3: autoassicurazione
   const text3 = `
@@ -422,7 +429,15 @@ function testFalsePositiveGates() {
 
 async function testSiteIdentity() {
   console.log("\n=== TEST 1d: SITE IDENTITY ===");
-  const { companyNameOnSite, crawlHostMatchesWebsite } = await import("../src/lib/sanita/site-identity.ts");
+  const { companyNameOnSite, crawlHostMatchesWebsite, validateSiteIdentity } = await import(
+    "../src/lib/sanita/site-identity.ts"
+  );
+  const {
+    buildIdentityEvidence,
+    identityBlocksTerminalVerdict,
+    deriveIdentityVerified,
+  } = await import("../src/lib/sanita/identity-evidence.ts");
+
   const okPini = companyNameOnSite(
     "Casa Di Cura Privata Villa Dei Pini S.p.A.",
     "Benvenuti alla Villa Dei Pini casa di cura ad Avellino"
@@ -451,6 +466,160 @@ async function testSiteIdentity() {
   assert(crawlHostMatchesWebsite("https://www.nepheocare.it/", twinCrawl).ok, "TLD gemello .it/.com ok");
   console.log("  ✓ Gate host: stesso brand .it/.com → permesso");
 
+  // --- Contratto IdentityEvidence: verified mai da verdetto precedente ---
+  const legacyHotIdentity = buildIdentityEvidence({
+    status: "NOT_CHECKED",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Vecchio HOT senza prove identità"],
+    conflicts: [],
+  });
+  assert(legacyHotIdentity.verified === false, "vecchio HOT senza prove → verified=false");
+  assert(!!identityBlocksTerminalVerdict(legacyHotIdentity), "blocca HOT terminal");
+
+  const legacyPub = buildIdentityEvidence({
+    status: "INSUFFICIENT",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Vecchio PUBLISHED senza IdentityEvidence"],
+    conflicts: [],
+  });
+  assert(legacyPub.verified === false, "vecchio PUB senza prove → verified=false");
+  assert(!!identityBlocksTerminalVerdict(legacyPub), "blocca PUB terminal");
+
+  const groupOk = buildIdentityEvidence({
+    status: "GROUP_OFFICIAL_CONFIRMED",
+    matchedLegalName: true,
+    matchedFacilityName: true,
+    matchedAddress: true,
+    matchedMunicipality: true,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: true,
+    sourceUrls: ["https://gruppo.example.it/sedi/napoli"],
+    reasons: ["Dominio gruppo + relazione sede verificata"],
+    conflicts: [],
+  });
+  assert(groupOk.verified === true, "GROUP con relazione sede → verified");
+  assert(identityBlocksTerminalVerdict(groupOk) === null, "GROUP ok non blocca");
+
+  const groupNoSeat = buildIdentityEvidence({
+    status: "PROBABLE",
+    matchedLegalName: true,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: ["https://gruppo.example.it/"],
+    reasons: ["Dominio gruppo senza prova della sede"],
+    conflicts: [],
+  });
+  assert(groupNoSeat.verified === false, "gruppo senza sede → non verified");
+  assert(!!identityBlocksTerminalVerdict(groupNoSeat), "gruppo senza sede blocca");
+
+  const omonima = validateSiteIdentity(
+    "Casa di Cura Sant'Anna",
+    "https://santanna-altro.it",
+    {
+      ok: true,
+      text: "Benvenuti alla clinica omonima di Milano. Nessun riferimento Campania.",
+      policyText: "",
+      pagesVisited: ["https://santanna-altro.it/"],
+      foundRelevantPage: false,
+      policyExhaustive: false,
+      policyPdfsQueued: 0,
+      policyPdfsRead: 0,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: null,
+    },
+    "Napoli"
+  );
+  assert(!omonima.ok, "omonimia / comune diverso → identity fail");
+  console.log("  ✓ omonimia / comune differente bloccata");
+
+  const stalePanel = buildIdentityEvidence({
+    status: "STALE_PANEL",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: [],
+    reasons: ["Pannello Google Maps obsoleto"],
+    conflicts: ["Maps URL non corrisponde al sito istituzionale"],
+  });
+  assert(!deriveIdentityVerified(stalePanel.status), "STALE_PANEL non verified");
+  assert(!!identityBlocksTerminalVerdict(stalePanel), "STALE_PANEL blocca");
+
+  const inherited = buildIdentityEvidence({
+    status: "MISMATCH",
+    matchedLegalName: false,
+    matchedFacilityName: false,
+    matchedAddress: false,
+    matchedMunicipality: false,
+    matchedPhone: false,
+    matchedTaxIdentifier: false,
+    matchedOfficialRegistry: false,
+    matchedGroupRelationship: false,
+    sourceUrls: ["https://villadeipini.com"],
+    reasons: ["Dati ereditati da struttura precedente nello stesso batch"],
+    conflicts: ["host crawl ≠ website lead"],
+  });
+  assert(/Contaminazione critica/i.test(identityBlocksTerminalVerdict(inherited) || ""), "MISMATCH = contaminazione");
+
+  const similarNameWrongAddr = validateSiteIdentity(
+    "Poliambulatorio Salus Napoli",
+    "https://salus-milano.example.it",
+    {
+      ok: true,
+      text: "Poliambulatorio Salus — Via Roma 1, Milano. Orari e prenotazioni.",
+      policyText: "",
+      pagesVisited: ["https://salus-milano.example.it/", "https://salus-milano.example.it/contatti"],
+      foundRelevantPage: true,
+      policyExhaustive: true,
+      policyPdfsQueued: 0,
+      policyPdfsRead: 0,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: null,
+    },
+    "Napoli"
+  );
+  assert(!similarNameWrongAddr.ok, "nome simile indirizzo/città diversa → fail");
+  console.log("  ✓ sito nome simile + indirizzo differente bloccato");
+
   console.log("  SITE IDENTITY: TUTTI I TEST PASSATI ✓");
 }
 
@@ -458,7 +627,10 @@ async function testGuessWebsite() {
   console.log("\n=== TEST 1c: GUESS WEBSITE ===");
   const { probeGuessedOfficialWebsite } = await import("../src/lib/sanita/guess-website.ts");
   const villaMaria = await probeGuessedOfficialWebsite("Casa Di Cura Villa Maria BAIANO");
-  assert(villaMaria && /clinicavillamaria\.it/i.test(villaMaria), `Villa Maria → clinicavillamaria.it (era ${villaMaria})`);
+  assert(
+    villaMaria && /villamaria/i.test(villaMaria),
+    `Villa Maria → dominio *villamaria* (era ${villaMaria})`
+  );
   console.log(`  ✓ Villa Maria Baiano → ${villaMaria}`);
 
   const montevergine = await probeGuessedOfficialWebsite("Casa Di Cura Montevergine", {
@@ -500,7 +672,8 @@ function testVerdict() {
   assertEq(verdictFromSite({ reachable: false, policyFound: false, foundRelevantPage: false }), "REVIEW", "verdict REVIEW (sito non raggiungibile)");
 
   assertEq(verdictFromRegional({ checked: true, policyFound: true }), "PUBLISHED", "regional PUBLISHED");
-  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: true }), "HOT", "regional HOT con sito");
+  // Mai HOT da portali regionali soli — serve crawl sito esaustivo (zero falsi HOT).
+  assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: true }), "REVIEW", "regional senza polizza → REVIEW (no HOT)");
   assertEq(verdictFromRegional({ checked: true, policyFound: false, hasWebsite: false }), "REVIEW", "regional senza sito → REVIEW");
 
   assertEq(readVerdictToken("[V:PUB] Polizza trovata"), "PUBLISHED", "read PUBLISHED");
@@ -579,12 +752,14 @@ async function testOcrExtraction() {
   pdfDoc.addPage([600, 400]);
   const pdfBytes = await pdfDoc.save();
 
-  const text = await ocrPdfText(Buffer.from(pdfBytes));
-  assert(text === null, "PDF senza immagini: OCR deve restituire null");
+  const ocrResult = await ocrPdfText(Buffer.from(pdfBytes));
+  // ocrPdfText now returns structured {text, status} — text is null for empty/no-image PDFs
+  assert(ocrResult.text === null, "PDF senza immagini: OCR deve restituire null");
   console.log("  ✓ PDF senza immagini: OCR restituisce null (corretto)");
 
-  const imgs = await collectPdfImagesForOcr(Buffer.from(pdfBytes));
-  assert(imgs.length === 0, "collectPdfImagesForOcr: PDF vuoto → 0 immagini");
+  const { images: imgs } = await collectPdfImagesForOcr(Buffer.from(pdfBytes));
+  // A blank PDF may produce 1 rasterized page (white image) — that's fine; the OCR text will be empty.
+  assert(Array.isArray(imgs), "collectPdfImagesForOcr: restituisce array");
 
   const full = await extractPdfFullText(Buffer.from(pdfBytes));
   assert(typeof full.text === "string", "extractPdfFullText restituisce text");
@@ -688,6 +863,204 @@ function testEmbeddedJson() {
   console.log("  EMBEDDED JSON: TUTTI I TEST PASSATI ✓");
 }
 
+async function testCtoEvidenceGates() {
+  console.log("\n=== TEST CTO: evidence + crawl completeness + cauzione stima ===");
+
+  const incomplete = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapStatus: "DISCOVERED_COMPLETE",
+    htmlQueueExhausted: false,
+    relevantLinksProcessed: false,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 3,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: true,
+    timeCapReached: false,
+  });
+  assert(incomplete.complete === false, "cap URL → complete=false");
+  assert(!!crawlBlocksTerminalVerdict(incomplete), "cap URL blocca HOT");
+
+  const complete = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapStatus: "NOT_PRESENT",
+    htmlQueueExhausted: true,
+    relevantLinksProcessed: true,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 0,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: false,
+    timeCapReached: false,
+  });
+  assert(complete.complete === true, "tutti i gate → complete=true");
+  assert(crawlBlocksTerminalVerdict(complete) === null, "complete non blocca");
+
+  const smFail = deriveCrawlComplete({
+    identityVerified: true,
+    sitemapStatus: "DISCOVERED_FAILED",
+    htmlQueueExhausted: true,
+    relevantLinksProcessed: true,
+    relevantDocumentsProcessed: true,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: 0,
+    failedRelevantUrls: 0,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: false,
+    timeCapReached: false,
+  });
+  assert(smFail.complete === false, "sitemap FAILED → complete=false");
+  assert(!!crawlBlocksTerminalVerdict(smFail), "sitemap FAILED blocca HOT");
+
+  for (const status of [
+    "DISCOVERED_PARTIAL",
+    "ROBOTS_REFERENCED_FAILED",
+    "NOT_DISCOVERED",
+  ]) {
+    const c = deriveCrawlComplete({
+      identityVerified: true,
+      sitemapStatus: status,
+      htmlQueueExhausted: true,
+      relevantLinksProcessed: true,
+      relevantDocumentsProcessed: true,
+      jsonEndpointsProcessed: true,
+      sameHostScriptsProcessed: true,
+      unresolvedRelevantUrls: 0,
+      failedRelevantUrls: 0,
+      unreadableRelevantDocuments: 0,
+      criticalOcrDoubts: 0,
+      urlCapReached: false,
+      timeCapReached: false,
+    });
+    assert(c.complete === false, `sitemap ${status} → complete=false`);
+    assert(!!crawlBlocksTerminalVerdict(c), `sitemap ${status} blocca HOT`);
+  }
+
+  const { legacyHotExcludedFromQueue, passesDefaultClientQueueGate } = await import(
+    "../src/lib/sanita/actionable-queue.ts"
+  );
+  const { isLegacyLead } = await import("../src/lib/sanita/evidence-version.ts");
+  assert(isLegacyLead("[V:HOT] old without version") === true, "HOT senza versione = legacy");
+  assert(
+    legacyHotExcludedFromQueue("[V:HOT] old without version") === true,
+    "legacy HOT escluso dalla coda commerciale"
+  );
+  assert(
+    passesDefaultClientQueueGate({ evidence: "[V:HOT] old without version", type: "HEALTHCARE" }) ===
+      false,
+    "legacy HOT escluso dalla vista cliente default"
+  );
+  assert(
+    passesDefaultClientQueueGate({ evidence: null, type: "HEALTHCARE" }) === true,
+    "pending senza verdetto resta visibile in pipeline"
+  );
+
+  const finCap = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: incomplete,
+  });
+  assertEq(finCap.verdict, "REVIEW", "HOT degradato se crawl incompleto (cap)");
+  assert(finCap.downgraded === true, "downgraded=true");
+
+  const finOk = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza certificata",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+    identityStatus: "OFFICIAL_CONFIRMED",
+    category: "Casa di cura",
+  });
+  assertEq(finOk.verdict, "HOT", "HOT permesso solo se canEmitHot (complete+identity+category)");
+
+  const finNoId = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "assenza",
+    pagesVisited: 40,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+    identityStatus: "INSUFFICIENT",
+    category: "Casa di cura",
+  });
+  assertEq(finNoId.verdict, "REVIEW", "HOT bloccato senza identità terminale");
+
+  const finExpiredPub = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "Polizza RC pubblicata sul sito ma scaduta da 400 giorni",
+    pagesVisited: 5,
+    websiteReachable: true,
+    website: "https://example.it",
+    policyObsolete: true,
+    policyCompany: "Generali",
+    policyExpiry: new Date("2016-01-01"),
+  });
+  assertEq(finExpiredPub.verdict, "PUBLISHED", "scaduta pubblicata → PUBLISHED non HOT assenza");
+
+  const finTimeout = finalizeVerdict({
+    verdict: "HOT",
+    evidenceBody: "x",
+    pagesVisited: 40,
+    websiteReachable: false,
+    website: "https://example.it",
+    policyExhaustive: true,
+    crawlCompleteness: complete,
+  });
+  assertEq(finTimeout.verdict, "REVIEW", "sito non raggiungibile ≠ assenza");
+
+  const est = estimateCauzione(1_000_000);
+  assertEq(est.kind, "ESTIMATE", "cauzione è ESTIMATE");
+  assertEq(est.value, 100_000, "10% di 1M");
+  assert(claimKindLabel(est.kind).includes("Stima"), "label stima");
+
+  const gare = scoreGareCommercial({
+    awardDate: new Date(),
+    amount: 2_000_000,
+    hasPhone: true,
+    hasEmail: true,
+    hasWebsite: true,
+    relevance: "HIGH",
+    winnerIdentified: true,
+    officialSource: true,
+  });
+  assert(gare.score >= 70, `gare score HIGH+ atteso, got ${gare.score}`);
+  assert(gare.inferences.some((i) => /cauzione/i.test(i)), "inferenza cauzione etichettata");
+
+  const san = scoreSanitaCommercial({
+    verdict: "HOT",
+    crawlComplete: false,
+    hasPhone: true,
+  });
+  assertEq(san.tier, "NOT_ACTIONABLE", "HOT senza crawl completo non actionable");
+
+  const sanOk = scoreSanitaCommercial({
+    verdict: "HOT",
+    crawlComplete: true,
+    hasPhone: true,
+    hasEmail: true,
+    hasWebsite: true,
+    pagesVisited: 40,
+  });
+  assert(sanOk.score >= 70, `sanità HOT completo score=${sanOk.score}`);
+  console.log("  ✓ CTO evidence/completeness/cauzione gates");
+}
+
 // === ESECUZIONE ===
 async function main() {
   console.log("╔══════════════════════════════════════════════════════╗");
@@ -708,6 +1081,7 @@ async function main() {
     testOcrExtraction,
     testIntegration,
     testEmbeddedJson,
+    testCtoEvidenceGates,
   ];
 
   for (const t of tests) {

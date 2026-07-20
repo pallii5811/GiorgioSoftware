@@ -1,0 +1,104 @@
+[
+    {
+        "cmd":  "npm test",
+        "exit":  0,
+        "ms":  41095,
+        "tail":  "║  ✅ TUTTI I TEST PASSATI — 0 ERRORI                ║ | ║  ⏱️  Tempo: 33578ms                                  ║ | ══════════════════════════════════════════════════════"
+    },
+    {
+        "cmd":  "npm run test:safety",
+        "exit":  0,
+        "ms":  19930,
+        "tail":  "║  ✅ TUTTI I TEST PASSATI — 0 ERRORI                ║ | ║  ⏱️  Tempo: 13037ms                                  ║ | ══════════════════════════════════════════════════════"
+    },
+    {
+        "cmd":  "npm run test:published-characterization",
+        "exit":  0,
+        "ms":  1563,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:published-defense",
+        "exit":  0,
+        "ms":  3420,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:hot-proof",
+        "exit":  0,
+        "ms":  1358,
+        "tail":  "  \"skipped\": 0, |   \"blockedAttempts\": 9 | }"
+    },
+    {
+        "cmd":  "npm run test:state-machine",
+        "exit":  0,
+        "ms":  1350,
+        "tail":  "  \"pass\": 18, |   \"fail\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:atomic-verdict",
+        "exit":  0,
+        "ms":  1458,
+        "tail":  "  \"pass\": 5, |   \"fail\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:bypass-audit",
+        "exit":  0,
+        "ms":  1314,
+        "tail":  "  \"skipped\": 0, |   \"residualBypass\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:frontier-persistence",
+        "exit":  0,
+        "ms":  1550,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:frontier-resume",
+        "exit":  0,
+        "ms":  1362,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:waterfall-integration",
+        "exit":  0,
+        "ms":  1510,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:regional-identity",
+        "exit":  0,
+        "ms":  1422,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:gare-enrichment",
+        "exit":  0,
+        "ms":  1424,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:gare-actionable",
+        "exit":  0,
+        "ms":  1466,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run test:ux-consistency",
+        "exit":  0,
+        "ms":  1474,
+        "tail":  "  \"fail\": 0, |   \"skipped\": 0 | }"
+    },
+    {
+        "cmd":  "npm run typecheck",
+        "exit":  0,
+        "ms":  3972,
+        "tail":  "\u003e windsurf-project-20@0.1.0 typecheck | \u003e tsc --noEmit | "
+    },
+    {
+        "cmd":  "npm run lint",
+        "exit":  1,
+        "ms":  13543,
+        "tail":  "✖ 23 problems (1 error, 22 warnings) |   1 error and 0 warnings potentially fixable with the `--fix` option. | "
+    }
+]

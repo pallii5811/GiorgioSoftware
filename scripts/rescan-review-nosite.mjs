@@ -22,13 +22,10 @@ const leads = await prisma.lead.findMany({
 });
 
 console.log(`${region}: ${leads.length} REVIEW senza sito`);
-await prisma.lead.updateMany({
-  where: { id: { in: leads.map((l) => l.id) } },
-  data: { lastScannedAt: null },
-});
 
 let i = 0;
 await runBatch(leads, 1, async (lead) => {
+  await prisma.lead.update({ where: { id: lead.id }, data: { lastScannedAt: null } });
   i++;
   const c = { analyzed: 0, withPolicy: 0, hot: 0, review: 0, regionalChecked: 0, regionalWithPolicy: 0 };
   await completeLeadAnalysis(lead, region, c);
@@ -45,5 +42,12 @@ await runBatch(leads, 1, async (lead) => {
   );
 });
 
-await terminateOcrWorker().catch(() => {});
-await closeMapsBrowserPool().catch(() => {});
+await Promise.race([
+  Promise.all([
+    terminateOcrWorker().catch(() => {}),
+    closeMapsBrowserPool().catch(() => {}),
+    prisma.$disconnect(),
+  ]),
+  new Promise((r) => setTimeout(r, 15_000)),
+]);
+process.exit(0);

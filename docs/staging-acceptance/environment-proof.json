@@ -1,0 +1,20 @@
+{
+  "stagingMode": true,
+  "shadowMode": false,
+  "guard": {
+    "ok": true,
+    "stagingId": "giorgio-staging-acceptance-20260719",
+    "databaseKind": "file"
+  },
+  "databaseUrlRedacted": "file:./data/staging/db/giorgio-staging-acceptance-20260719.db",
+  "frontierPathRedacted": "data/staging/frontier/staging-sanita-acceptance-20260719.sqlite",
+  "appUrl": "(local-harness-no-public-url)",
+  "sideEffects": {
+    "emails": false,
+    "webhooks": false,
+    "customerNotifications": false,
+    "publicQueuePublish": false,
+    "productionCron": false
+  },
+  "liveDbDisabled": true
+}

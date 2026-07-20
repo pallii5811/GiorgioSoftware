@@ -1,0 +1,377 @@
+[
+  {
+    "id": "stg_rec_veneto_906143116B",
+    "cig": "906143116B",
+    "region": "Veneto",
+    "amount": 447727.24,
+    "winner": "SETINA COSTRUZIONI EDILI SRL",
+    "category": "LAVORI",
+    "awardDate": "2022-04-14",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9062394C19",
+    "cig": "9062394C19",
+    "region": "Veneto",
+    "amount": 90943.15,
+    "winner": "IDROTERMICA F.LLI SOLDERA SRL",
+    "category": "LAVORI",
+    "awardDate": "2022-03-02",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_91031350A6",
+    "cig": "91031350A6",
+    "region": "Veneto",
+    "amount": 4263000,
+    "winner": "COLSER SOCIETA COOPERATIVA",
+    "category": "SERVIZI",
+    "awardDate": "2022-03-22",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9200633A88",
+    "cig": "9200633A88",
+    "region": "Veneto",
+    "amount": 244843,
+    "winner": "EURORISTORAZIONE S.R.L.",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-09-05",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_912382201A",
+    "cig": "912382201A",
+    "region": "Veneto",
+    "amount": 99962.6,
+    "winner": "ALBERGHINI MARIA ELENA",
+    "category": "LAVORI",
+    "awardDate": "2022-07-05",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_91281958CE",
+    "cig": "91281958CE",
+    "region": "Veneto",
+    "amount": 4217342.76,
+    "winner": "E-GEOS S.P.A",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-01",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9130789572",
+    "cig": "9130789572",
+    "region": "Veneto",
+    "amount": 550898.2,
+    "winner": "MOSE' S.R.L.",
+    "category": "LAVORI",
+    "awardDate": "2022-07-19",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9175492F84",
+    "cig": "9175492F84",
+    "region": "Veneto",
+    "amount": 280000,
+    "winner": "SCARMA S.R.L.",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-09",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_918199779F",
+    "cig": "918199779F",
+    "region": "Veneto",
+    "amount": 20283821,
+    "winner": "ALPERIA SMART SERVICES SRL",
+    "category": "FORNITURE",
+    "awardDate": "2022-06-08",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9195011B1C",
+    "cig": "9195011B1C",
+    "region": "Veneto",
+    "amount": 13157840.93,
+    "winner": "EURORISTORAZIONE S.R.L.",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-01",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_921879022C",
+    "cig": "921879022C",
+    "region": "Veneto",
+    "amount": 10219794.69,
+    "winner": "TECNOLOGIE SANITARIE S.P.A.",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-01",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9221887DE2",
+    "cig": "9221887DE2",
+    "region": "Veneto",
+    "amount": 124524,
+    "winner": "TONIN GASTONE SRL",
+    "category": "SERVIZI",
+    "awardDate": "2022-11-04",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_922740035E",
+    "cig": "922740035E",
+    "region": "Veneto",
+    "amount": 313116.98,
+    "winner": "ECIS SRL",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-07-19",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9229562B7F",
+    "cig": "9229562B7F",
+    "region": "Veneto",
+    "amount": 13600,
+    "winner": "LND IMPIANTI SRL",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-07-04",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9231725478",
+    "cig": "9231725478",
+    "region": "Veneto",
+    "amount": 101294.6,
+    "winner": "LA CASALINDA SRL",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-20",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_92340356BD",
+    "cig": "92340356BD",
+    "region": "Veneto",
+    "amount": 195300,
+    "winner": "DOMPÈ FARMACEUTICI S.P.A.",
+    "category": "FORNITURE",
+    "awardDate": "2022-08-12",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9237627AF2",
+    "cig": "9237627AF2",
+    "region": "Veneto",
+    "amount": 110239.51,
+    "winner": "C.E.V. CONSORZIO EDILI VENETI SOC.COOP.",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-06-14",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_92376741BE",
+    "cig": "92376741BE",
+    "region": "Veneto",
+    "amount": 138500,
+    "winner": "CONSORZIO SOCIALE UNITARIO G. ZORZETTO SOC. COOP.",
+    "category": "SERVIZI",
+    "awardDate": "2022-06-15",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9241021BC3",
+    "cig": "9241021BC3",
+    "region": "Veneto",
+    "amount": 84000,
+    "winner": "BOSTON SCIENTIFIC SPA",
+    "category": "NON_CLASSIFICATO",
+    "awardDate": "2022-11-10",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9243619BB3",
+    "cig": "9243619BB3",
+    "region": "Veneto",
+    "amount": 400000,
+    "winner": "OFFICINA ALBERTI SRL",
+    "category": "SERVIZI",
+    "awardDate": "2022-11-02",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9244114432",
+    "cig": "9244114432",
+    "region": "Veneto",
+    "amount": 276675.51,
+    "winner": "JURINA E RADAELLI STUDIO ASSOCIATO",
+    "category": "LAVORI",
+    "awardDate": "2022-10-18",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_92469822F2",
+    "cig": "92469822F2",
+    "region": "Veneto",
+    "amount": 80000,
+    "winner": "ENEL ENERGIA SPA",
+    "category": "FORNITURE",
+    "awardDate": "2022-06-24",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9247773FAF",
+    "cig": "9247773FAF",
+    "region": "Veneto",
+    "amount": 172992.23,
+    "winner": "CASAGRANDE SCAVI SRL",
+    "category": "LAVORI",
+    "awardDate": "2022-08-08",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_92494095C4",
+    "cig": "92494095C4",
+    "region": "Veneto",
+    "amount": 455670.87,
+    "winner": "COVIM COSTRUZIONI SRL",
+    "category": "LAVORI",
+    "awardDate": "2022-07-12",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  },
+  {
+    "id": "stg_rec_veneto_9249842B15",
+    "cig": "9249842B15",
+    "region": "Veneto",
+    "amount": 1100000,
+    "winner": "SOLOGAS SRL",
+    "category": "LAVORI",
+    "awardDate": "2022-08-22",
+    "leadScore": 0,
+    "provenance": {
+      "awardDate": "ledger",
+      "category": "classifyProcurementCategory",
+      "score": "computeGareLeadScore"
+    }
+  }
+]

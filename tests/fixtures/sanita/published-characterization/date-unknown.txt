@@ -1,0 +1,7 @@
+Copertura assicurativa RCT/RCO
+Compagnia: Allianz S.p.A.
+Numero polizza: ALZ-445566
+Massimale: euro 3.000.000
+Struttura: Poliambulatorio Delta
+Trasparenza — polizza pubblicata senza indicazione del termine di validità
+URL: https://www.poliambulatoriodelta-fixture.it/trasparenza

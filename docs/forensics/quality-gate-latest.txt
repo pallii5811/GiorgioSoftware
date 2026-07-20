@@ -1,0 +1,50 @@
+﻿
+> windsurf-project-20@0.1.0 test:quality
+> tsx scripts/quality-gate.mjs
+
+ÔòöÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòù
+Ôòæ   QUALITY GATE ÔÇö INGEGNERIA MASSIMA                Ôòæ
+ÔòÜÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòØ
+
+=== QG-1: DETECTOR VILLA FIORITA (testo polizza reale) ===
+  Ô£ô Detector su testo polizza Villa Fiorita
+
+=== QG-2: PDF REMOTO VILLA FIORITA ===
+  Ô£ô PDF remoto letto e analizzato correttamente
+
+=== QG-3: PDF LOCALE VILLA FIORITA (se presente) ===
+  Ô£ô PDF locale letto correttamente
+
+=== QG-4: CRAWL VILLA FIORITA (regressione budget HTML) ===
+  Ôèÿ Skip ÔÇö crawl timeout/errore (timeout villa-fiorita-crawl 45000ms)
+
+=== QG-5: PIPELINE PDF SINTETICO ===
+  Ô£ô Pipeline PDF sintetico OK
+
+=== QG-6: STABILIT├Ç OCR ===
+  Ô£ô OCR su PDF vuoto: nessun crash
+  Ô£ô extractPdfFullText su PDF vuoto: stabile
+
+=== QG-8: ICS MAUGERI ÔÇö risarcimenti + polizza Gelli ===
+  Ô£ô Fixture Maugeri Accelerant ÔåÆ PUBLISHED
+  Ôèÿ PDF locale presente ÔÇö non rieseguito (OCR non deterministico); fixture PASS
+
+=== QG-9: CRAWL icsmaugeri.it ===
+  Ôèÿ Skip ÔÇö crawl timeout/errore (timeout maugeri-crawl 90000ms)
+
+=== QG-7: ANTI-FALSO-HOT ===
+  Ô£ô Polizza pubblicata ÔåÆ PUBLISHED, mai HOT
+
+=== QG-10: verdictFromSite MAI HOT senza polizza ===
+  Ô£ô verdictFromSite emette solo PUBLISHED o REVIEW
+
+=== QG-11: RECONCILE ÔÇö segnale debole ÔåÆ REVIEW (no PUB falso) ===
+  Ô£ô Segnale debole ÔåÆ REVIEW
+
+=== QG-12: HOT ÔÇö policyDbFields azzera compagnia ===
+  Ô£ô HOT non conserva metadati polizza
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+Ôòæ  Ô£à QUALITY GATE PASSATO ÔÇö 0 ERRORI              Ôòæ
+Ôòæ  ÔÅ▒´©Å  141472ms                                         Ôòæ
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ

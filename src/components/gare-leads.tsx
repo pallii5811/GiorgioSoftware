@@ -16,8 +16,13 @@ import {
   GARE_RELEVANCE_META,
   parseTenderAwardDate,
   parseTenderBuyer,
+  parseTenderBuyerCity,
   parseTenderDatasetYear,
+  parseTenderOpportunity,
+  awardMonthsAgo,
+  isFreshTenderLead,
 } from "@/lib/gare/display"
+import { claimKindLabel, estimateCauzione } from "@/lib/gare/commercial"
 import { toast } from "sonner"
 import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
@@ -52,15 +57,24 @@ export function GareLeads() {
   const [query, setQuery] = useState("")
   const [regionFilter, setRegionFilter] = useState<"ALL" | "Veneto" | "Campania">("ALL")
   const [priorityOnly, setPriorityOnly] = useState(true)
+  const [hiddenStale, setHiddenStale] = useState(0)
 
   const fetchLeads = async () => {
     try {
       const qs = priorityOnly ? "?priority=1" : ""
       const res = await fetch(`/api/gare${qs}`)
-      const json = await res.json()
-      if (json.success) setLeads(json.data)
+      const json = await res.json().catch(() => null)
+      if (!json) {
+        toast.error("Risposta non valida dal server gare")
+        return
+      }
+      if (json.success) {
+        setLeads(json.data)
+        setHiddenStale(typeof json.hiddenStale === "number" ? json.hiddenStale : 0)
+      }
+      else toast.error(json.error ?? "Errore caricamento gare")
     } catch {
-      toast.error("Errore di connessione al database")
+      toast.error("Motore gare non raggiungibile — verifica che Hetzner sia online")
     } finally {
       setIsLoading(false)
     }
@@ -72,10 +86,19 @@ export function GareLeads() {
       try {
         const qs = priorityOnly ? "?priority=1" : ""
         const res = await fetch(`/api/gare${qs}`)
-        const json = await res.json()
-        if (active && json.success) setLeads(json.data)
+        const json = await res.json().catch(() => null)
+        if (!active) return
+        if (!json) {
+          toast.error("Risposta non valida dal server gare")
+          return
+        }
+        if (json.success) {
+        setLeads(json.data)
+        setHiddenStale(typeof json.hiddenStale === "number" ? json.hiddenStale : 0)
+      }
+        else toast.error(json.error ?? "Errore caricamento gare")
       } catch {
-        if (active) toast.error("Errore di connessione al database")
+        if (active) toast.error("Motore gare non raggiungibile — verifica che Hetzner sia online")
       } finally {
         if (active) setIsLoading(false)
       }
@@ -125,15 +148,31 @@ export function GareLeads() {
 
   const q = query.trim().toLowerCase()
   const scope = useMemo(
-    () => leads.filter((l) => regionFilter === "ALL" || l.region === regionFilter),
+    () =>
+      leads
+        .filter((l) => isFreshTenderLead(l.evidence))
+        .filter((l) => regionFilter === "ALL" || l.region === regionFilter),
     [leads, regionFilter]
   )
-  const filtered = scope.filter((l) => {
-    if (q && !(`${l.companyName} ${l.tenderObject} ${l.tenderCig} ${l.city ?? ""}`.toLowerCase().includes(q))) {
-      return false
-    }
-    return true
-  })
+  const filtered = useMemo(() => {
+    const rows = scope.filter((l) => {
+      if (
+        q &&
+        !`${l.companyName} ${l.tenderObject} ${l.tenderCig} ${l.city ?? ""} ${parseTenderBuyer(l.evidence) ?? ""}`
+          .toLowerCase()
+          .includes(q)
+      ) {
+        return false
+      }
+      return true
+    })
+    return [...rows].sort((a, b) => {
+      const da = parseTenderAwardDate(a.evidence) ?? ""
+      const db = parseTenderAwardDate(b.evidence) ?? ""
+      if (db !== da) return db.localeCompare(da)
+      return (b.leadScore ?? 0) - (a.leadScore ?? 0)
+    })
+  }, [scope, q])
 
   const priorityCount = scope.filter((l) => {
     const r = categoryToRelevance(l.category)
@@ -156,8 +195,10 @@ export function GareLeads() {
         Score: l.leadScore ?? "",
         CIG: l.tenderCig,
         Oggetto: l.tenderObject,
+        Opportunità: parseTenderOpportunity(l.evidence) ?? (rel ? GARE_RELEVANCE_META[rel].opportunity : ""),
         Importo: l.tenderAmount,
-        Cauzione10: Math.round(l.tenderAmount * 0.1),
+        CauzioneStimata10pct: Math.round(l.tenderAmount * 0.1),
+        CauzioneTipo: "STIMA (non documentata)",
         AnnoDataset: parseTenderDatasetYear(l.evidence) ?? "",
         DataAggiudicazione: parseTenderAwardDate(l.evidence) ?? "",
         StazioneAppaltante: parseTenderBuyer(l.evidence) ?? "",
@@ -179,7 +220,7 @@ export function GareLeads() {
     { label: "Gare prioritarie", value: priorityCount.toLocaleString("it-IT"), icon: Target, cls: "text-amber-600" },
     { label: "In tabella", value: filtered.length.toLocaleString("it-IT"), icon: Landmark, cls: "" },
     { label: "Con telefono", value: `${withPhone}/${filtered.length || 0}`, icon: Phone, cls: "" },
-    { label: "Cauzioni (10%)", value: fmtMoney(cauzioni), icon: Euro, cls: "text-emerald-600" },
+    { label: "Cauzioni stimate (10%)", value: fmtMoney(cauzioni), icon: Euro, cls: "text-emerald-600" },
   ]
 
   return (
@@ -193,7 +234,10 @@ export function GareLeads() {
             Motore Gare Pubbliche · Cauzioni
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Aggiudicazioni ANAC verificate (CIG + importo + vincitore). Priorità per broker: RC, cauzioni e appalti rilevanti.
+            Aggiudicazioni ANAC verificate (CIG, importo, vincitore, stazione appaltante). Solo gare dal 2024 in poi — opportunità cauzione e RC.
+            {hiddenStale > 0 && (
+              <span className="text-amber-700"> · {hiddenStale} gare storiche (pre-2024) nascoste.</span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -279,12 +323,12 @@ export function GareLeads() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Azienda</th>
-                    <th className="px-4 py-3 font-medium">Appalto</th>
+                    <th className="px-4 py-3 font-medium">Aggiudicataria</th>
+                    <th className="px-4 py-3 font-medium min-w-[300px]">Gara vinta</th>
                     <th className="px-4 py-3 font-medium">Contatti</th>
                     <th className="px-4 py-3 font-medium">Importo</th>
-                    <th className="px-4 py-3 font-medium">Cauzione</th>
-                    <th className="px-4 py-3 font-medium">Priorità</th>
+                    <th className="px-4 py-3 font-medium">Cauzione (stima)</th>
+                    <th className="px-4 py-3 font-medium">Opportunità</th>
                     <th className="px-4 py-3 font-medium">Regione</th>
                     <th className="px-4 py-3 font-medium">Stato</th>
                   </tr>
@@ -294,37 +338,53 @@ export function GareLeads() {
                     const rel = categoryToRelevance(l.category)
                     const meta = rel ? GARE_RELEVANCE_META[rel] : null
                     const awardDate = parseTenderAwardDate(l.evidence)
+                    const monthsAgo = awardMonthsAgo(l.evidence)
                     const datasetYear = parseTenderDatasetYear(l.evidence)
                     const buyer = parseTenderBuyer(l.evidence)
+                    const buyerCity = parseTenderBuyerCity(l.evidence) ?? l.city
+                    const opportunity = parseTenderOpportunity(l.evidence) ?? meta?.opportunity
                     const fonti = parseEvidenceSections(l.evidence).fonti
                     return (
                     <tr key={l.id} className="border-b border-border/60 last:border-0 hover:bg-muted/40">
                       <td className="px-4 py-3 align-top">
+                        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Vincitore</div>
                         <div className="font-medium">{l.companyName}</div>
                         {l.leadScore != null && (
-                          <span className="text-[10px] text-muted-foreground">Score {l.leadScore}</span>
+                          <span className="text-[10px] text-muted-foreground">Score broker {l.leadScore}</span>
+                        )}
+                        {buyerCity && (
+                          <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <MapPin className="h-3 w-3" /> {buyerCity}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3 align-top">
-                        <div className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <FileText className="h-3 w-3" /> CIG {l.tenderCig}
+                        <div className="flex flex-col gap-1.5 max-w-[360px]">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                            <FileText className="h-3 w-3 shrink-0" /> CIG {l.tenderCig}
                           </span>
-                          <span className="max-w-[280px] line-clamp-2" title={l.tenderObject}>{l.tenderObject}</span>
-                          {(datasetYear || awardDate) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              {datasetYear ? `ANAC ${datasetYear}` : ""}
-                              {awardDate ? ` · ${awardDate}` : ""}
-                            </span>
-                          )}
+                          <p className="text-sm leading-snug line-clamp-4" title={l.tenderObject}>
+                            {l.tenderObject}
+                          </p>
                           {buyer && (
-                            <span className="text-[10px] text-muted-foreground line-clamp-1" title={buyer}>
-                              {buyer}
+                            <div>
+                              <span className="text-[10px] font-medium uppercase text-muted-foreground">Stazione appaltante</span>
+                              <p className="text-xs text-foreground" title={buyer}>{buyer}</p>
+                            </div>
+                          )}
+                          {awardDate && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                              <Calendar className="h-3 w-3" />
+                              Aggiudicata il {awardDate}
+                              {monthsAgo != null && monthsAgo <= 24 && (
+                                <span className="text-[10px] font-normal text-muted-foreground">({monthsAgo} mesi fa)</span>
+                              )}
                             </span>
                           )}
-                          {l.city && (
-                            <span className="text-[10px] text-muted-foreground">{l.city}</span>
+                          {datasetYear && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Fonte dataset ANAC {datasetYear}
+                            </span>
                           )}
                         </div>
                       </td>
@@ -358,23 +418,39 @@ export function GareLeads() {
                       </td>
                       <td className="px-4 py-3 align-top tabular-nums">{fmtMoney(l.tenderAmount)}</td>
                       <td className="px-4 py-3 align-top">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 font-semibold text-emerald-700 tabular-nums">
-                          <Euro className="h-3.5 w-3.5" /> {fmtMoney(l.tenderAmount * 0.1)}
-                        </span>
+                        {(() => {
+                          const est = estimateCauzione(l.tenderAmount)
+                          return (
+                            <>
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 font-semibold text-emerald-700 tabular-nums">
+                                <Euro className="h-3.5 w-3.5" /> {fmtMoney(est.value)}
+                              </span>
+                              <div className="mt-1 text-[10px] text-amber-700">
+                                {claimKindLabel(est.kind)} · 10% tipico, non documentato
+                              </div>
+                            </>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 align-top">
                         {meta && rel ? (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px] font-medium",
-                              rel === "HIGH" && "border-emerald-300 bg-emerald-50 text-emerald-800",
-                              rel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-800",
-                              rel === "LOW" && "border-slate-300 bg-slate-50 text-slate-600"
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "w-fit text-[10px] font-medium",
+                                rel === "HIGH" && "border-emerald-300 bg-emerald-50 text-emerald-800",
+                                rel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-800",
+                                rel === "LOW" && "border-slate-300 bg-slate-50 text-slate-600"
+                              )}
+                            >
+                              {meta.label}
+                            </Badge>
+                            {opportunity && (
+                              <span className="text-[10px] text-muted-foreground max-w-[140px]">{opportunity}</span>
                             )}
-                          >
-                            {meta.label}
-                          </Badge>
+                            <span className="text-[10px] text-muted-foreground">{meta.subtitle}</span>
+                          </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

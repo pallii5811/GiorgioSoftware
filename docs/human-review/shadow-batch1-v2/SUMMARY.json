@@ -1,0 +1,24 @@
+{
+  "humanReviewed": 0,
+  "packs": {
+    "sanita-campania": {
+      "rows": 25,
+      "incomplete": false
+    },
+    "sanita-veneto": {
+      "rows": 25,
+      "incomplete": false
+    },
+    "gare-campania": {
+      "rows": 25,
+      "incomplete": false
+    },
+    "gare-veneto": {
+      "rows": 25,
+      "incomplete": false
+    }
+  },
+  "selectionHash": "e4ca845a5b55",
+  "totalRows": 100,
+  "preliminaryRef": true
+}

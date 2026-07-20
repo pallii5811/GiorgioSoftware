@@ -1,0 +1,8 @@
+{
+  "humanReviewed": 0,
+  "candidates": 50,
+  "hotConfirmedAuto": 0,
+  "reviewOrBlocked": 50,
+  "falsiHotAuto": 0,
+  "note": "Nessun HOT riconfermato automaticamente senza grafo crawl completo (canEmitHot fail-closed)."
+}

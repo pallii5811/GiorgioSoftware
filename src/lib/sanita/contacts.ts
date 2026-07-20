@@ -110,7 +110,7 @@ export function parseContactsFromText(text: string): ParsedContacts {
 }
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|asl|aulss|soresa|^rita\.(com|it|org|net)$|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.it$/i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|wikipedia|paginegialle|tripadvisor|dati\.salute|regione\.|tavily|^asl\.|[.]asl\.|^aulss|soresa|^rita\.(com|it|org|net)$|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.com$|^salus\.it$|^quiete\.it$|^siti\.it$|^food\.it$|navigarefacile\.it|^telefono\.it$|^sale\.it$|^oasi\.com$|^srls\.com$|^suap\.com$|^roccarainola\.com$|^clinicamedica\.it$|^morcone\.com$|^villafiori\.it$/i;
 
 /** Acronimo da sigle puntate (es. G.e.P.O.S. → gepos). */
 function dottedAcronym(companyName: string): string | null {
@@ -127,6 +127,13 @@ function nameTokens(companyName: string): string[] {
     "spa", "srl", "societa", "onlus", "coop", "dei", "degli",
     "geriatrico", "geriatrica", "residenza", "sanitaria", "assistenziale",
     "albergo", "anziani", "riposo", "riabilitativo", "polispecialistico", "accreditato",
+    // Termini sanitari generici: non distintivi → evitano match dominio generico
+    // (es. "poliambulatorio" → poliambulatorio.com, "laboratorio analisi" → analisi.it)
+    "poliambulatorio", "poliambulatori", "ambulatorio", "ambulatori",
+    "laboratorio", "analisi", "cliniche", "clinico", "clinica",
+    "studio", "diagnostico", "diagnostica", "polidiagnostico", "polidiagnostica",
+    "fisioterapia", "fisioterapico", "fisioterapica", "radiologia", "radiologico",
+    "cooperativa", "sociale", "policlinico", "polispecialistica",
   ]);
   const seen = new Set<string>();
   const out: string[] = [];

@@ -57,8 +57,71 @@ prisma/*.db-wal
 AGENTS.md
 CLAUDE.md
 
-# vercel
-.vercel
+# shadow isolated DB copies + sensitive exports (never commit)
+data/shadow/db/
+data/shadow/before/
+data/shadow/after/
+data/shadow/drift/
+data/shadow/batch1/
+data/shadow/ingest/
+data/shadow/crawl/
+data/baseline/*.jsonl
+data/baseline/*-full*
+*.db-shm
+*.db-wal
+
+# one-off ops probes (local inventory — see docs/forensics/residual-working-tree.md)
+scripts/audit-*.mjs
+scripts/check-*.mjs
+scripts/probe-*.mjs
+scripts/fix-*.mjs
+scripts/crawl-*.mjs
+scripts/count-*.mjs
+scripts/delivery-*.mjs
+scripts/delivery-*.sh
+scripts/run-*.sh
+scripts/run-delivery*.mjs
+scripts/run-fix*.mjs
+scripts/run-full*.mjs
+scripts/run-nosite*.sh
+scripts/run-overnight*.sh
+scripts/run-resolve*.mjs
+scripts/run-until*.sh
+scripts/e2e-*.mjs
+scripts/monitor-*.mjs
+scripts/poll-*.mjs
+scripts/pending-*.mjs
+scripts/purge-*.mjs
+scripts/query-*.mjs
+scripts/queue-*.mjs
+scripts/quick-*.mjs
+scripts/reenrich-*.mjs
+scripts/rescan-all*.mjs
+scripts/rescan-every*.mjs
+scripts/rescan-hot*.mjs
+scripts/rescan-obsolete*.mjs
+scripts/rescan-review-now.mjs
+scripts/rescan-review-policy*.mjs
+scripts/rescan-waf*.mjs
+scripts/reset-*.mjs
+scripts/resolve-all*.mjs
+scripts/restore-*.mjs
+scripts/review-why.mjs
+scripts/scan-all*.mjs
+scripts/set-lead-*.mjs
+scripts/test-discovery*.mjs
+scripts/test-maps*.mjs
+scripts/test-ocr*.mjs
+scripts/unblock-*.mjs
+scripts/dump-*.mjs
+scripts/dedup-*.mjs
+scripts/find-*.mjs
+scripts/list-*.mjs
+scripts/inspect-*.mjs
+scripts/hetzner-fiori*.mjs
+scripts/pre-deploy*.mjs
+scripts/clear-*.mjs
+
 
 # typescript
 *.tsbuildinfo
@@ -68,3 +131,32 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# agent temporary dumps / deploy blobs (local only)
+tmp-*.json
+*.tgz
+leadsniper-deploy.tgz
+next-build.tgz
+prisma/prisma/
+docs/shadow/*.log
+
+# local prisma shadow copies (never commit DBs)
+prisma/data/
+
+
+data/shadow/frontier/
+
+
+# staging isolated DBs (never commit)
+data/staging/
+
+# staging acceptance raw artifacts (keep sanitized JSON/md)
+docs/staging-acceptance/*.log
+docs/staging-acceptance/*.out
+docs/staging-acceptance/crawl-*.json
+docs/staging-acceptance/crawl-*.err
+docs/staging-acceptance/crawl-*.out
+docs/staging-acceptance/fixtures/*.pdf
+docs/staging-acceptance/screenshots/*.png
+!docs/staging-acceptance/screenshots/.gitkeep
+

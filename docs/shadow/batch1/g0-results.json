@@ -1,0 +1,239 @@
+{
+  "fixtureCount": 30,
+  "pass": 30,
+  "fail": 0,
+  "nonWonAsWon": 0,
+  "wrongWinner": 0,
+  "estimateAsFact": 0,
+  "criticalDup": 0,
+  "revokedActionable": 0,
+  "desertedActionable": 0,
+  "ambiguousPromoted": 0,
+  "noOfficialCertified": 0,
+  "exitCode": 0,
+  "cases": [
+    {
+      "id": "G0-01",
+      "input": "aggiudicazione definitiva",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-02",
+      "input": "proposta → non actionable",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "nonWonAsWon": false
+    },
+    {
+      "id": "G0-03",
+      "input": "provvisoria → non actionable",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "nonWonAsWon": false
+    },
+    {
+      "id": "G0-04",
+      "input": "aperta → non actionable",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "nonWonAsWon": false
+    },
+    {
+      "id": "G0-05",
+      "input": "deserta",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "desertedActionable": false
+    },
+    {
+      "id": "G0-06",
+      "input": "annullata",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true
+    },
+    {
+      "id": "G0-07",
+      "input": "revocata",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "revokedActionable": false
+    },
+    {
+      "id": "G0-08",
+      "input": "sospesa",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true
+    },
+    {
+      "id": "G0-09",
+      "input": "affidamento diretto valido",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-10",
+      "input": "multilotto stesso CIG lotti distinti",
+      "expected": false,
+      "got": false,
+      "ok": true
+    },
+    {
+      "id": "G0-11",
+      "input": "più vincitori ambigui",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "ambiguousPromoted": false
+    },
+    {
+      "id": "G0-12",
+      "input": "ATI con vincitore ufficiale",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-13",
+      "input": "consorzio",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-14",
+      "input": "accordo quadro aggiudicato",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-15",
+      "input": "contratto attuativo",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-16",
+      "input": "stesso CIG lotti distinti non dup critico",
+      "expected": false,
+      "got": false,
+      "ok": true,
+      "criticalDup": false
+    },
+    {
+      "id": "G0-17",
+      "input": "duplicato esatto rilevato",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-18",
+      "input": "stazione appaltante come vincitore",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "wrongWinner": false
+    },
+    {
+      "id": "G0-19",
+      "input": "vincitore omonimo errato/ambiguo",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "wrongWinner": false,
+      "ambiguousPromoted": false
+    },
+    {
+      "id": "G0-20",
+      "input": "vincitore P.IVA verificata",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-21",
+      "input": "importo documentato",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-22",
+      "input": "importo mancante score basso/ok",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-23",
+      "input": "cauzione documentata FACT",
+      "expected": "Verificato",
+      "got": "Verificato",
+      "ok": true
+    },
+    {
+      "id": "G0-24",
+      "input": "cauzione stimata ESTIMATE",
+      "expected": true,
+      "got": true,
+      "ok": true,
+      "estimateAsFact": false,
+      "gotLabel": "Stima (non documentata)"
+    },
+    {
+      "id": "G0-25",
+      "input": "appalto vecchio non VERY_HIGH",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-26",
+      "input": "appalto recente actionable",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "G0-27",
+      "input": "sede vincitore Campania (meta)",
+      "expected": "winner_seat",
+      "got": "winner_seat",
+      "ok": true
+    },
+    {
+      "id": "G0-28",
+      "input": "SA Campania vincitore esterno (meta)",
+      "expected": "buyer_region",
+      "got": "buyer_region",
+      "ok": true
+    },
+    {
+      "id": "G0-29",
+      "input": "sede vincitore Veneto (meta)",
+      "expected": "winner_seat",
+      "got": "winner_seat",
+      "ok": true
+    },
+    {
+      "id": "G0-30",
+      "input": "conflitto fonti / no ufficiale",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true,
+      "noOfficialCertified": false
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-07-20T16:51:35.273254+00:00",
+  "ts": "20260720T165135Z",
+  "source": "/opt/leadsniper/prisma/dev.db",
+  "backup": "/opt/leadsniper/backups/giorgio-live-20260720T165135Z.db",
+  "shadow": "/opt/leadsniper/shadow/giorgio-shadow-20260720T165135Z.db",
+  "sizeBytes": 2007040,
+  "sha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+  "integrity": "ok",
+  "tables": 1,
+  "leadTotal": 1237,
+  "byType": {
+    "HEALTHCARE": 877,
+    "TENDER": 360
+  },
+  "hotToken": 515,
+  "pubToken": 120,
+  "revToken": 242,
+  "sanitaCampania": 511,
+  "sanitaVeneto": 366,
+  "healthcareUnscanned": 0,
+  "crmByStatus": {
+    "NEW": 1237
+  },
+  "buildId": "CBwQrpw7p2G3_t5e6LtNb",
+  "pm2": "leadsniper-ui online (queried separately)",
+  "restoreTest": {
+    "path": "/tmp/giorgio-restore-test-20260720T165135Z.db",
+    "integrity": "ok",
+    "count": 1237,
+    "match": true,
+    "ok": true
+  }
+}

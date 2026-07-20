@@ -1,0 +1,12 @@
+{
+  "seed": 20260718,
+  "sanitaCampania": 25,
+  "sanitaVeneto": 25,
+  "gareCampania": 25,
+  "gareVeneto": 2,
+  "gareVenetoAvailableInSnapshot": 2,
+  "gareVenetoShortfall": 23,
+  "totalSelected": 77,
+  "targetTotal": 100,
+  "blocker": "SNAPSHOT_HAS_ONLY_2_VENETO_TENDER_LEADS"
+}

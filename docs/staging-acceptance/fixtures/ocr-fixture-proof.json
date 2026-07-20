@@ -1,0 +1,13 @@
+{
+  "proved": true,
+  "hash": "cadfa7ed8f72f2853244e8c326bac3b18fee038ac261a14bd4cd3d7bcfc693e4",
+  "durationMs": 2372,
+  "digitalLen": 12,
+  "ocrLen": 79,
+  "nativeInsufficient": true,
+  "ocrTextSample": "Polizza RC numero RCHSTG00020000157 Massimale Euro 5000000 AmTrust scadenza 31/",
+  "insuranceHint": true,
+  "module": "extractPdfFullText → ocrPdfText",
+  "confidenceNote": "extractPdfFullText does not return per-glyph confidence; OCR execution proved by ocr text length + insuranceHint",
+  "note": "image-only PDF fixture — digital insufficient, real OCR path executed"
+}

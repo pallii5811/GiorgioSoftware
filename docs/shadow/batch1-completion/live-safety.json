@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-07-19T01:02:56.038045+00:00",
+  "backupSha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+  "liveSha256": "a9229b1537632c94a4b492ee185cb39c96bc86072ac283e9010a0f09b3710da9",
+  "backupImmutable": true,
+  "leadTotalBackup": 1237,
+  "leadTotalLive": 1237,
+  "hotBackup": 515,
+  "hotLive": 515,
+  "liveQuarantineMarkers": 0,
+  "liveShadowHistMarkers": 0,
+  "liveEvidenceVersionMarkers": 0,
+  "backupMaxes": {
+    "createdAt": 1782735195618,
+    "updatedAt": 1782911944594,
+    "lastScannedAt": 1782911944592,
+    "maxIdHash": "8e6ce317309d"
+  },
+  "liveMaxes": {
+    "createdAt": 1782735195618,
+    "updatedAt": 1782911944594,
+    "lastScannedAt": 1782911944592,
+    "maxIdHash": "8e6ce317309d"
+  },
+  "processProbe": {
+    "shadowTmp": "-rw-r--r-- 1 root root 2673 Jul 18 20:53 /tmp/shadow-backup-hetzner.py\n-rw-r--r-- 1 root root  380 Jul 18 20:53 /tmp/shadow-check-live-hash.py\n-rw-r--r-- 1 root root 1515 Jul 18 21:03 /tmp/shadow-check-live-isolation.py\n-rw-r--r-- 1 root root 8419 Jul 18 21:51 /tmp/shadow-classify-live-drift.py\n-rw-r--r-- 1 root root 3318 Jul 19 01:02 /tmp/shadow-live-safety-check.py",
+    "orphanShadow": "root     3391029 75.0  0.2  29924 21232 ?        Ss   01:02   0:00 python3 /tmp/shadow-live-safety-check.py",
+    "liveDbHolders": "COMMAND     PID USER   FD   TYPE DEVICE SIZE/OFF   NODE NAME\nnode    2689566 root   37ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\nnode    2689566 root   38ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\nnode    2711882 root   54ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\nnode    2711882 root   57ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\nnode    2712269 root   38ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\nnode    2712269 root   39ur  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db\npython3 3391029 root    4rr  REG    8,1  2007040 682709 /opt/leadsniper/prisma/dev.db"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "sanita": [
+    {
+      "id": "cmqn2xibt000nmhc2s7aalaif",
+      "verdict": "PUBLISHED",
+      "businessVerdict": "PUBLISHED_DATE_UNKNOWN",
+      "validationStatus": "REVALIDATION_PENDING",
+      "processingState": "RETRY_PENDING",
+      "website": "http://www.fondazioneclotilde.it/"
+    },
+    {
+      "id": "cmqp5g0d7000510ohy3zt1x80",
+      "verdict": "PUBLISHED",
+      "businessVerdict": "PUBLISHED_DATE_UNKNOWN",
+      "validationStatus": "REVALIDATION_PENDING",
+      "processingState": "RETRY_PENDING",
+      "website": "https://www.clinicaminerva.it/"
+    },
+    {
+      "id": "cmqo5x33c0025aa3v6q32x57y",
+      "verdict": "PUBLISHED",
+      "businessVerdict": "PUBLISHED_DATE_UNKNOWN",
+      "validationStatus": "REVALIDATION_PENDING",
+      "processingState": "RETRY_PENDING",
+      "website": "http://www.istitutoantoniano.it/"
+    }
+  ],
+  "gare": [
+    {
+      "id": "cmqi64p4p00002qzylujav4z0",
+      "region": "Campania",
+      "fromLedger": false,
+      "cig": "93784058A1",
+      "category": "GARE_MEDIUM",
+      "awardDate": "2026-06-17T00:00:00.000Z",
+      "winner": "RI.LA.CO. SRL",
+      "amount": 51179.75,
+      "enrich": "ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "insuranceKind": "FACT",
+      "actionable": true,
+      "tier": "MEDIUM",
+      "exclusions": []
+    },
+    {
+      "id": "cmqi64p4w00012qzy00vc6kkj",
+      "region": "Campania",
+      "fromLedger": false,
+      "cig": "939821003E",
+      "category": "GARE_MEDIUM",
+      "awardDate": "2026-06-17T00:00:00.000Z",
+      "winner": "SCOGNAMIGLIO SRL",
+      "amount": 1750195,
+      "enrich": "ACTIONABLE",
+      "insurance": "STRONGLY_INFERRED",
+      "insuranceKind": "ESTIMATE",
+      "actionable": true,
+      "tier": "VERY_HIGH",
+      "exclusions": []
+    },
+    {
+      "id": "stg_veneto_906143116B",
+      "region": "Veneto",
+      "fromLedger": true,
+      "cig": "906143116B",
+      "category": "GARE_MEDIUM",
+      "awardDate": "2022-04-14T12:00:00.000Z",
+      "winner": "SETINA COSTRUZIONI EDILI SRL",
+      "amount": 447727.24,
+      "enrich": "ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "insuranceKind": "FACT",
+      "actionable": false,
+      "tier": "LOW",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    },
+    {
+      "id": "stg_veneto_9062394C19",
+      "region": "Veneto",
+      "fromLedger": true,
+      "cig": "9062394C19",
+      "category": "GARE_MEDIUM",
+      "awardDate": "2022-03-02T12:00:00.000Z",
+      "winner": "IDROTERMICA F.LLI SOLDERA SRL",
+      "amount": 90943.15,
+      "enrich": "ACTIONABLE",
+      "insurance": "DOCUMENTED",
+      "insuranceKind": "FACT",
+      "actionable": false,
+      "tier": "LOW",
+      "exclusions": [
+        "tier LOW escluso dalla vista principale"
+      ]
+    }
+  ],
+  "note": "record shape parity without live HTTP server"
+}

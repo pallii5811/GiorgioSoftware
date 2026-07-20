@@ -19,6 +19,8 @@ import {
   isVercelUiHost,
 } from "@/lib/sanita/scan-engine-url";
 import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
+import { isInActionableSalesQueue, passesDefaultClientQueueGate } from "@/lib/sanita/actionable-queue";
+import { presentSanitaLead } from "@/lib/sanita/present-sanita-lead";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -130,6 +132,28 @@ export async function GET(req: Request) {
 
   try {
     const url = new URL(req.url);
+    const leadId = url.searchParams.get("id");
+    if (leadId?.trim()) {
+      const lead = await prisma.lead.findUnique({ where: { id: leadId.trim() } });
+      if (!lead || lead.type !== "HEALTHCARE") {
+        return NextResponse.json(
+          { success: false, error: "Lead non trovato", found: false },
+          { status: 404 }
+        );
+      }
+      const semantic = presentSanitaLead(lead);
+      return NextResponse.json({
+        success: true,
+        found: true,
+        lead,
+        semantic,
+        data: [lead],
+        meta: {
+          actionable: semantic.actionable,
+          queueStatus: semantic.queueStatus,
+        },
+      });
+    }
     const includePending = url.searchParams.get("includePending") === "1";
     const region = url.searchParams.get("region");
     const regionFilter =
@@ -142,12 +166,43 @@ export async function GET(req: Request) {
       },
       orderBy: [{ leadScore: "desc" }, { lastScannedAt: "desc" }, { createdAt: "desc" }],
     });
+    // Default sicuro: coda commerciale = solo evidence corrente.
+    // Ops/audit: ?includeAll=1 (o actionable=0 / flag env false).
+    const includeAll =
+      url.searchParams.get("includeAll") === "1" ||
+      url.searchParams.get("actionable") === "0";
+    const requireActionable =
+      process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0" &&
+      url.searchParams.get("actionable") !== "0";
+    const actionableOnly =
+      url.searchParams.get("actionable") === "1" || (requireActionable && !includeAll);
+    const data = actionableOnly
+      ? leads.filter((l) =>
+          url.searchParams.get("actionable") === "1"
+            ? isInActionableSalesQueue(l)
+            : passesDefaultClientQueueGate(l)
+        )
+      : leads.map((l) => {
+          const semantic = presentSanitaLead(l);
+          return {
+            ...l,
+            semantic,
+            _actionable: semantic.actionable,
+            _legacy: !semantic.actionable && !!l.evidence,
+            _queueStatus: semantic.queueStatus,
+          };
+        });
     return NextResponse.json({
       success: true,
-      data: leads,
+      data,
       meta: {
         tavilyAvailable: isRegionalCheckAvailable(),
         regions: await regionScanMeta(),
+        actionableQueueRequireCurrentEvidence:
+          process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0",
+        actionableCount: leads.filter((l) => isInActionableSalesQueue(l)).length,
+        totalReturned: data.length,
+        filteredDefault: actionableOnly,
       },
     });
   } catch {
@@ -239,8 +294,13 @@ export async function POST(req: Request) {
     const counters = {
       analyzed: 0,
       withPolicy: 0,
+      published: 0,
       hot: 0,
       review: 0,
+      reviewHuman: 0,
+      retryPending: 0,
+      technicalBlocked: 0,
+      outOfScope: 0,
       regionalChecked: 0,
       regionalWithPolicy: 0,
     };

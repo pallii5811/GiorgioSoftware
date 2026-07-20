@@ -1,7 +1,7 @@
 /** Validazione e normalizzazione URL sito istituzionale. */
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\.|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.it$/i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\.|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.com$|^salus\.it$|^quiete\.it$|^siti\.it$|^food\.it$|navigarefacile\.it|^telefono\.it$|^telefono\.com$|^sale\.it$|^oasi\.com$|^srls\.com$|^suap\.com$|^roccarainola\.com$|^clinicamedica\.it$|^morcone\.com$|^gallomatese\.com$|^villafiori\.it$|\.comune\.|aslnapoli|aslnapo|grupposandonato|retesolidale|servizionline\.i|fedcp\.org|studiomedicoprivato/i;
 
 /** Host di parking / marketplace domini — non sono siti istituzionali. */
 const PARKED_HOST =
@@ -42,6 +42,16 @@ export function isParkedOrForSalePage(html: string, pageUrl?: string): boolean {
     .replace(/\s+/g, " ")
     .trim();
   if (visible.length < 60 && /\/lander|godaddy|sedo|parked|for\s*sale/i.test(raw)) return true;
+  return false;
+}
+
+/** WAF/CAPTCHA (BitNinja ecc.) — il sito esiste ma il crawler datacenter è bloccato. */
+export function isBotBlockedPage(html: string, pageUrl?: string): boolean {
+  const raw = html.slice(0, 32_000);
+  if (/bitninja|anti-robot|visitor anti-robot|risolvere il captcha|controlo di sicurezza di bitninja/i.test(raw))
+    return true;
+  if (/cf-browser-verification|challenge-platform|just a moment\.\.\.|attention required.*cloudflare/i.test(raw))
+    return true;
   return false;
 }
 

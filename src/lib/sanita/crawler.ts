@@ -6,12 +6,18 @@ import {
   isGelliComplianceReportText,
   type PolicyAnalysis,
 } from "@/lib/sanita/detector";
-import { isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
+import { isBotBlockedPage, isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
 import {
   discoverJsonApiUrls,
+  discoverScriptJsUrls,
   extractJsonPolicyText,
   extractPageText,
 } from "@/lib/sanita/extract-embedded";
+import {
+  deriveCrawlComplete,
+  type CrawlCompleteness,
+  type SitemapStatus,
+} from "@/lib/evidence/contract";
 // NB: pdf-parse (e la dipendenza nativa @napi-rs/canvas) viene importato in modo
 // LAZY dentro fetchPdfText: l'import statico farebbe crashare `next build` durante
 // la fase di "Collecting page data" (caricamento del modulo nativo).
@@ -40,6 +46,11 @@ export interface CrawlResult {
   pec: string | null;
   phones: string[];
   piva: string | null;
+  /**
+   * Completezza strutturale. `complete` è derivato — mai HOT se false.
+   * identityVerified resta false qui (lo setta site-identity/scan-engine).
+   */
+  completeness: CrawlCompleteness;
 }
 
 interface ContactSink {
@@ -288,11 +299,24 @@ const RELEVANT_LINK_KEYWORDS = [
   "sicurezza",
 ];
 
-const FAST = process.env.SCAN_FAST !== "0" && process.env.SCAN_FAST !== "false";
+/** FAST solo se esplicito — mai crawl corto di default. */
+const FAST = process.env.SCAN_FAST === "1" || process.env.SCAN_FAST === "true";
 /** Crawl policy sempre esaustivo: zero falsi HOT (polizza pubblicata ma non vista). */
 const POLICY_EXHAUSTIVE = process.env.POLICY_EXHAUSTIVE !== "0" && process.env.POLICY_EXHAUSTIVE !== "false";
-/** Esaustivo: BFS su tutte le pagine HTML del dominio (fino al tetto). */
-const MAX_HTML_PAGES = POLICY_EXHAUSTIVE ? 150 : FAST ? 12 : 40;
+const ON_SCAN_ENGINE =
+  process.env.SCAN_ENGINE_LOCAL === "1" || process.env.SCAN_LEAD_MAX_MS === "0";
+
+function resolveMaxHtmlPages(): number {
+  if (!POLICY_EXHAUSTIVE) return FAST ? 12 : 40;
+  const raw = process.env.CRAWL_MAX_HTML_PAGES;
+  if (raw === "0") return Number.MAX_SAFE_INTEGER;
+  const n = Number.parseInt(raw || "", 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return ON_SCAN_ENGINE ? Number.MAX_SAFE_INTEGER : 150;
+}
+
+/** Esaustivo: BFS su tutte le pagine HTML del dominio fino a coda vuota (Hetzner: senza tetto). */
+const MAX_HTML_PAGES = resolveMaxHtmlPages();
 const MAX_TOTAL_CHARS = POLICY_EXHAUSTIVE ? 200_000 : 64_000;
 const MAX_POLICY_CHARS = 200_000;
 /** Esaustivo: tutta la coda PDF scoperta sul sito. */
@@ -300,6 +324,25 @@ const MAX_PDFS = POLICY_EXHAUSTIVE ? Number.MAX_SAFE_INTEGER : FAST ? 8 : 20;
 const MAX_PDF_BYTES = 12_000_000;
 const PDF_FETCH_TIMEOUT_MS = POLICY_EXHAUSTIVE ? 90_000 : 25_000;
 const PDF_READ_RETRIES = POLICY_EXHAUSTIVE ? 3 : 1;
+
+function incompleteCrawlMeta(extra: Partial<CrawlCompleteness> = {}): CrawlCompleteness {
+  return deriveCrawlComplete({
+    identityVerified: false,
+    sitemapStatus: "NOT_DISCOVERED",
+    htmlQueueExhausted: false,
+    relevantLinksProcessed: false,
+    relevantDocumentsProcessed: false,
+    jsonEndpointsProcessed: false,
+    sameHostScriptsProcessed: false,
+    unresolvedRelevantUrls: 0,
+    failedRelevantUrls: 1,
+    unreadableRelevantDocuments: 0,
+    criticalOcrDoubts: 0,
+    urlCapReached: false,
+    timeCapReached: false,
+    ...extra,
+  });
+}
 
 function emptyCrawl(partial: Partial<CrawlResult> = {}): CrawlResult {
   return {
@@ -319,6 +362,7 @@ function emptyCrawl(partial: Partial<CrawlResult> = {}): CrawlResult {
     pec: null,
     phones: [],
     piva: null,
+    completeness: incompleteCrawlMeta(),
     ...partial,
   };
 }
@@ -340,6 +384,8 @@ const PROBE_PATHS = [
   "/chi-siamo/amministrazione-trasparente",
   "/documenti/trasparenza",
   "/assicurazione",
+  "/assicurazione-rct",
+  "/assicurazione-rct/",
   "/polizza-rc",
   "/polizza-responsabilita-civile",
   "/responsabilita-civile",
@@ -461,6 +507,81 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
+/** Sitemap XML same-host — enqueue URL; nested sitemap index support (1 livello). */
+async function discoverSitemapUrls(
+  base: URL
+): Promise<{ urls: string[]; status: SitemapStatus }> {
+  const candidates = [
+    new URL("/sitemap.xml", base).toString(),
+    new URL("/sitemap_index.xml", base).toString(),
+    new URL("/wp-sitemap.xml", base).toString(),
+  ];
+  const out = new Set<string>();
+  let saw404Only = true;
+  let sawFailure = false;
+  let sawOk = false;
+  for (const smUrl of candidates) {
+    try {
+      const res = await externalFetch(smUrl, { timeoutMs: 12_000, redirect: "follow" });
+      if (res.status === 404) continue;
+      saw404Only = false;
+      if (!res.ok) {
+        sawFailure = true;
+        continue;
+      }
+      const xml = await res.text();
+      if (!xml || xml.length < 20) {
+        sawFailure = true;
+        continue;
+      }
+      sawOk = true;
+      const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1].trim());
+      for (const loc of locs) {
+        if (/\.xml(?:$|\?)/i.test(loc) && out.size < 5) {
+          try {
+            const nested = await externalFetch(loc, { timeoutMs: 12_000, redirect: "follow" });
+            if (!nested.ok) {
+              sawFailure = true;
+              continue;
+            }
+            const nxml = await nested.text();
+            for (const m of nxml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
+              const u = sameHostScoped(base, m[1].trim(), null);
+              if (u && !isSkippableAssetUrl(u)) out.add(u);
+            }
+          } catch {
+            sawFailure = true;
+          }
+        } else {
+          const u = sameHostScoped(base, loc, null);
+          if (u && !isSkippableAssetUrl(u)) out.add(u);
+        }
+      }
+    } catch {
+      saw404Only = false;
+      sawFailure = true;
+    }
+  }
+  let status: SitemapStatus;
+  if (sawOk && !sawFailure) status = "DISCOVERED_COMPLETE";
+  else if (sawOk && sawFailure) status = "DISCOVERED_PARTIAL";
+  else if (sawFailure) status = "DISCOVERED_FAILED";
+  else if (saw404Only) status = "NOT_PRESENT";
+  else status = "NOT_DISCOVERED";
+  return { urls: [...out].slice(0, POLICY_EXHAUSTIVE ? 2000 : 80), status };
+}
+
+async function fetchJsAssetText(url: string): Promise<string | null> {
+  try {
+    const res = await externalFetch(url, { timeoutMs: 20_000, redirect: "follow" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    return text?.trim() ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Varianti host da provare quando la homepage non risponde (www↔apex, http↔https). */
 function homepageVariants(base: URL): string[] {
   const variants = new Set<string>();
@@ -481,10 +602,19 @@ function homepageVariants(base: URL): string[] {
 }
 
 /** Homepage robusta: prova www↔apex e https↔http finché una risponde HTML. */
-async function fetchHomepage(base: URL): Promise<{ html: string; url: URL } | null> {
+async function fetchHomepage(base: URL): Promise<{ html: string; url: URL } | { botBlocked: true } | null> {
   for (const variant of homepageVariants(base)) {
-    const html = await fetchHtml(variant);
-    if (html !== null) return { html, url: new URL(variant) };
+    try {
+      const res = await externalFetch(variant, { timeoutMs: 15_000, redirect: "follow" });
+      const ct = res.headers.get("content-type") || "";
+      const raw = await res.text();
+      if (isBotBlockedPage(raw, variant)) return { botBlocked: true };
+      if (!res.ok) continue;
+      if (!ct.includes("text/html") && !ct.includes("application/xhtml")) continue;
+      return { html: raw, url: new URL(variant) };
+    } catch {
+      /* prova variante */
+    }
   }
   return null;
 }
@@ -494,7 +624,7 @@ function isNonPolicyDocumentPdf(url: string): boolean {
   const h = url.toLowerCase();
   // Se il nome file contiene keyword assicurative, NON escludere mai (priorità policy).
   if (/polizz|assicuraz|rcg\d|responsabilit|rc[-_]|appendice|rinnovo/i.test(h)) return false;
-  return /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|bilancio|xbrl|privacy|gdpr|modulo[\-_]|regolamento|organigramma|costi[\-_]?contabilizzat|conto[\-_]?economico|stato[\-_]?patrimoniale|relazione[\-_]?(?:annuale|finanziaria|gestione|sindaci|revisore)|\bcv[-_.]|curriculum[\-_]?vitae/i.test(
+  return /carta[\-_]?dei[\-_]?servizi|carta[\-_]?servizi|service[\-_]?charter|bilancio|xbrl|privacy|gdpr|modulo[\-_]|regolamento|organigramma|costi[\-_]?contabilizzat|conto[\-_]?economico|stato[\-_]?patrimoniale|relazione[\-_]?(?:annuale|finanziaria|gestione|sindaci|revisore)|\bcv[-_.]|curriculum[\-_]?vitae|budget\d|\/budget|assegnazione[\-_]?budget|accordi[\-_]?contrattual|accordo[\-_]?contrattual|convenzione[\-_]?(?:ulss|asl)/i.test(
     h
   );
 }
@@ -556,7 +686,8 @@ async function fetchPdfText(
       // non possiamo certificare l'assenza polizza → REVIEW, MAI falso HOT.
       // (Indipendente da OCR on/off: se non abbiamo letto nulla, è un dubbio.)
       const unreadable = (digital?.length ?? 0) < 200 && !(ocr && ocr.trim());
-      const needsOcr = policyPdf && unreadable;
+      // OCR mancante su bilanci/moduli NON blocca HOT — solo PDF candidati-polizza.
+      const needsOcr = policyPdf && unreadable && isPolicyPdfUrl(url);
       return { text: text || null, needsOcr };
     } finally {
       if (policyPdf) process.env.OCR_ENABLED = prevOcr ?? "0";
@@ -654,9 +785,9 @@ export async function crawlSite(baseUrl: string): Promise<CrawlResult> {
   if (POLICY_EXHAUSTIVE) process.env.OCR_ENABLED = "1";
 
   const pagesVisited: string[] = [];
-  let combined = "";
-  let policyText = "";
-  let foundRelevantPage = false;
+  const combined = "";
+  const policyText = "";
+  const foundRelevantPage = false;
 
   try {
     const inner = await crawlSiteInner(baseUrl, pagesVisited, combined, policyText, foundRelevantPage);
@@ -688,6 +819,9 @@ async function crawlSiteInner(
   let base = entry;
 
   const home = await fetchHomepage(base);
+  if (home && "botBlocked" in home) {
+    return emptyCrawl({ error: "bot_blocked" });
+  }
   if (home === null) {
     return emptyCrawl({ error: "Sito irraggiungibile o non in formato HTML" });
   }
@@ -708,6 +842,7 @@ async function crawlSiteInner(
 
   const pdfQueue = new Set<string>(collectPdfsFromPage($, base, false, base.toString()));
   const jsonApiQueue = new Set<string>(discoverJsonApiUrls(homeHtml, base.toString()));
+  const jsAssetQueue = new Set<string>(discoverScriptJsUrls(homeHtml, base.toString()));
   const visitedSet = new Set(pagesVisited);
   const htmlQueue: string[] = [];
   const enqueuedHtml = new Set<string>();
@@ -729,8 +864,13 @@ async function crawlSiteInner(
   }
   discoverHtmlLinks($, base, scopePrefix, (u) => enqueueHtml(u));
 
+  const sitemap = await discoverSitemapUrls(base);
+  for (const u of sitemap.urls) enqueueHtml(u);
+
   let policyFoundInHtml = false;
   let bfsComplete = false;
+  let urlCapReached = false;
+  let failedRelevantUrls = 0;
   let policyPdfAnalysis: PolicyAnalysis | null = null;
   let policyPdfUrl: string | null = null;
 
@@ -739,7 +879,12 @@ async function crawlSiteInner(
     if (visitedSet.has(url)) continue;
 
     const html = await fetchHtml(url);
-    if (!html) continue;
+    if (!html) {
+      if (/trasparen|polizz|assicuraz|amministrazione|gelli|rischio|documenti|note-legal/i.test(url)) {
+        failedRelevantUrls++;
+      }
+      continue;
+    }
     if (isParkedOrForSalePage(html, url)) continue;
 
     visitedSet.add(url);
@@ -767,6 +912,7 @@ async function crawlSiteInner(
       pdfQueue.add(p);
     }
     for (const j of discoverJsonApiUrls(html, url)) jsonApiQueue.add(j);
+    for (const j of discoverScriptJsUrls(html, url)) jsAssetQueue.add(j);
     discoverHtmlLinks(sub, base, scopePrefix, (u) => enqueueHtml(u));
 
     if (policyFoundInHtml && POLICY_EXHAUSTIVE) {
@@ -777,7 +923,11 @@ async function crawlSiteInner(
   }
 
   if (!bfsComplete) {
-    bfsComplete = htmlQueue.length === 0 || visitedSet.size >= MAX_HTML_PAGES;
+    bfsComplete = htmlQueue.length === 0;
+    if (htmlQueue.length > 0 && visitedSet.size >= MAX_HTML_PAGES) {
+      urlCapReached = true;
+      bfsComplete = false;
+    }
   }
 
   for (const apiUrl of jsonApiQueue) {
@@ -789,6 +939,19 @@ async function crawlSiteInner(
     if (analyzePolicy(apiText).policyFound) {
       foundRelevantPage = true;
       policyText = appendPolicy(policyText, apiText);
+    }
+  }
+
+  for (const jsUrl of jsAssetQueue) {
+    if (pagesVisited.includes(jsUrl)) continue;
+    const jsRaw = await fetchJsAssetText(jsUrl);
+    if (!jsRaw) continue;
+    pagesVisited.push(jsUrl);
+    const jsText = extractJsonPolicyText(jsRaw) || jsRaw.slice(0, 80_000);
+    combined += ` \n ${jsText}`;
+    if (analyzePolicy(jsText).policyFound) {
+      foundRelevantPage = true;
+      policyText = appendPolicy(policyText, jsText);
     }
   }
 
@@ -809,7 +972,7 @@ async function crawlSiteInner(
     pagesVisited.push(pdfUrl);
     policyPdfsRead++;
 
-    if (needsOcr && !text?.trim()) needsOcrReview = true;
+    if (needsOcr && !text?.trim() && isPolicyPdfUrl(pdfUrl)) needsOcrReview = true;
     if (!text?.trim()) continue;
 
     const isPolicyPdf =
@@ -819,10 +982,11 @@ async function crawlSiteInner(
       policyText = appendPolicy(policyText, text);
       foundRelevantPage = true;
     }
-    const pdfAnalysis = analyzePolicy(text);
+    const pdfAnalysis = analyzePolicy(text, pdfUrl);
     const complianceDoc = isGelliComplianceReportOnly(text, pdfUrl);
     const nonPolicyDoc = isNonPolicyDocumentPdf(pdfUrl);
-    if (pdfAnalysis.policyFound && !complianceDoc && !nonPolicyDoc) {
+    if (nonPolicyDoc || complianceDoc) continue;
+    if (pdfAnalysis.policyFound) {
       policyFoundInPdf = true;
       // Conserva l'analisi del PDF vincente: scadenza/massimale non vanno persi
       // quando il verdetto viene ricalcolato sul corpus aggregato.
@@ -850,6 +1014,21 @@ async function crawlSiteInner(
     }
   }
 
+  // Bug fix: policyFoundInHtml=true saltava il fallback — PDF polizza letto ma policyPdfUrl null.
+  if (!policyPdfUrl && policyPdfsRead > 0) {
+    policyPdfUrl =
+      sortedPdfs.find((u) => isPolicyPdfUrl(u) || /polizz|assicuraz/i.test(u.toLowerCase())) ??
+      pagesVisited.find((u) => /\.pdf(?:$|\?|#)/i.test(u) && /polizz|assicuraz/i.test(u.toLowerCase())) ??
+      null;
+    if (policyPdfUrl && !policyPdfAnalysis?.policyFound) {
+      const agg = analyzePolicy(policyText || combined);
+      if (agg.policyFound) {
+        policyPdfAnalysis = agg;
+        policyFoundInPdf = true;
+      }
+    }
+  }
+
   const allPdfsRead = policyPdfsQueued === 0 || policyPdfsRead === policyPdfsQueued;
   const crawlMeta = {
     pagesVisited,
@@ -860,6 +1039,7 @@ async function crawlSiteInner(
   };
   const policyExhaustive =
     !isSiteUnderMaintenance(combined) &&
+    !urlCapReached &&
     (policyFoundInPdf ||
       (bfsComplete &&
         allPdfsRead &&
@@ -875,6 +1055,23 @@ async function crawlSiteInner(
   const emailList = [...contacts.emails].sort((a, b) => emailRank(a) - emailRank(b));
   const pec = emailList.find(isPec) ?? null;
 
+  // identityVerified=false qui: lo conferma site-identity / scan-engine.
+  const completeness = deriveCrawlComplete({
+    identityVerified: false,
+    sitemapStatus: sitemap.status,
+    htmlQueueExhausted: bfsComplete && !urlCapReached,
+    relevantLinksProcessed: bfsComplete && !urlCapReached,
+    relevantDocumentsProcessed: allPdfsRead && !needsOcrReview,
+    jsonEndpointsProcessed: true,
+    sameHostScriptsProcessed: true,
+    unresolvedRelevantUrls: urlCapReached ? htmlQueue.length : 0,
+    failedRelevantUrls,
+    unreadableRelevantDocuments: needsOcrReview ? 1 : 0,
+    criticalOcrDoubts: needsOcrReview ? 1 : 0,
+    urlCapReached,
+    timeCapReached: false,
+  });
+
   return {
     text: combined.substring(0, MAX_TOTAL_CHARS),
     policyText,
@@ -882,7 +1079,7 @@ async function crawlSiteInner(
     ok: true,
     error: null,
     foundRelevantPage,
-    policyExhaustive,
+    policyExhaustive: policyExhaustive && !urlCapReached,
     policyPdfsQueued,
     policyPdfsRead,
     needsOcrReview,
@@ -892,5 +1089,6 @@ async function crawlSiteInner(
     pec,
     phones: [...contacts.phones],
     piva: contacts.piva,
+    completeness,
   };
 }

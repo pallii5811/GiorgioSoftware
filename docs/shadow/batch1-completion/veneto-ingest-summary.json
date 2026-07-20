@@ -1,0 +1,23 @@
+{
+  "sourceRunId": "shadow-veneto-ingest-20260718",
+  "years": [
+    2025,
+    2024,
+    2023
+  ],
+  "scannedLines": 330003,
+  "regionMatched": 13774,
+  "awardsRaw": 15209,
+  "selected": 25,
+  "excluded": {
+    "noCig": 0,
+    "noWinner": 69,
+    "duplicate": 26
+  },
+  "errors": [],
+  "originalSnapshotVenetoIds": [
+    "cmqz6i8ep008vkpvxb5clehkx",
+    "cmqz6i8ki00arkpvx8abi9bk3"
+  ],
+  "originalIncludedInG1": false
+}

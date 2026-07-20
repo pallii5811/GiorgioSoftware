@@ -1,0 +1,31 @@
+{
+  "backup": {
+    "path": "data/shadow/db/giorgio-live-backup-20260718.db",
+    "sizeBytes": 2007040,
+    "sha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+    "integrity": "ok",
+    "leadTotal": 1237,
+    "hot": 515,
+    "published": 120,
+    "review": 242,
+    "sanitaCampania": 511,
+    "sanitaVeneto": 366,
+    "gare": 360
+  },
+  "shadow": {
+    "path": "data/shadow/db/giorgio-shadow-20260718.db",
+    "sizeBytes": 2007040,
+    "sha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+    "integrity": "ok",
+    "leadTotal": 1237,
+    "hot": 515,
+    "published": 120,
+    "review": 242,
+    "sanitaCampania": 511,
+    "sanitaVeneto": 366,
+    "gare": 360
+  },
+  "sha256Match": true,
+  "expectedLiveSha256": "cfb9e8781b2fb03c8989e3b79843cfbebb0742119c91e847e227a459909063ab",
+  "matchesHetznerBackup": true
+}

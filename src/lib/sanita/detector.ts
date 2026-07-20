@@ -134,7 +134,14 @@ function isGeneraliFalsePositive(text: string, index: number): boolean {
 
 function isRejectedInsurerName(name: string): boolean {
   const n = name.trim().toLowerCase();
-  return /^(alcuna|nessuna|nessun|eventuale|la|il|lo|le|una|un|del|della|di|che|non|ma|per)$/i.test(n);
+  if (/^(alcuna|nessuna|nessun|eventuale|la|il|lo|le|una|un|del|della|di|che|non|ma|per)$/i.test(n)) {
+    return true;
+  }
+  return (
+    /ulss|asl\s|azienda\s+(?:sanit|ulss)|regione\s|budget|accordi?\s+contrattual|di\s+servizio|variazioni\s+e|tra\s+azienda|ynil\s+tra|ospedale\s+pubbl/i.test(
+      n
+    ) || n.length > 60
+  );
 }
 
 function sanitizeInsurerCapture(raw: string | undefined): string | null {
@@ -209,7 +216,7 @@ function findMassimale(text: string): string | null {
 
   // RC strutture sanitarie: "Limite dell'Indennizzo ... EUR 5.000.000,00"
   const rcLimit =
-    /limite\s+(?:dell['’]?)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
+    /limite\s+(?:dell['’]?\s*)?indennizzo[^.\n]{0,120}?((?:€|eur|euro)\s*[\d.,]+(?:,\d{2})?)/i;
   const rc = text.match(rcLimit);
   if (rc?.[1]) {
     const ctx = text.slice(Math.max(0, (rc.index ?? 0) - 80), (rc.index ?? 0) + 200);
@@ -233,6 +240,16 @@ function findMassimale(text: string): string | null {
 
   const rct = text.match(/RCT\s+sinistro\s+([\d]{1,3}(?:\.\d{3})+)/i);
   if (rct?.[1]) return `EUR ${rct[1].replace(/\s+/g, " ").trim()}`;
+
+  const rctLimit = text.match(
+    /\bRCT\b[^.\n]{0,120}?((?:€|eur|euro)\s*[\d]{1,3}(?:\.\d{3})+(?:,\d{2})?)/i
+  );
+  if (rctLimit?.[1]) return rctLimit[1].replace(/\s+/g, " ").trim();
+
+  const rcoLimit = text.match(
+    /\bRCO\b[^.\n]{0,120}?((?:€|eur|euro)\s*[\d]{1,3}(?:\.\d{3})+(?:,\d{2})?)/i
+  );
+  if (rcoLimit?.[1]) return rcoLimit[1].replace(/\s+/g, " ").trim();
 
   // Niente fallback "alt": rischia falsi massimali da bilanci/XBRL (fondo rischi, accantonamenti, ecc.)
   // Se non è esplicitamente marcato come massimale/limite/RCT/RCO, preferiamo null.
@@ -268,7 +285,7 @@ function parseItalianDate(raw: string): Date | null {
 /** Sezione polizza Gelli (evita falsi match da altre pagine del sito). */
 function policyFocusText(text: string): string {
   const idx = text.search(
-    /polizza\s+assicurativa|articolo\s+10.{0,60}gelli|art\.?\s*10.{0,60}gelli|compagnia\s+di\s+assicurazione/i
+    /polizza\s+assicurativa|responsabilit[aà]\s+civile|contratto\s+n\.?|durata\s+del\s+contratto|articolo\s+10.{0,60}gelli|art\.?\s*10.{0,60}gelli|compagnia\s+di\s+assicurazione/i
   );
   if (idx >= 0) return text.slice(idx, idx + 5000);
   // NON fare focus su "risarcimenti erogati"/PARM: è un obbligo diverso (art.4),
@@ -311,6 +328,22 @@ function findExpiry(text: string): Date | null {
     if (d) return d;
   }
 
+  const durataBlock = text.match(/durata\s+del\s+contratto[\s\S]{0,400}/i);
+  if (durataBlock) {
+    const slashDates = [...durataBlock[0].matchAll(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/g)];
+    const lastSlash = slashDates.at(-1);
+    if (lastSlash?.[1]) {
+      const d = parseItalianDate(lastSlash[1]);
+      if (d) return d;
+    }
+    const spacedDates = [...durataBlock[0].matchAll(/(\d{1,2})\s+(\d{1,2})\s+(\d{4})/g)];
+    const lastSpaced = spacedDates.at(-1);
+    if (lastSpaced) {
+      const d = parseItalianDate(`${lastSpaced[1]}/${lastSpaced[2]}/${lastSpaced[3]}`);
+      if (d) return d;
+    }
+  }
+
   const dateGroup = "(\\d{1,2}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{2,4}|\\d{1,2}\\s+[a-zà]+\\s+\\d{4})";
   const patterns = [
     // "Alle ore 24:00 del 31.01.2027" (appendici polizza RC)
@@ -334,6 +367,8 @@ function findExpiry(text: string): Date | null {
       // Intervalli: ultima data catturata = fine copertura
       const captured = m[3] ?? m[2] ?? m[1];
       const d = parseItalianDate(captured);
+      // Date ante-2010 su documenti generici = quasi sempre falsi positivi (budget, accordi, footer).
+      if (d && d.getUTCFullYear() < 2010) continue;
       if (d) return d;
     }
   }
@@ -352,6 +387,8 @@ function findPolicyNumber(text: string): string | null {
     /sottoscritto\s+(?:con|da)\s+[^.]{3,80}?\s+polizza\s+([A-Z0-9][\d\-]{6,})/i,
     /(?:polizza\s+(?:n\.?|numero|nr\.?)|(?:n\.?|numero|nr\.)\s+polizza)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
     /numero\s+polizza\s*[:\-]\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
+    /(?:contratto|polizza)\s+n\.?\s*([\d\s]{4,}[A-Z0-9]?)/i,
+    /\bn\.?\s*contratto\s+([\d\s]{4,}[A-Z0-9]?)/i,
   ];
   for (const re of patterns) {
     const m = text.match(re);
@@ -366,7 +403,7 @@ function findPolicyNumber(text: string): string | null {
 /** Scarta match OCR/HTML spuri (es. "Prodotto", "SOSTITUISCE"). */
 function sanitizePolicyNumber(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null;
-  const n = raw.trim();
+  const n = raw.trim().replace(/\s+/g, " ");
   if (n.length < 5) return null;
   if (/^(prodotto|sostituisce|rct|rco|polizza|numero|della|dell|art)$/i.test(n)) return null;
   return n;
@@ -394,9 +431,29 @@ function isPolicyAppendixDocument(text: string): boolean {
 
 /** Bilancio / costi contabilizzati: "fondo rischi" è accantonamento contabile, NON autoassicurazione Gelli. */
 export function isAccountingOrBalanceSheetText(text: string): boolean {
-  return /costi\s+contabilizzat|accantonamento\s+fondo\s+risch|stato\s+patrimoniale|conto\s+economico|rendiconto\s+finanziario|bilancio\s+d.?esercizio|materie\s+prime.*personale.*altri\s+costi|servizi\s+offerti.*materie\s+prime/i.test(
+  return /costi\s+contabilizzat|accantonamento\s+fondo\s+risch|stato\s+patrimoniale|conto\s+economico|rendiconto\s+finanziario|bilancio\s+d.?esercizio|materie\s+prime.*personale.*altri\s+costi|servizi\s+offerti.*materie\s+prime|assegnazione\s+budget|budget\s+\d{4}/i.test(
     text
   );
+}
+
+/** Budget, accordi ULSS/ASL, convenzioni — NON polizza RC art.10. */
+export function isBudgetUlssOrAccordoText(text: string, url?: string): boolean {
+  const h = (url ?? "").toLowerCase();
+  if (
+    /budget|assegnazione[\-_]?budget|accordi[\-_]?contrattual|accordo[\-_]?contrattual|convenzione[\-_]?(?:ulss|asl)|ulss\d|\/ulss[-_]/i.test(
+      h
+    )
+  ) {
+    return true;
+  }
+  const t = text.replace(/\s+/g, " ");
+  const ulssAccordo =
+    /accordo\s+contrattuale|tra\s+azienda\s+ulss|tra\s+l[\s']?azienda\s+ulss|ulss\s+\d|convenzione\s+(?:con\s+)?(?:l[\s']?)?(?:ulss|asl)/i.test(
+      t
+    );
+  const budgetDoc = /assegnazione\s+budget|budget\s+\d{4}|documento\s+budget/i.test(t);
+  if (!ulssAccordo && !budgetDoc) return false;
+  return !hasArt10RcOrSelfInsurancePublication(t);
 }
 
 /**
@@ -489,9 +546,20 @@ export function isGelliComplianceReportText(text: string): boolean {
   );
 }
 
-export function analyzePolicy(text: string): PolicyAnalysis {
+export function analyzePolicy(text: string, url?: string): PolicyAnalysis {
   const clean = text.replace(/\s+/g, " ");
   if (isGelliComplianceReportText(clean)) {
+    return {
+      policyFound: false,
+      confidence: 0,
+      company: null,
+      massimale: null,
+      expiry: null,
+      policyNumber: null,
+      evidence: null,
+    };
+  }
+  if (isBudgetUlssOrAccordoText(clean, url) || isAccountingOrBalanceSheetText(clean)) {
     return {
       policyFound: false,
       confidence: 0,
@@ -541,11 +609,19 @@ export function analyzePolicy(text: string): PolicyAnalysis {
     );
   const parmRcDisclosure = isParmRcInsuranceDisclosure(clean) && Boolean(insurer);
 
-  let policyFound =
+  const rcInsurancePdf =
+    Boolean(insurer) &&
+    /responsabilit[aà]\s+civile/i.test(clean) &&
+    /\bRCT\b|\bRCO\b|contraente|contratto\s+n\.?|quanto\s+assicuriamo|durata\s+del\s+contratto/i.test(
+      clean
+    );
+
+  const policyFound =
     concreteData ||
     selfInsured ||
     rcDeclaredOnPage ||
     parmRcDisclosure ||
+    rcInsurancePdf ||
     (appendixPolicy && Boolean(policyNumber && expiry));
 
   const company =
@@ -554,26 +630,30 @@ export function analyzePolicy(text: string): PolicyAnalysis {
     (rcDeclaredOnPage ? findInsurer(clean) : null);
 
   // Art. 10 Legge Gelli richiede la pubblicazione della polizza AGGIORNATA.
-  // Se la data di scadenza è passata da più di 1 anno, la polizza trovata
-  // NON è valida: la struttura è irregolare e rappresenta un lead prioritario.
+  // Se scaduta da >365gg → irregolare, ma la polizza È stata pubblicata (non confondere con assenza).
   let isObsolete = false;
   let daysSinceExpiry = 0;
   if (expiry && policyFound) {
     daysSinceExpiry = Math.floor((Date.now() - expiry.getTime()) / 86_400_000);
-    if (daysSinceExpiry > 365) {
+    // HOT "scaduta" solo con evidenza RC concreta — mai su sola data estratta da budget/ULSS.
+    const certifiedRc = Boolean(
+      (insurer && !isRejectedInsurerName(insurer) && (massimale || policyNumber)) ||
+        (policyNumber && massimale) ||
+        rcInsurancePdf
+    );
+    if (daysSinceExpiry > 365 && certifiedRc) {
       isObsolete = true;
-      policyFound = false; // polizza scaduta = non coperta
     }
   }
 
   let finalEvidence: string | null = null;
   if (isObsolete) {
-    finalEvidence = `Polizza trovata ma scaduta da ${daysSinceExpiry} giorni. Art. 10 L. 24/2017 richiede pubblicazione aggiornata — irregolarità normativa.`;
+    finalEvidence = `Polizza RC pubblicata sul sito ma scaduta da ${daysSinceExpiry} giorni. Art. 10 L. 24/2017 richiede pubblicazione aggiornata — irregolarità normativa.`;
   } else if (policyFound) {
     finalEvidence = extractEvidence(clean);
   }
 
-  const publishMeta = policyFound || isObsolete;
+  const publishMeta = policyFound;
 
   return {
     policyFound,

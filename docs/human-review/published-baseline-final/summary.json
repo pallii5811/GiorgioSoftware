@@ -1,0 +1,13 @@
+{
+  "runId": "published-baseline-e2e-20260719",
+  "humanReviewed": 0,
+  "total": 120,
+  "classes": {
+    "TECHNICAL_REVALIDATION_REQUIRED": 113,
+    "CONFIRMED_DATE_UNKNOWN": 2,
+    "EVIDENCE_NOT_REPRODUCIBLE": 5
+  },
+  "positiviRealiPersiAutomatici": 0,
+  "nuoviFalsiPublishedAutomatici": 0,
+  "note": "Classificazioni automatiche da re-fetch; TECHNICAL_* non contano come positivi persi."
+}

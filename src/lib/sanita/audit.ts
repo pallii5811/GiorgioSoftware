@@ -71,9 +71,17 @@ export function isParmOrGelliReportPdf(url: string): boolean {
   return isGelliComplianceReportPdf(url);
 }
 
-function buildDocsSection(sources: AuditSources, verdict: Verdict): string | null {
-  if (verdict !== "PUBLISHED" || !sources.policyPdfUrl) return null;
-  return `[DOCS: ${sources.policyPdfUrl}]`;
+function buildDocsSection(sources: AuditSources, verdict: Verdict, body?: string | null): string | null {
+  if (!sources.policyPdfUrl) return null;
+  if (verdict === "PUBLISHED") return `[DOCS: ${sources.policyPdfUrl}]`;
+  if (
+    verdict === "HOT" &&
+    body &&
+    /polizza\s+rc\s+pubblicata|polizza\s+pubblicata|pubblicata\s+sul\s+sito|scaduta\s+da\s+\d+\s+giorni/i.test(body)
+  ) {
+    return `[DOCS: ${sources.policyPdfUrl}]`;
+  }
+  return null;
 }
 
 /** PDF polizza da mostrare in UI — documento che ha certificato PUBLISHED. */
@@ -83,15 +91,73 @@ export function policyDocsForDisplay(docs: string[] | null): string[] {
     .slice(0, 3);
 }
 
-/** URL PDF polizza per la UI — solo PUBLISHED con [DOCS:] esplicito. */
+/** HOT con polizza RC pubblicata sul sito ma scaduta (legacy) OPPURE PUBLISHED_EXPIRED. */
+export function isHotPublishedExpiredEvidence(evidence: string | null | undefined): boolean {
+  if (!evidence) return false;
+  if (/\[PS:PUBLISHED_EXPIRED\]/i.test(evidence) && /^\[V:PUB\]/i.test(evidence)) return true;
+  if (!/^\[V:HOT\]/i.test(evidence)) return false;
+  // Stesso evidence che dice "non pubblicata" e "scaduta" → non è una polizza certificata.
+  if (/non\s+pubblicat|assenza\s+pubblicazione|assenza\s+polizza/i.test(evidence)) return false;
+  return /polizza\s+rc\s+pubblicata|polizza\s+pubblicata\s+sul\s+sito|pubblicata\s+sul\s+sito/i.test(
+    evidence
+  ) || /scaduta\s+da\s+\d+\s+giorni.*irregolarit[aà]/i.test(evidence);
+}
+
+/** Giorni di scadenza da testo evidenza (fallback se policyExpiry assente in DB). */
+export function expiredDaysFromEvidence(evidence: string | null | undefined): number | null {
+  if (!evidence) return null;
+  const m = evidence.match(/scaduta\s+da\s+(\d+)\s+giorni/i);
+  return m ? Number.parseInt(m[1]!, 10) : null;
+}
+
+function extractPdfUrlsFromText(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const urls = [...text.matchAll(/https?:\/\/[^\s\]]+\.pdf(?:\?[^\s\]]*)?/gi)].map((m) => m[0]!);
+  return [...new Set(urls)];
+}
+
+/** URL PDF polizza per la UI — PUBLISHED e HOT «pubblicata ma scaduta». */
 export function policyPdfUrlsForLead(evidence: string | null | undefined): string[] {
-  if (!evidence || !/^\[V:PUB\]/i.test(evidence)) return [];
-  const { docs } = parseEvidenceSections(evidence);
-  return policyDocsForDisplay(docs);
+  if (!evidence) return [];
+  const isPub = /^\[V:PUB\]/i.test(evidence);
+  const isHotExpired = isHotPublishedExpiredEvidence(evidence);
+  if (!isPub && !isHotExpired) return [];
+
+  const { docs, body, fonti } = parseEvidenceSections(evidence);
+  const fromDocs = policyDocsForDisplay(docs);
+  if (fromDocs.length) return fromDocs;
+
+  const pdfInBody = body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1];
+  if (pdfInBody) return [pdfInBody];
+
+  const pdfInFonti = fonti?.match(/fonte polizza PDF:\s*(https?:\/\/\S+)/i)?.[1];
+  if (pdfInFonti) return [pdfInFonti];
+
+  const fromTrail = extractPdfUrlsFromText([body, fonti, evidence].filter(Boolean).join(" "));
+  return fromTrail.slice(0, 3);
+}
+
+/** Pagina HTML fonte polizza (se non c'è PDF). */
+export function policyHtmlSourceForLead(evidence: string | null | undefined): string | null {
+  if (!evidence) return null;
+  const isPub = /^\[V:PUB\]/i.test(evidence);
+  const isHotExpired = isHotPublishedExpiredEvidence(evidence);
+  if (!isPub && !isHotExpired) return null;
+
+  const { fonti, body } = parseEvidenceSections(evidence);
+  const m = fonti?.match(/fonte polizza (?:HTML|PDF):\s*(https?:\/\/\S+)/i);
+  if (m?.[1]) return m[1];
+
+  const htmlInBody = body?.match(/sezione Amministrazione Trasparente[^.]*:\s*(https?:\/\/\S+)/i)?.[1];
+  return htmlInBody ?? null;
 }
 
 /** Traccia documentata delle fonti controllate (per report assicuratore). */
-export function buildAuditTrail(sources: AuditSources, verdict: Verdict): string {
+export function buildAuditTrail(
+  sources: AuditSources,
+  verdict: Verdict,
+  evidenceBody?: string | null
+): string {
   const parts: string[] = [];
 
   if (sources.anac) {
@@ -127,6 +193,9 @@ export function buildAuditTrail(sources: AuditSources, verdict: Verdict): string
   if (sources.policySourceUrl && !sources.policyPdfUrl) {
     parts.push(`fonte polizza HTML: ${sources.policySourceUrl}`);
   }
+  if (sources.policyPdfUrl) {
+    parts.push(`fonte polizza PDF: ${sources.policyPdfUrl}`);
+  }
   if (typeof sources.policyPdfsQueued === "number" || typeof sources.policyPdfsRead === "number") {
     const q = Math.max(0, Number(sources.policyPdfsQueued ?? 0));
     const r = Math.max(0, Number(sources.policyPdfsRead ?? 0));
@@ -149,19 +218,19 @@ export function buildAuditTrail(sources: AuditSources, verdict: Verdict): string
   }
 
   const when = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const docs = buildDocsSection(sources, verdict);
+  const docs = buildDocsSection(sources, verdict, evidenceBody);
   return [docs, `[FONTI: ${parts.join(" · ") || "nessuna"}] [Verifica: ${when}]`]
     .filter(Boolean)
     .join(" ");
 }
 
 export function packEvidence(verdict: Verdict, body: string | null, audit: AuditSources): string {
-  const pdfFromBody = verdict === "PUBLISHED" ? body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1] : undefined;
+  const pdfFromBody = body?.match(/certificata da PDF:\s*(https?:\/\/\S+)/i)?.[1];
   const auditWithPdf: AuditSources = {
     ...audit,
-    policyPdfUrl: verdict === "PUBLISHED" ? (audit.policyPdfUrl ?? pdfFromBody ?? null) : null,
+    policyPdfUrl: audit.policyPdfUrl ?? pdfFromBody ?? null,
   };
-  const trail = buildAuditTrail(auditWithPdf, verdict);
+  const trail = buildAuditTrail(auditWithPdf, verdict, body);
   const text = [body?.trim(), trail].filter(Boolean).join(" — ");
   return encodeEvidence(verdict, text);
 }

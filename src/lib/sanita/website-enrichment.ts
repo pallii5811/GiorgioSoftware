@@ -34,9 +34,10 @@ export async function enrichLeadWebsite(
   opts?: { perLeadMs?: number; maxQueries?: number }
 ): Promise<{ found: boolean; website: string | null }> {
   const region = lead.region as Region;
-  const perLeadMs = opts?.perLeadMs ?? 90_000;
+  const perLeadMs = opts?.perLeadMs ?? Number(process.env.ENRICH_PER_LEAD_MS || 180_000);
   const resolved = await resolveOfficialWebsite(lead.companyName, lead.city, region, {
     deadline: Date.now() + perLeadMs,
+    maxQueries: opts?.maxQueries ?? Number(process.env.RESOLVE_MAPS_MAX_QUERIES || 20),
   });
   const website = resolved.website
     ? pickOfficialWebsite([normalizeWebsite(resolved.website)!], lead.companyName) ??

@@ -82,8 +82,16 @@ export const SCAN_LEAD_STALL_MS = (() => {
   return isScanEngineHost() ? 35 * 60_000 : 0;
 })();
 
-/** Tetto URL visitate nel pass Playwright post-crawl (evita ore su siti enormi). */
-export const PLAYWRIGHT_POLICY_MAX_URLS = envInt("PLAYWRIGHT_POLICY_MAX_URLS", 16);
+/** Tetto URL visitate nel pass Playwright — Hetzner: BFS dominio completo (WAF bypass). */
+export const PLAYWRIGHT_POLICY_MAX_URLS = (() => {
+  const raw = process.env.PLAYWRIGHT_POLICY_MAX_URLS;
+  if (raw === "0") return 0;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return isScanEngineHost() ? 5000 : 40;
+})();
 
 /** Tetto solo sul pass Playwright post-crawl (non limita il BFS HTML/PDF). 0 = illimitato. */
 export const PLAYWRIGHT_POLICY_MAX_MS = (() => {

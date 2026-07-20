@@ -1,0 +1,252 @@
+{
+  "fixtureCount": 31,
+  "pass": 31,
+  "fail": 0,
+  "falseHot": 0,
+  "falsePub": 0,
+  "identityContamination": 0,
+  "technicalFailureTerminals": 0,
+  "techToHot": 0,
+  "techToPub": 0,
+  "exitCode": 0,
+  "cases": [
+    {
+      "id": "S0-01",
+      "input": "polizza corrente",
+      "expected": true,
+      "got": true,
+      "ok": true,
+      "evidence": "Polizza RC sanitaria UnipolSai n. RC-2024-001234 massimale € 5.000.000,00 scadenza 31/12/2027"
+    },
+    {
+      "id": "S0-02",
+      "input": "polizza scaduta",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-03",
+      "input": "polizza altra struttura",
+      "expected": true,
+      "got": true,
+      "ok": true,
+      "identityStatus": "MISMATCH",
+      "identityContamination": false
+    },
+    {
+      "id": "S0-04",
+      "input": "compagnia senza contratto",
+      "expected": false,
+      "got": false,
+      "ok": true
+    },
+    {
+      "id": "S0-05",
+      "input": "solo citazione Gelli",
+      "expected": false,
+      "got": false,
+      "ok": true
+    },
+    {
+      "id": "S0-06",
+      "input": "autoassicurazione valida",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-07",
+      "input": "autoassicurazione generica / crawl corto",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false
+    },
+    {
+      "id": "S0-08",
+      "input": "PARM senza contratto",
+      "expected": false,
+      "got": false,
+      "ok": true
+    },
+    {
+      "id": "S0-09",
+      "input": "PARS senza contratto",
+      "expected": false,
+      "got": false,
+      "ok": true
+    },
+    {
+      "id": "S0-10",
+      "input": "PDF leggibile + crawl completo",
+      "expected": "HOT",
+      "got": "HOT",
+      "ok": true
+    },
+    {
+      "id": "S0-11",
+      "input": "OCR dubbio",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false,
+      "completeness": false
+    },
+    {
+      "id": "S0-12",
+      "input": "PDF corrotto/illeggibile",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false,
+      "techToHot": false
+    },
+    {
+      "id": "S0-13",
+      "input": "sito irraggiungibile",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "techToHot": false
+    },
+    {
+      "id": "S0-14",
+      "input": "HTTP 403",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "techToHot": false
+    },
+    {
+      "id": "S0-15",
+      "input": "HTTP 429",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "techToHot": false
+    },
+    {
+      "id": "S0-16",
+      "input": "timeout",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "techToHot": false
+    },
+    {
+      "id": "S0-17",
+      "input": "sitemap completa",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-18",
+      "input": "sitemap parziale",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false
+    },
+    {
+      "id": "S0-19",
+      "input": "sitemap fallita",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false
+    },
+    {
+      "id": "S0-20",
+      "input": "no sitemap HTML esaurita",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-21",
+      "input": "dominio ufficiale",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-22",
+      "input": "gruppo con prova sede",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-23",
+      "input": "gruppo senza prova sede",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false,
+      "identityStatus": "PROBABLE",
+      "reason": "Identità insufficiente (PROBABLE) — serve OFFICIAL_CONFIRMED o GROUP_OFFICIAL_CONFIRMED."
+    },
+    {
+      "id": "S0-24",
+      "input": "sito omonimo errato",
+      "expected": true,
+      "got": true,
+      "ok": true,
+      "identityContamination": false
+    },
+    {
+      "id": "S0-25",
+      "input": "pannello obsoleto",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-26",
+      "input": "Trasparenza senza polizza",
+      "expected": "HOT",
+      "got": "HOT",
+      "ok": true
+    },
+    {
+      "id": "S0-27",
+      "input": "Trasparenza 404",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "techToHot": false
+    },
+    {
+      "id": "S0-28",
+      "input": "endpoint JSON pending",
+      "expected": true,
+      "got": true,
+      "ok": true
+    },
+    {
+      "id": "S0-29",
+      "input": "contenuto JS pending",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false
+    },
+    {
+      "id": "S0-30",
+      "input": "crawl interrotto da cap",
+      "expected": "REVIEW",
+      "got": "REVIEW",
+      "ok": true,
+      "falseHot": false
+    },
+    {
+      "id": "S0-extra-actionable",
+      "input": "HOT incompleto NOT_ACTIONABLE",
+      "expected": "NOT_ACTIONABLE",
+      "got": "NOT_ACTIONABLE",
+      "ok": true
+    }
+  ]
+}

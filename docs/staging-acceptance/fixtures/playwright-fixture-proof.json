@@ -1,0 +1,9 @@
+{
+  "site": "https://example.com/",
+  "proved": true,
+  "durationMs": 21033,
+  "pagesAfter": 1,
+  "textLen": 19,
+  "module": "enrichCrawlWithPlaywright",
+  "note": "controlled staging fixture — real Playwright browser path invoked (not delegated reason-code)"
+}

@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "seed": 20260718,
+    "region": "Veneto",
+    "n": 2,
+    "categoryDist": {
+      "GARE_MEDIUM": 2
+    },
+    "amountMin": 1199000.0,
+    "amountMax": 9390789.19,
+    "withContact": 2,
+    "regionBasisNote": "Lead.region derives from stazione appaltante (buyer CAP); winner seat / execution recorded when present in evidence",
+    "query": "SELECT * FROM Lead WHERE type='TENDER' AND region=? ORDER BY stable_hash(seed,id)"
+  },
+  "ids": [
+    "cmqz6i8ep008vkpvxb5clehkx",
+    "cmqz6i8ki00arkpvx8abi9bk3"
+  ]
+}
