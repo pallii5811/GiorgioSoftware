@@ -54,10 +54,12 @@ const incomplete = deriveCrawlComplete({
   complete: false,
 });
 
+const FACILITY = "RSA Villa Aurora";
+
 const regionalFull = {
   policyFound: true,
   checked: true,
-  evidence: "Polizza RC Unipol documento ufficiale portale ASL",
+  evidence: "Polizza RC Unipol RSA Villa Aurora documento ufficiale portale ASL",
   company: "Unipol",
   policyNumber: "123",
   expiry: null,
@@ -84,6 +86,7 @@ const regionalFull = {
     policyObsolete: false,
     identityVerified: true,
     finalComplete: false,
+    companyName: FACILITY,
     hint,
     regionalFull: genericRegional,
   });
@@ -94,6 +97,7 @@ const regionalFull = {
     policyObsolete: false,
     identityVerified: true,
     finalComplete: true,
+    companyName: FACILITY,
     hint,
     regionalFull: { ...regionalFull, company: null, policyNumber: null, evidence: "menzione generica portale" },
   });
@@ -108,11 +112,12 @@ const regionalFull = {
     policyObsolete: false,
     identityVerified: true,
     finalComplete: true,
+    companyName: FACILITY,
     hint: captureRegionalHint(regionalFull),
     regionalFull,
   });
   ok(adj.verdict === "REVIEW" && adj.humanConflict, "official_regional_policy_document_creates_conflict");
-  ok(isOfficialRegionalPolicyDocument(regionalFull), "official doc detector");
+  ok(isOfficialRegionalPolicyDocument(regionalFull, FACILITY), "official doc detector");
 }
 
 ok(
@@ -122,6 +127,7 @@ ok(
     policyObsolete: false,
     identityVerified: true,
     finalComplete: false,
+    companyName: FACILITY,
     hint: captureRegionalHint(regionalFull),
     regionalFull,
   }).verdict !== "HOT",
@@ -143,6 +149,7 @@ ok(
     policyObsolete: false,
     identityVerified: true,
     finalComplete: true,
+    companyName: "Heidy società cooperativa sociale",
     hint: hintOnly,
     regionalFull: { ...regionalFull, company: null, policyNumber: null, evidence: "snippet portale" },
   });
@@ -165,13 +172,14 @@ ok(
     checkedAt: new Date(),
     contactsFromPortals: { emails: [], pec: null, phones: [], website: null },
   };
-  ok(!isOfficialRegionalPolicyDocument(blogRegional), "zurich blog not official regional doc");
+  ok(!isOfficialRegionalPolicyDocument(blogRegional, "Heidy società cooperativa sociale"), "zurich blog not official regional doc");
   const adj = applyRegionalHintAfterFinalCompleteness({
     candidateVerdict: "HOT",
     policyFoundOnSite: false,
     policyObsolete: false,
     identityVerified: true,
     finalComplete: true,
+    companyName: "Heidy società cooperativa sociale",
     hint: captureRegionalHint(blogRegional),
     regionalFull: blogRegional,
   });

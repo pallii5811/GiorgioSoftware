@@ -2,6 +2,7 @@
  * Regional cross-check hints — captured early, applied after final frontier completeness.
  */
 import type { RegionalCheckResult } from "@/lib/sanita/regional-check";
+import { mapsPrimaryName } from "@/lib/sanita/maps-query";
 import type { Verdict } from "@/lib/sanita/verdict";
 
 export type RegionalHintCapture = {
@@ -24,9 +25,29 @@ export function captureRegionalHint(regional: RegionalCheckResult): RegionalHint
 const INSTITUTIONAL_SOURCE =
   /(?:regione\.(?:campania|veneto)\.it|soresa\.it|asl[a-z0-9.-]+\.it|aulss\d+\.veneto\.it|aziendazero\.it)/i;
 
+function structureAttributedInRegionalEvidence(
+  companyName: string,
+  regional: RegionalCheckResult
+): boolean {
+  const tokens = mapsPrimaryName(companyName)
+    .replace(/srl|spa|s\.p\.a\.?|s\.r\.l\.?|cooperativa\s+sociale|sociale/gi, "")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4);
+  if (tokens.length === 0) return false;
+  const hay = `${regional.evidence || ""}\n${(regional.sourceUrls || []).join("\n")}`.toLowerCase();
+  return tokens.some((t) => hay.includes(t.toLowerCase()));
+}
+
 /** Official insurance document attributed on regional/ASL portal (not a generic mention). */
-export function isOfficialRegionalPolicyDocument(regional: RegionalCheckResult): boolean {
+export function isOfficialRegionalPolicyDocument(
+  regional: RegionalCheckResult,
+  companyName?: string | null
+): boolean {
   if (!regional.policyFound) return false;
+  if (!companyName?.trim() || !structureAttributedInRegionalEvidence(companyName, regional)) {
+    return false;
+  }
 
   const urls = regional.sourceUrls ?? [];
   const institutional = urls.some((u) => INSTITUTIONAL_SOURCE.test(u));
@@ -62,6 +83,7 @@ export function applyRegionalHintAfterFinalCompleteness(opts: {
   policyObsolete: boolean;
   identityVerified: boolean;
   finalComplete: boolean;
+  companyName: string;
   hint: RegionalHintCapture | null;
   regionalFull: RegionalCheckResult | null;
 }): RegionalVerdictAdjustment {
@@ -70,7 +92,10 @@ export function applyRegionalHintAfterFinalCompleteness(opts: {
     return { verdict: opts.candidateVerdict, evidenceAppend: null, humanConflict: false };
   }
 
-  if (isOfficialRegionalPolicyDocument(opts.regionalFull) && !opts.policyFoundOnSite) {
+  if (
+    isOfficialRegionalPolicyDocument(opts.regionalFull, opts.companyName) &&
+    !opts.policyFoundOnSite
+  ) {
     return {
       verdict: "REVIEW",
       evidenceAppend: `Documento assicurativo su portale regionale/ASL attribuito alla struttura — conflitto con assenza first-party. ${hint.regionalEvidence || ""}`.trim(),

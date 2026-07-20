@@ -734,6 +734,7 @@ export async function analyzeLead(
     policyObsolete: Boolean(analysis.policyObsolete),
     identityVerified: identityEv.verified,
     finalComplete: finalCompleteness.complete,
+    companyName: lead.companyName,
     hint: regionalHint,
     regionalFull: regionalResult,
   });
