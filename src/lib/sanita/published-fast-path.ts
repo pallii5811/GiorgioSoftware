@@ -166,6 +166,37 @@ export async function runPublishedFastPath(
             ocrLen = extracted.ocr?.length || 0;
             ocrUsed = Boolean(extracted.ocr && digitalLen < 200);
             text = extracted.text || extracted.digital || extracted.ocr || digital;
+            if (
+              extracted.status === "OCR_RENDERER_MISSING" ||
+              extracted.status === "OCR_TIMEOUT" ||
+              extracted.status === "OCR_EXTRACTION_FAILED"
+            ) {
+              const exhausted = extracted.status === "OCR_RENDERER_MISSING";
+              const tech = resolveAfterTechnicalFailure({
+                previousEvidence: input.evidence,
+                error: extracted.reasonCode || extracted.status,
+                retriesExhausted: exhausted,
+              });
+              return {
+                ...base,
+                contentAcquired: false,
+                exactUrl: url,
+                contentHash: hash,
+                excerpt: text.slice(0, 500),
+                digitalLen,
+                ocrLen,
+                ocrUsed,
+                analysis: analyzePolicy(text, url),
+                publishedOk: false,
+                businessVerdict: tech.businessVerdict,
+                validationStatus: "TECHNICAL_BLOCKED",
+                processingState: "TECHNICAL_BLOCKED",
+                keepLegacyToken: tech.keepLegacyToken === "PUBLISHED" ? "PUBLISHED" : null,
+                reasons: [extracted.reasonCode || extracted.status],
+                techError: extracted.reasonCode || extracted.status,
+                negativeKind: null,
+              };
+            }
           } finally {
             if (prevOcr == null) delete process.env.OCR_JOB_TIMEOUT_MS;
             else process.env.OCR_JOB_TIMEOUT_MS = prevOcr;

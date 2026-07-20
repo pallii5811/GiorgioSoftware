@@ -5,10 +5,11 @@
  *
  * Env:
  *   STAGING_ONLY=published|hot|hard|all (default all)
- *   STAGING_LIMIT=N (optional max leads)
+ *   STAGING_IDS=comma,separated (optional filter)
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
 const ROOT = path.resolve(".");
@@ -45,6 +46,18 @@ process.env.FRONTIER_DB_PATH = FRONTIER;
 process.env.SHADOW_RUN_ID = "analyzelead-acceptance";
 delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
 
+// Staging Poppler (official poppler-windows extract — not committed; see data/staging/)
+const stagingPpm = path.join(
+  ROOT,
+  "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe"
+);
+if (!process.env.PDFTOPPM_PATH && fs.existsSync(stagingPpm)) {
+  process.env.PDFTOPPM_PATH = stagingPpm;
+}
+process.env.OCR_ENABLED = process.env.OCR_ENABLED ?? "1";
+process.env.OCR_MAX_PAGES = process.env.OCR_MAX_PAGES ?? "4";
+process.env.OCR_JOB_TIMEOUT_MS = process.env.OCR_JOB_TIMEOUT_MS ?? "120000";
+
 const sample = JSON.parse(fs.readFileSync(SAMPLE, "utf8"));
 const gold = JSON.parse(fs.readFileSync(GOLD, "utf8"));
 const only = (process.env.STAGING_ONLY || "all").toLowerCase();
@@ -53,6 +66,11 @@ if (only === "all" || only === "published") buckets.push(...(sample.published ||
 if (only === "all" || only === "hot") buckets.push(...(sample.hot || []));
 if (only === "all" || only === "hard") buckets.push(...(sample.hard || []));
 let ids = buckets.map((r) => r.id);
+const idFilter = (process.env.STAGING_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (idFilter.length) ids = ids.filter((id) => idFilter.includes(id));
 const lim = Number(process.env.STAGING_LIMIT || 0);
 if (lim > 0) ids = ids.slice(0, lim);
 

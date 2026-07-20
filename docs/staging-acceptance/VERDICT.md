@@ -1,28 +1,38 @@
 # Staging acceptance — FINAL PRODUCT CLOSURE (progress)
 
 **Branch:** `cto/final-production-grade-20260719`  
-**HEAD at run:** see `analyzelead-acceptance.json`  
-**Verdict:** **STAGING ACCEPTANCE FAILED**
+**HEAD at run:** see `analyzelead-acceptance.json` → `head`  
+**Verdict:** **STAGING ACCEPTANCE FAILED** (HOT / browser / Gare / full suite pending)
 
 ## Gates
 
 | Gate | Result | Evidence |
 |------|--------|----------|
-| Sitemap pipeline real | PASS (unit 12/12) | `discoverAndProcessSitemaps`; Clotilde `DISCOVERED_COMPLETE` / Minerva `ROBOTS_REFERENCED_COMPLETE` |
-| Playwright adaptive default | PASS (unit 6/6) | `enablePlaywright="adaptive"` in `lead-crawl-runtime` |
-| Document fingerprint extracted | PASS (unit 12/12) | `extractDocumentEntityFingerprint` — no lead-field copy |
-| Exact gold 4/4 | **FAIL 3/4** | Antoniano/Minerva/Villa → not CURRENT; **Clotilde** stuck REVIEW (scanned PDF OCR unreadable without poppler) |
-| analyzeLead real path | PASS | `scripts/staging-analyzelead-acceptance.mjs` |
-| false CURRENT / false HOT | PASS 0/0 | after VS fix (REVIEW no longer stamps `CURRENT_VERIFIED`) |
-| npm ci full | PASS | clean worktree + `NODE_EXTRA_CA_CERTS` (Windows Root export) + sqlite `DATABASE_URL` for prisma-smart |
-| Canonicalize path case | PASS | was lowercasing PDF paths → 404 on Clotilde Assicurazione PDF |
+| Sitemap pipeline real | PASS (unit 12/12) | `discoverAndProcessSitemaps` |
+| Playwright adaptive default | PASS (unit 6/6) | `enablePlaywright="adaptive"` |
+| Document fingerprint extracted | PASS (unit 12/12) | `extractDocumentEntityFingerprint` |
+| OCR contract + preflight | PASS | `preflight:ocr` exit 0; `test:ocr-contract` 9/9 |
+| Exact gold 4/4 | **PASS 4/4** | `analyzelead-acceptance.json` — Clotilde `PUBLISHED_EXPIRED` |
+| analyzeLead real path (published) | PASS | `scripts/staging-analyzelead-acceptance.mjs` |
+| false CURRENT / false HOT (published) | PASS 0/0 | Antoniano/Minerva/Villa not CURRENT_VERIFIED |
+| npm test | PASS | suite completa exit 0 |
+| Canonicalize path case | PASS | PDF path case preserved |
 
-## Remaining blocker (honest)
+## Published gold (verified 2026-07-20)
 
-Fondazione Clotilde PDF is 38-page **scanned** (`Assicurazione-Rischi-Avversi-…pdf`).  
-Digital extract is page markers only. Without `pdftoppm` (poppler), OCR falls back to JPEG carving → garbage text → `policyFound=false` → cannot emit `PUBLISHED_EXPIRED`.
+| Lead | expected | result |
+|------|----------|--------|
+| Fondazione Clotilde | PUBLISHED_EXPIRED | `PUBLISHED_EXPIRED` / `CURRENT_VERIFIED` |
+| Fondazione Istituto Antoniano | NOT_CURRENT_VERIFIED | `REVIEW_HUMAN` / `REVALIDATION_PENDING` |
+| Clinica Minerva | NOT_CURRENT_VERIFIED | `REVIEW_HUMAN` / `CONFLICT_FOUND` |
+| Villa Del Sole | NOT_CURRENT_VERIFIED | `REVIEW_HUMAN` / `REVALIDATION_PENDING` |
 
-**Not verified end-to-end for PRC:** HOT complete≥1, browser semantic re-run, Gare 25+25, full suite on clean HEAD commit.
+## Remaining (not yet verified end-to-end for PRC)
+
+- HOT complete≥1 via real `analyzeLead` (Heidy, Progenia, Simamed, Marigold)
+- Browser semantic parity re-run on committed HEAD
+- Gare 25+25 provenance
+- Full certification matrix on clean worktree (`npm ci` + all gates)
 
 ## Do not claim
 

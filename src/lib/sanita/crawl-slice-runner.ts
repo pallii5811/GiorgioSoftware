@@ -144,6 +144,7 @@ function pickNextNode(
     }
     return false;
   });
+  // Prefer policy seed URLs first — positive PUB path must not wait for full sitemap
   ready.sort((a, b) => {
     const score = (u: string) => {
       const policyish =
@@ -153,7 +154,7 @@ function pickNextNode(
       if (policyish && /\.pdf/i.test(u)) return 0;
       if (policyish) return 1;
       if (!/\.pdf/i.test(u)) return 2;
-      return 3; // non-policy PDFs (magazine/newsletter) last — still processed, no OCR
+      return 3;
     };
     return score(a.canonicalUrl) - score(b.canonicalUrl);
   });
@@ -415,6 +416,27 @@ export async function runCrawlSlice(opts: {
         const extracted = await extractPdfFullText(fetched.buf);
         text = extracted.text || "";
         if (extracted.ocr && (extracted.digital?.length || 0) < 200) ocrUsed = true;
+        // Scanned PDF + missing renderer / timeout / extraction fail → TECHNICAL_BLOCKED (not REVIEW)
+        if (
+          extracted.status === "OCR_RENDERER_MISSING" ||
+          extracted.status === "OCR_TIMEOUT" ||
+          extracted.status === "OCR_EXTRACTION_FAILED"
+        ) {
+          try {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              lastError: extracted.reasonCode || extracted.status,
+              contentHash: hash,
+              bumpRetry: true,
+            });
+          } catch {
+            /* */
+          }
+          heartbeatCrawlRun(crawlRunId, `ocr_tech:${extracted.status}`);
+          stopReason = extracted.reasonCode || extracted.status;
+          // Keep processing other nodes; mark technical for finalize
+          await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
+          continue;
+        }
       } catch (e) {
         try {
           transitionFrontierNode(node.id, "RETRY_PENDING", {

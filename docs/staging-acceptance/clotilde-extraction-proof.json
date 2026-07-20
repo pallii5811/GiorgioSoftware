@@ -1,0 +1,19 @@
+{
+  "url": "https://www.fondazioneclotilde.it/wp-content/uploads/2024/12/Assicurazione-Rischi-Avversi-Fondazione-Clotilde.pdf",
+  "ocrStatus": "OCR_SUCCESS",
+  "ocrTextLen": 3139,
+  "hasUnipol": true,
+  "hasScadenza2023": true,
+  "detectorAfterNormalization": {
+    "found": true,
+    "company": "UnipolSai",
+    "expiry": "2023-12-30T00:00:00.000Z",
+    "obsolete": true
+  },
+  "attribution": {
+    "ok": true,
+    "entity": "Fondazione Clotilde",
+    "comune": "Cicciano"
+  },
+  "note": "Poppler 300dpi + Tesseract; OCR normalize UNIpo→UnipolSai; analyzeLead pending on committed HEAD"
+}

@@ -8,6 +8,12 @@ import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
 import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
 import { crawlLeadViaSlices, applyIdentityToCrawlRun } from "@/lib/sanita/lead-crawl-runtime";
+
+function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
+  const blob = `${crawlError || ""} ${stopReason || ""}`;
+  const m = blob.match(/OCR_RENDERER_MISSING|OCR_TIMEOUT|OCR_EXTRACTION_FAILED/i);
+  return m?.[0]?.toUpperCase() || "";
+}
 import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
@@ -826,16 +832,29 @@ export async function analyzeLead(
     } else {
       if (!fin.processingHint) {
         // REVIEW senza policy certificata ≠ CURRENT_VERIFIED
-        const incomplete =
-          !ccStamp.complete ||
-          (crawl.policyPdfsQueued ?? 0) > (crawl.policyPdfsRead ?? 0) ||
-          ccStamp.urlCapReached ||
-          ccStamp.timeCapReached;
-        evidenceBody = stampProcessingMeta(evidenceBody, {
-          state: "REVIEW_HUMAN",
-          businessVerdict: "REVIEW_HUMAN",
-          validationStatus: incomplete ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
-        });
+        const ocrTech = ocrTechReason(crawl.error, sliceRun.final?.stopReason);
+        if (ocrTech) {
+          evidenceBody = stampProcessingMeta(
+            `${evidenceBody} [REASON:${ocrTech}]`.trim(),
+            {
+              state: "TECHNICAL_BLOCKED",
+              businessVerdict: "NONE",
+              validationStatus: "TECHNICAL_BLOCKED",
+            }
+          );
+          bumpCounter(counters, "technicalBlocked");
+        } else {
+          const incomplete =
+            !ccStamp.complete ||
+            (crawl.policyPdfsQueued ?? 0) > (crawl.policyPdfsRead ?? 0) ||
+            ccStamp.urlCapReached ||
+            ccStamp.timeCapReached;
+          evidenceBody = stampProcessingMeta(evidenceBody, {
+            state: "REVIEW_HUMAN",
+            businessVerdict: "REVIEW_HUMAN",
+            validationStatus: incomplete ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
+          });
+        }
       }
     }
   } catch (e) {
@@ -859,7 +878,9 @@ export async function analyzeLead(
   if (verdict === "PUBLISHED") bumpCounter(counters, "published");
   else if (verdict === "HOT") bumpCounter(counters, "hot");
   else if (fin.processingHint === "RETRY_PENDING") bumpCounter(counters, "retryPending");
-  else bumpCounter(counters, "reviewHuman");
+  else if (/\[STATE:TECHNICAL_BLOCKED\]/i.test(evidenceBody)) {
+    if (!counters.technicalBlocked) bumpCounter(counters, "technicalBlocked");
+  } else bumpCounter(counters, "reviewHuman");
 
   const finalEvidence =
     fin.processingHint === "RETRY_PENDING"
