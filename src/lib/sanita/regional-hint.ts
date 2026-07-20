@@ -35,7 +35,7 @@ function structureAttributedInRegionalEvidence(
     .split(/\s+/)
     .filter((w) => w.length >= 4);
   if (tokens.length === 0) return false;
-  const hay = `${regional.evidence || ""}\n${(regional.sourceUrls || []).join("\n")}`.toLowerCase();
+  const hay = `${regional.evidence || ""}`.toLowerCase();
   return tokens.some((t) => hay.includes(t.toLowerCase()));
 }
 
@@ -46,6 +46,13 @@ export function isOfficialRegionalPolicyDocument(
 ): boolean {
   if (!regional.policyFound) return false;
   if (!companyName?.trim() || !structureAttributedInRegionalEvidence(companyName, regional)) {
+    return false;
+  }
+
+  const citedInstitutional = (regional.evidence || "").match(
+    /\[Portale istituzionale:\s*(https?:\/\/[^\]\s]+)/i
+  )?.[1];
+  if (!citedInstitutional || !INSTITUTIONAL_SOURCE.test(citedInstitutional)) {
     return false;
   }
 

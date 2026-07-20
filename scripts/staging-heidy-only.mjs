@@ -9,13 +9,13 @@ const ROOT = path.resolve(".");
 const OUT = path.join(ROOT, "docs/staging-acceptance");
 const SRC_DB = path.join(ROOT, "data/staging/db/giorgio-staging-recovery-20260719.db");
 const DST_DB = path.join(ROOT, "data/staging/db/giorgio-heidy-lastmile.db");
-const FRONTIER = path.join(ROOT, "data/staging/frontier/heidy-lastmile.sqlite");
 const HEIDY_ID = "cmqo8aopr002waa3v4cgcbhpv";
 const RUN_ID = `heidy-lastmile-${Date.now()}`;
+const FRONTIER = path.join(ROOT, `data/staging/frontier/heidy-lastmile-${RUN_ID}.sqlite`);
 
 fs.mkdirSync(path.dirname(DST_DB), { recursive: true });
+fs.mkdirSync(path.dirname(FRONTIER), { recursive: true });
 fs.copyFileSync(SRC_DB, DST_DB);
-if (fs.existsSync(FRONTIER)) fs.unlinkSync(FRONTIER);
 
 process.env.STAGING_MODE = "true";
 process.env.DISABLE_LIVE_DB = "true";
