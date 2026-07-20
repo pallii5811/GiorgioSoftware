@@ -74,6 +74,7 @@ import {
   assertCompletenessInvariant,
   type TerminalCounterKind,
 } from "@/lib/sanita/terminal-processing";
+import { alignPublishedTerminalState } from "@/lib/sanita/canonical-published-terminal";
 import type { PersistSanitaDecision } from "@/lib/sanita/verdict-gateway";
 import type { Lead } from "@prisma/client";
 
@@ -909,6 +910,16 @@ export async function analyzeLead(
     humanConflict,
     publishedSubtype,
   });
+
+  const aligned = alignPublishedTerminalState({
+    legacyVerdict: verdict,
+    processingState: terminal.processingState,
+    businessVerdict: terminal.businessVerdict,
+    packAsRetry: terminal.packAsRetry,
+  });
+  terminal.processingState = aligned.processingState;
+  terminal.businessVerdict = aligned.businessVerdict;
+  terminal.packAsRetry = aligned.packAsRetry;
 
   evidenceBody = stampCompletenessMarkers(evidenceBody, identityEv.status, finalCompleteness.complete);
   evidenceBody = stampFrontierSummary(evidenceBody, frontier);

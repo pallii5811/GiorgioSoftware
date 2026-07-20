@@ -191,33 +191,39 @@ const evidence = after?.evidence || "";
 const token = readVerdictToken(evidence);
 const businessVerdict = readBusinessVerdict(evidence);
 const validationStatus = readValidationStatus(evidence);
-const processingState = error
-  ? "RETRY_PENDING"
-  : readProcessingState(evidence) || (token === "HOT" ? null : null);
+const { acceptCanonicalPublishedTerminal } = await import("../src/lib/sanita/canonical-published-terminal.ts");
 
-let finalState = processingState;
-// Positive expired PUB must win over STATE:RETRY_PENDING left in evidence by fail-closed HOT path
-if (
-  !error &&
-  /scadut|PUBLISHED_EXPIRED|policyObsolete/i.test(evidence) &&
-  /\[DOCS:\s*https?:\/\//i.test(evidence) &&
-  !/Contaminazione critica|sito errato|IDENTITY:MISMATCH/i.test(evidence)
-) {
-  finalState = "PUBLISHED_EXPIRED";
-} else if (error) {
+// Coordinator reads analyzeLead stamps only — never invent PUBLISHED from prose/regex.
+let finalState = error ? "RETRY_PENDING" : readProcessingState(evidence) || null;
+
+if (error) {
   finalState = "RETRY_PENDING";
-} else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) {
-  finalState = "HOT_VERIFIED";
-} else if (!finalState && token === "PUBLISHED") {
-  finalState = businessVerdict || "PUBLISHED_DATE_UNKNOWN";
-} else if (!finalState) {
-  finalState = "RETRY_PENDING";
+} else {
+  const pubAccept = acceptCanonicalPublishedTerminal({
+    token,
+    businessVerdict,
+    processingState: finalState,
+    policyFound: after?.policyFound,
+    policyExpiry: after?.policyExpiry ?? null,
+    evidence,
+    workerError: null,
+    runAt: new Date(),
+  });
+  if (pubAccept.ok) {
+    finalState = pubAccept.processingState;
+  } else if (finalState && String(finalState).startsWith("PUBLISHED")) {
+    // Stamped PUB without full canonical acceptance → fail closed (do not keep false PUB)
+    finalState = "RETRY_PENDING";
+  } else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) {
+    finalState = "HOT_VERIFIED";
+  } else if (!finalState) {
+    finalState = "RETRY_PENDING";
+  }
 }
 
 let reasonCode = error ? "ANALYZE_ERROR_OR_TIMEOUT" : finalState;
 if (!error && finalState === "RETRY_PENDING") {
   if (/Contaminazione critica|sito errato|IDENTITY:MISMATCH/i.test(evidence)) {
-    // Semantic conflict — do not infinite-retry wrong-site / name mismatch
     finalState = "REVIEW_HUMAN";
     reasonCode = "IDENTITY_MISMATCH";
   } else if (/PDF non processati/i.test(evidence)) reasonCode = "PDF_UNPROCESSED";
@@ -227,16 +233,16 @@ if (!error && finalState === "RETRY_PENDING") {
   else reasonCode = "RETRY_PENDING";
 }
 
-const outToken =
-  finalState === "PUBLISHED_EXPIRED" || finalState === "PUBLISHED_CURRENT" || finalState === "PUBLISHED_DATE_UNKNOWN"
-    ? "PUBLISHED"
-    : token;
+// Never override canonical token/BV — only echo analyzeLead
+const outToken = token;
 const outBv =
-  finalState === "PUBLISHED_EXPIRED"
-    ? "PUBLISHED_EXPIRED"
-    : finalState === "HOT_VERIFIED"
-      ? "HOT_VERIFIED"
-      : businessVerdict;
+  finalState === "HOT_VERIFIED"
+    ? "HOT_VERIFIED"
+    : finalState === "REVIEW_HUMAN"
+      ? "REVIEW_HUMAN"
+      : finalState === "OUT_OF_SCOPE"
+        ? "OUT_OF_SCOPE"
+        : businessVerdict;
 
 const row = {
   id: lead.id,
