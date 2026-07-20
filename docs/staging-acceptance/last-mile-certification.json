@@ -1,0 +1,78 @@
+﻿{
+    "verdict":  "PRODUCTION_RELEASE_CANDIDATE_HUMAN_SIGN_OFF_REQUIRED",
+    "testedCodeSha":  "d27fff1907e254fab93e1b9c6aa2cd7aa6801b54",
+    "artifactCommitSha":  null,
+    "remoteSha":  null,
+    "heidy":  {
+                  "validationStatus":  "CURRENT_VERIFIED",
+                  "runId":  "heidy-lastmile-1784559319272",
+                  "token":  "HOT",
+                  "db":  "C:\\Users\\Simone\\CascadeProjects\\windsurf-project-20\\data\\staging\\db\\giorgio-heidy-lastmile.db",
+                  "heidyAnalyzeTestedCodeSha":  "597257bf6fcc093f6f88a3edf2c207d4fb71096a",
+                  "frontier":  "C:\\Users\\Simone\\CascadeProjects\\windsurf-project-20\\data\\staging\\frontier\\heidy-lastmile-heidy-lastmile-1784559319272.sqlite",
+                  "counters":  {
+                                   "analyzed":  1,
+                                   "withPolicy":  0,
+                                   "published":  0,
+                                   "hot":  1,
+                                   "review":  0,
+                                   "reviewHuman":  0,
+                                   "retryPending":  0,
+                                   "technicalBlocked":  0,
+                                   "outOfScope":  0
+                               },
+                  "businessVerdict":  "HOT_VERIFIED",
+                  "crawlComplete":  true,
+                  "gatePass":  true,
+                  "processingState":  "HOT_VERIFIED"
+              },
+    "hotCompleteCount":  1,
+    "technicalToHuman":  0,
+    "counters":  {
+                     "technicalBlocked":  0,
+                     "reviewHuman":  0,
+                     "hot":  1,
+                     "retryPending":  0
+                 },
+    "browserSemantic":  {
+                            "pass":  true,
+                            "fail":  0,
+                            "passCount":  53
+                        },
+    "gareArtifactVerification":  {
+                                     "falseActionable":  0,
+                                     "provenanceFixture":  "100%",
+                                     "gatePass":  true,
+                                     "random25plus25":  true,
+                                     "inventedValues":  0,
+                                     "positiveControlRecall":  1
+                                 },
+    "matrix":  {
+                   "test:last-mile-gates":  "PASS",
+                   "test:hot-proof":  "PASS",
+                   "lint":  "PASS (0 errors)",
+                   "test:quality":  "PASS",
+                   "build":  "PASS",
+                   "test:frontier-evidence":  "PASS",
+                   "npm ci":  "RUN_ON_PUSH_MACHINE",
+                   "test:published-gold":  "PASS",
+                   "test:frontier-persistence":  "PASS",
+                   "test:gare-actionable":  "PASS",
+                   "test:staging-runtime":  "PASS",
+                   "test:gare-enrichment":  "PASS",
+                   "preflight:ocr":  "PASS",
+                   "test:safety":  "PASS",
+                   "test:gare-positive-control":  "PASS",
+                   "test:state-machine":  "PASS",
+                   "test:staging-browser":  "PASS",
+                   "test:ux-consistency":  "PASS",
+                   "test:ocr-contract":  "PASS",
+                   "test:published-fast-path":  "PASS",
+                   "test:stop-ship":  "PASS",
+                   "test:atomic-verdict":  "PASS",
+                   "typecheck":  "PASS",
+                   "test:frontier-resume":  "PASS"
+               },
+    "treeClean":  null,
+    "liveEffects":  "zero"
+}
