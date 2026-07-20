@@ -20,6 +20,7 @@ import {
 } from "@/lib/sanita/scan-engine-url";
 import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
 import { isInActionableSalesQueue, passesDefaultClientQueueGate } from "@/lib/sanita/actionable-queue";
+import { presentSanitaLead } from "@/lib/sanita/present-sanita-lead";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -140,14 +141,16 @@ export async function GET(req: Request) {
           { status: 404 }
         );
       }
+      const semantic = presentSanitaLead(lead);
       return NextResponse.json({
         success: true,
         found: true,
         lead,
+        semantic,
         data: [lead],
         meta: {
-          actionable: isInActionableSalesQueue(lead),
-          queueStatus: isInActionableSalesQueue(lead) ? "CURRENT" : "RESCAN_REQUIRED",
+          actionable: semantic.actionable,
+          queueStatus: semantic.queueStatus,
         },
       });
     }
@@ -179,12 +182,16 @@ export async function GET(req: Request) {
             ? isInActionableSalesQueue(l)
             : passesDefaultClientQueueGate(l)
         )
-      : leads.map((l) => ({
-          ...l,
-          _actionable: isInActionableSalesQueue(l),
-          _legacy: !isInActionableSalesQueue(l) && !!l.evidence,
-          _queueStatus: isInActionableSalesQueue(l) ? "CURRENT" : "RESCAN_REQUIRED",
-        }));
+      : leads.map((l) => {
+          const semantic = presentSanitaLead(l);
+          return {
+            ...l,
+            semantic,
+            _actionable: semantic.actionable,
+            _legacy: !semantic.actionable && !!l.evidence,
+            _queueStatus: semantic.queueStatus,
+          };
+        });
     return NextResponse.json({
       success: true,
       data,
