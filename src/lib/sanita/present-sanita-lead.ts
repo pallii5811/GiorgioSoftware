@@ -22,7 +22,7 @@ import {
   uxLabelForPublished,
   type PublishedSubtype,
 } from "@/lib/sanita/published-subtype";
-import { deriveVerdict, readVerdictToken, VERDICT_META, type Verdict } from "@/lib/sanita/verdict";
+import { deriveVerdict, VERDICT_META, type Verdict } from "@/lib/sanita/verdict";
 
 export type SanitaLeadLike = {
   id: string;

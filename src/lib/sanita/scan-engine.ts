@@ -483,8 +483,12 @@ export async function analyzeLead(
     if (analysis.policyObsolete) {
       evidenceBody = reconciled.note ?? analysis.evidence ?? evidenceBody;
     } else if (regional.policyFound) {
-      verdict = "REVIEW";
-      evidenceBody = `Portale regionale/ASL: possibile polizza ma PDF RC non sul sito — verifica manuale. ${regional.evidence || ""}`;
+      if (crawl.completeness?.complete && !analysis.policyFound) {
+        evidenceBody = `Crawl first-party completo: assenza polizza RC sul sito. Nota portale regionale (non bloccante HOT): ${regional.evidence || ""} ${evidenceBody}`.trim();
+      } else {
+        verdict = "REVIEW";
+        evidenceBody = `Portale regionale/ASL: possibile polizza ma PDF RC non sul sito — verifica manuale. ${regional.evidence || ""}`;
+      }
     } else if (regional.checked) {
       evidenceBody = `Sito: polizza non pubblicata in Trasparenza. Portali ASL/regionali: confermata assenza pubblicazione. ${analysis.evidence || ""}`;
     }
@@ -593,6 +597,21 @@ export async function analyzeLead(
         matchedOfficialRegistry: false,
         matchedGroupRelationship: false,
         sourceUrls: crawl.pagesVisited.slice(0, 5),
+        reasons: [idRes.reason],
+        conflicts: [],
+      });
+    } else if (technicalCrawlBlock && !positiveMismatch) {
+      identityEv = buildIdentityEvidence({
+        status: "INSUFFICIENT_TECHNICAL",
+        matchedLegalName: false,
+        matchedFacilityName: false,
+        matchedAddress: false,
+        matchedMunicipality: false,
+        matchedPhone: false,
+        matchedTaxIdentifier: false,
+        matchedOfficialRegistry: false,
+        matchedGroupRelationship: false,
+        sourceUrls: crawl.pagesVisited.slice(0, 3),
         reasons: [idRes.reason],
         conflicts: [],
       });
@@ -887,11 +906,16 @@ export async function analyzeLead(
             (crawl.policyPdfsQueued ?? 0) > (crawl.policyPdfsRead ?? 0) ||
             ccStamp.urlCapReached ||
             ccStamp.timeCapReached;
+          const technicalReview =
+            identityEv.status === "INSUFFICIENT_TECHNICAL" ||
+            !crawl.ok ||
+            incomplete;
           evidenceBody = stampProcessingMeta(evidenceBody, {
-            state: "REVIEW_HUMAN",
-            businessVerdict: "REVIEW_HUMAN",
-            validationStatus: incomplete ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
+            state: technicalReview ? "RETRY_PENDING" : "REVIEW_HUMAN",
+            businessVerdict: technicalReview ? "NONE" : "REVIEW_HUMAN",
+            validationStatus: technicalReview ? "REVALIDATION_PENDING" : "CONFLICT_FOUND",
           });
+          if (technicalReview) bumpCounter(counters, "retryPending");
         }
       }
     }
