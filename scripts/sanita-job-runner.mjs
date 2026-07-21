@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { prisma } from "@/lib/prisma";
 import {
   readSanitaJob,
@@ -19,6 +21,13 @@ if (!job) {
   console.error(`job ${jobId} not found`);
   process.exit(2);
 }
+
+// Frontier SQLite must live outside /opt/leadsniper (assertSafePath blocks production tree).
+const frontierDir =
+  process.env.SANITA_JOB_FRONTIER_DIR || join("/tmp", "leadsniper-sanita-job-frontier");
+mkdirSync(frontierDir, { recursive: true });
+process.env.FRONTIER_DB_PATH = join(frontierDir, `${jobId}.sqlite`);
+process.env.SHADOW_RUN_ID = jobId;
 
 let stopped = false;
 
@@ -103,22 +112,6 @@ async function runSingleLead() {
   const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
 
   try {
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: {
-        lastScannedAt: null,
-        evidence: null,
-        policyFound: false,
-        policyCompany: null,
-        policyMassimale: null,
-        policyNumber: null,
-        policyExpiry: null,
-        confidence: null,
-        websiteReachable: null,
-        pagesVisited: 0,
-        leadScore: 0,
-      },
-    });
     await ensureNotCancelled();
     applyState({
       progress: {
@@ -140,8 +133,8 @@ async function runSingleLead() {
       technicalBlocked: 0,
       outOfScope: 0,
     };
-    const freshLead = await prisma.lead.findUnique({ where: { id: lead.id } });
-    if (!freshLead) throw new Error("Lead non trovato dopo reset");
+    const freshLead = lead;
+    if (!freshLead) throw new Error("Lead non trovato");
     await analyzeLead(freshLead, counters);
     const finalLead = await prisma.lead.findUnique({ where: { id: lead.id } });
     if (!finalLead) throw new Error("Lead non trovato dopo analisi");
