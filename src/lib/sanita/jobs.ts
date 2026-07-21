@@ -45,6 +45,8 @@ export type SanitaJobRecord = {
   namespace?: string | null;
   canaryLeadIds?: string[];
   canaryLeads?: SanitaJobCanaryLead[];
+  forceRescan?: boolean;
+  skipExistingEvidence?: boolean;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -126,6 +128,8 @@ export function emptySanitaJob(input: {
   leadId?: string | null;
   canaryLeadIds?: string[];
   canaryLeads?: SanitaJobCanaryLead[];
+  forceRescan?: boolean;
+  skipExistingEvidence?: boolean;
 }) {
   const now = new Date().toISOString();
   const isCanary = input.mode === "region-canary";
@@ -142,9 +146,11 @@ export function emptySanitaJob(input: {
     processed: isCanary ? 0 : undefined,
     resumedFrom: isCanary ? null : undefined,
     noResume: isCanary ? true : undefined,
-    namespace: isCanary ? getSanitaJobNamespace(input.jobId) : null,
+    namespace: isCanary || input.mode === "single" ? getSanitaJobNamespace(input.jobId) : null,
     canaryLeadIds: input.canaryLeadIds,
     canaryLeads: input.canaryLeads,
+    forceRescan: input.forceRescan === true,
+    skipExistingEvidence: input.skipExistingEvidence === false ? false : undefined,
     createdAt: now,
     updatedAt: now,
     startedAt: null,
@@ -225,6 +231,7 @@ export function spawnSanitaJobRunner(jobId: string) {
         SCAN_ENGINE_LOCAL: "1",
         VERCEL: process.env.VERCEL ?? "0",
         SANITA_JOB_ID: jobId,
+        SANITA_JOB_LEAD_MAX_MS: process.env.SANITA_JOB_LEAD_MAX_MS ?? String(10 * 60_000),
       },
     });
   } catch (err) {

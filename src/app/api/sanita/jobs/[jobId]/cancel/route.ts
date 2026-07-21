@@ -3,6 +3,7 @@ import {
   readSanitaJob,
   writeSanitaJob,
 } from "@/lib/sanita/jobs";
+import { killProcessTree } from "@/lib/sanita/job-watchdog";
 import {
   getScanEngineUrl,
   HETZNER_SCAN_ENGINE,
@@ -48,11 +49,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ jobId: string
     },
   });
   if (next.pid) {
-    try {
-      process.kill(next.pid, "SIGTERM");
-    } catch {
-      /* already stopped */
-    }
+    killProcessTree(next.pid);
   } else {
     next = writeSanitaJob({
       ...next,

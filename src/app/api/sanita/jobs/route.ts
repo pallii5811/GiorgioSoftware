@@ -10,6 +10,7 @@ import {
   writeSanitaJob,
   type SanitaJobMode,
 } from "@/lib/sanita/jobs";
+import { reconcileStaleSanitaJobs } from "@/lib/sanita/job-watchdog";
 import { prisma } from "@/lib/prisma";
 import {
   getScanEngineUrl,
@@ -26,6 +27,9 @@ type CreateJobBody = {
   city?: string | null;
   leadId?: string | null;
   maxTargets?: number;
+  forceRescan?: boolean;
+  skipExistingEvidence?: boolean;
+  canaryLeadIds?: string[];
 };
 
 function stopShipRegionCanary(job: ReturnType<typeof emptySanitaJob>) {
@@ -87,6 +91,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const onlyActive = url.searchParams.get("active") === "1";
   const limit = Math.max(1, Math.min(20, Number(url.searchParams.get("limit") || 10)));
+  reconcileStaleSanitaJobs();
   let jobs = listSanitaJobs();
   if (onlyActive) jobs = jobs.filter((job) => job.status === "queued" || job.status === "running");
   return NextResponse.json({ success: true, jobs: jobs.slice(0, limit) });
@@ -133,6 +138,30 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    const pinned = Array.isArray(body.canaryLeadIds)
+      ? body.canaryLeadIds.map((id) => String(id).trim()).filter(Boolean)
+      : [];
+    if (pinned.length) {
+      if (pinned.length !== maxTargets) {
+        return NextResponse.json(
+          { success: false, error: `canaryLeadIds count mismatch (${pinned.length}/${maxTargets})` },
+          { status: 400 }
+        );
+      }
+      const rows = await prisma.lead.findMany({
+        where: { id: { in: pinned }, type: "HEALTHCARE", region },
+        select: { id: true, companyName: true, city: true },
+      });
+      if (rows.length !== pinned.length) {
+        return NextResponse.json({ success: false, error: "canaryLeadIds invalidi" }, { status: 400 });
+      }
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      canaryLeadIds = pinned;
+      canaryLeads = pinned.map((id) => {
+        const r = byId.get(id)!;
+        return { id: r.id, companyName: r.companyName, city: r.city };
+      });
+    } else {
     const unscanned = await prisma.lead.findMany({
       where: {
         type: "HEALTHCARE",
@@ -172,7 +201,11 @@ export async function POST(req: Request) {
       companyName: l.companyName,
       city: l.city,
     }));
+    }
   }
+
+  const forceRescan =
+    body.forceRescan === true || mode === "single" || mode === "region-canary";
 
   const candidate = emptySanitaJob({
     jobId,
@@ -182,7 +215,11 @@ export async function POST(req: Request) {
     leadId: leadId || null,
     canaryLeadIds,
     canaryLeads,
+    forceRescan,
+    skipExistingEvidence: body.skipExistingEvidence,
   });
+
+  reconcileStaleSanitaJobs();
 
   if (mode === "region-canary") {
     const ship = stopShipRegionCanary(candidate);

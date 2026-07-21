@@ -9,6 +9,14 @@ import { runStreamingScan } from "@/lib/sanita/scan-stream";
 import { serializeLeadForClient } from "@/lib/sanita/lead-serialize";
 import { readBusinessVerdict, readProcessingState } from "@/lib/sanita/processing-state";
 import { isInActionableSalesQueue } from "@/lib/sanita/actionable-queue";
+import {
+  SANITA_JOB_LEAD_MAX_MS,
+  markLeadJobIncomplete,
+  runWithJobLeadTimeout,
+  startJobHeartbeat,
+  writeJobCheckpoint,
+} from "@/lib/sanita/job-watchdog";
+import { applyCertifiedFromJobLead } from "@/lib/sanita/job-certified-apply";
 
 const jobId = process.argv[2];
 if (!jobId) {
@@ -103,13 +111,39 @@ async function ensureNotCancelled() {
   }
 }
 
+async function analyzeLeadWithWatchdog(lead, counters, opts = {}) {
+  const leadMaxMs = Number(process.env.SANITA_JOB_LEAD_MAX_MS || SANITA_JOB_LEAD_MAX_MS || 0);
+  const stopHeartbeat = startJobHeartbeat(jobId, () => ({
+    currentStructure: lead.companyName,
+    currentMessage: opts.message || "Verifica in corso.",
+  }));
+  try {
+    const { analyzeLead } = await import("@/lib/sanita/scan-engine");
+    await runWithJobLeadTimeout(() => analyzeLead(lead, counters), leadMaxMs);
+    return { timedOut: false };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/Verifica non completata entro/i.test(msg)) {
+      await markLeadJobIncomplete(lead.id, msg, { retriesExhausted: true });
+      return { timedOut: true, message: msg };
+    }
+    throw error;
+  } finally {
+    stopHeartbeat();
+    const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
+    const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
+    await terminateOcrWorker().catch(() => {});
+    await closeMapsBrowserPool().catch(() => {});
+  }
+}
+
 async function runSingleLead() {
   const lead = await prisma.lead.findUnique({ where: { id: job.leadId || "" } });
   if (!lead) throw new Error("Lead non trovato");
 
-  const { analyzeLead } = await import("@/lib/sanita/scan-engine");
-  const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
-  const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
+  if (job.forceRescan) {
+    process.env.FORCE_RESCAN_PUB = "1";
+  }
 
   try {
     await ensureNotCancelled();
@@ -133,34 +167,64 @@ async function runSingleLead() {
       technicalBlocked: 0,
       outOfScope: 0,
     };
-    const freshLead = lead;
-    if (!freshLead) throw new Error("Lead non trovato");
-    await analyzeLead(freshLead, counters);
+    const analysis = await analyzeLeadWithWatchdog(lead, counters, {
+      message: "Verifica in corso sulla struttura selezionata.",
+    });
+
     const finalLead = await prisma.lead.findUnique({ where: { id: lead.id } });
     if (!finalLead) throw new Error("Lead non trovato dopo analisi");
     const clientLead = serializeLeadForClient(finalLead);
-    const certifiedResults = isCertifiedLead(clientLead) ? 1 : 0;
+    let certifiedResults = isCertifiedLead(clientLead) ? 1 : 0;
     const ps = readProcessingState(finalLead.evidence);
-    applyState({
+
+    let applyResult = null;
+    if (!analysis.timedOut && certifiedResults > 0) {
+      applyResult = await applyCertifiedFromJobLead(lead.id, jobId);
+    }
+
+    const completed = applyState({
       status: "completed",
       finishedAt: new Date().toISOString(),
       resumable: false,
       pid: null,
-      lastUpdateLabel: "Completato",
+      lastUpdateLabel: analysis.timedOut ? "Controllo necessario" : "Completato",
       progress: {
         structuresControlled: 1,
         totalStructures: 1,
-        certifiedResults,
-        autoVerificationsPending: ps === "RETRY_PENDING" ? 1 : 0,
+        certifiedResults: analysis.timedOut ? 0 : certifiedResults,
+        autoVerificationsPending:
+          analysis.timedOut || ps === "RETRY_PENDING" || ps === "TECHNICAL_BLOCKED" ? 1 : 0,
         manualChecksNeeded: ps === "REVIEW_HUMAN" ? 1 : 0,
         percent: 100,
         currentStructure: finalLead.companyName,
-        currentMessage: "Controllo completato.",
+        currentMessage: analysis.timedOut
+          ? "Verifica non completata entro il limite. Riprova più tardi."
+          : applyResult?.applied
+            ? "Risultato certificato applicato."
+            : "Controllo completato.",
       },
     });
-  } finally {
-    await terminateOcrWorker().catch(() => {});
-    await closeMapsBrowserPool().catch(() => {});
+    if (completed) writeJobCheckpoint(completed, { apply: applyResult, timedOut: analysis.timedOut });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const current = readSanitaJob(jobId);
+    const failed = current
+      ? applyState({
+          status: "failed",
+          finishedAt: new Date().toISOString(),
+          resumable: true,
+          pid: null,
+          lastUpdateLabel: "Errore",
+          errorMessage: msg,
+          progress: {
+            ...current.progress,
+            currentMessage: "Errore durante il controllo.",
+            currentStructure: null,
+          },
+        })
+      : null;
+    if (failed) writeJobCheckpoint(failed, { error: msg });
+    throw error;
   }
 }
 
@@ -190,7 +254,10 @@ async function runRegionCanary() {
   if (job.noResume !== true) stopShip("noResume not true");
   if (leadIds.length !== targetTotal) stopShip("leadIds count mismatch");
 
-  const { analyzeLead } = await import("@/lib/sanita/scan-engine");
+  if (job.forceRescan) {
+    process.env.FORCE_RESCAN_PUB = "1";
+  }
+
   const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
   const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
 
@@ -235,12 +302,17 @@ async function runRegionCanary() {
         },
       });
 
-      await analyzeLead(lead, counters);
+      const outcome = await analyzeLeadWithWatchdog(lead, counters, {
+        message: `Verifica in corso (${processed + 1}/${targetTotal}).`,
+      });
       processed++;
 
       const finalLead = await prisma.lead.findUnique({ where: { id: lid } });
       const clientLead = finalLead ? serializeLeadForClient(finalLead) : null;
-      if (clientLead && isCertifiedLead(clientLead)) certifiedResults++;
+      if (!outcome.timedOut && clientLead && isCertifiedLead(clientLead)) {
+        await applyCertifiedFromJobLead(lid, jobId);
+        certifiedResults++;
+      }
       const ps = readProcessingState(finalLead?.evidence ?? null);
       if (ps === "RETRY_PENDING") autoVerificationsPending++;
       if (ps === "REVIEW_HUMAN") manualChecksNeeded++;
