@@ -172,12 +172,38 @@ async function runRegionOrCity() {
   let lastTotal = 0;
   const maxStructures = Math.max(0, Number(process.env.SANITA_JOB_MAX_STRUCTURES || 0)) || null;
   let canaryStop = false;
+  let canaryAnalyzed = 0;
+
+  function maybeStopCanary(reason) {
+    if (!maxStructures || canaryStop) return;
+    if (canaryAnalyzed >= maxStructures || lastStructuresControlled >= maxStructures) {
+      canaryStop = true;
+      applyState({
+        status: "interrupted",
+        finishedAt: new Date().toISOString(),
+        resumable: true,
+        pid: null,
+        lastUpdateLabel: "Riprendibile",
+        progress: {
+          structuresControlled: lastStructuresControlled,
+          totalStructures: lastTotal || null,
+          certifiedResults,
+          autoVerificationsPending,
+          manualChecksNeeded,
+          currentMessage: reason || `Limite canary (${maxStructures}) raggiunto — job riprendibile.`,
+          currentStructure: null,
+        },
+      });
+      process.exit(0);
+    }
+  }
 
   await runStreamingScan(
     {
       region: job.region,
       city: job.city,
-      continueAnalysis: (job.progress?.structuresControlled || 0) > 0,
+      // ponytail: canary must not resume regional DB progress — only analyze next N fresh leads.
+      continueAnalysis: maxStructures ? false : (job.progress?.structuresControlled || 0) > 0,
     },
     (event, data) => {
       const latest = readSanitaJob(jobId);
@@ -208,15 +234,14 @@ async function runRegionOrCity() {
             currentMessage,
           },
         });
+        maybeStopCanary(`Limite canary (${maxStructures}) raggiunto — job riprendibile.`);
       } else if (event === "lead" && data.lead && typeof data.lead === "object") {
         const lead = data.lead;
+        canaryAnalyzed++;
         if (isCertifiedLead(lead)) certifiedResults++;
         const ps = lead.semantic?.processingState ?? readProcessingState(lead.evidence ?? null);
         if (ps === "RETRY_PENDING") autoVerificationsPending++;
         if (ps === "REVIEW_HUMAN") manualChecksNeeded++;
-        if (maxStructures && lastStructuresControlled >= maxStructures) {
-          canaryStop = true;
-        }
         applyState({
           progress: {
             certifiedResults,
@@ -225,6 +250,7 @@ async function runRegionOrCity() {
             currentStructure: typeof lead.companyName === "string" ? lead.companyName : null,
           },
         });
+        maybeStopCanary(`Limite canary (${maxStructures}) raggiunto — job riprendibile.`);
       } else if (event === "paused" || event === "complete") {
         const stats = (data.stats || {}) ;
         const structuresControlled = Number(stats.done ?? lastStructuresControlled ?? 0);
@@ -268,26 +294,6 @@ async function runRegionOrCity() {
       }
     }
   );
-
-  if (canaryStop && maxStructures) {
-    applyState({
-      status: "interrupted",
-      finishedAt: new Date().toISOString(),
-      resumable: true,
-      pid: null,
-      lastUpdateLabel: "Riprendibile",
-      progress: {
-        structuresControlled: lastStructuresControlled,
-        totalStructures: lastTotal || null,
-        certifiedResults,
-        autoVerificationsPending,
-        manualChecksNeeded,
-        currentMessage: `Limite canary (${maxStructures}) raggiunto — job riprendibile.`,
-        currentStructure: null,
-      },
-    });
-    process.exit(0);
-  }
 }
 
 try {
