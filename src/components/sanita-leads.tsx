@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Stethoscope, Search, Loader2, AlertTriangle, CheckCircle2, MapPin, Globe,
-  Phone, HelpCircle, Building2, ShieldAlert, ShieldCheck, ShieldQuestion,
+  Phone, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion,
   Filter, X, RefreshCw, Download, Flame, FileSearch, ExternalLink,
   Info, Zap, RotateCcw,
 } from "lucide-react"
@@ -26,6 +26,9 @@ import { LeadDetail } from "@/components/lead-detail"
 import { cn } from "@/lib/utils"
 import { consumeSanitaScanStream } from "@/lib/sanita/scan-sse-client"
 import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
+import { auditQueueBadge, AUDIT_BADGE_UI } from "@/lib/sanita/audit-queue-badge"
+import { readProcessingState, readBusinessVerdict } from "@/lib/sanita/processing-state"
+import { isInActionableSalesQueue } from "@/lib/sanita/actionable-queue"
 
 type Lead = {
   id: string
@@ -52,9 +55,19 @@ type Lead = {
   leadScore: number | null
   notes: string | null
   reminderAt: string | null
+  semantic?: {
+    actionable?: boolean
+    processingState?: string | null
+    businessVerdict?: string | null
+    queueStatus?: string
+  } | null
+  _actionable?: boolean
+  _legacy?: boolean
+  _queueStatus?: string
 }
 
 type VerdictFilter = "ALL" | Verdict | "PENDING"
+type ViewTab = "audit" | "commercial"
 
 type RegionDiscoveryMeta = {
   mapsCityOffset: number
@@ -67,6 +80,30 @@ type RegionMeta = {
   done: number
   pending: number
   discovery?: RegionDiscoveryMeta
+}
+
+type SanitaApiMeta = {
+  regions?: Record<string, RegionMeta>
+  actionableCount?: number
+  dbTotal?: number
+  totalReturned?: number
+  filteredDefault?: boolean
+  includeAll?: boolean
+  revalidationUiLock?: boolean
+  kpis?: {
+    total: number
+    actionable: number
+    HOT_VERIFIED: number
+    PUBLISHED_CURRENT: number
+    PUBLISHED_EXPIRED: number
+    PUBLISHED_DATE_UNKNOWN: number
+    RETRY_PENDING: number
+    REVIEW_HUMAN: number
+    TECHNICAL_BLOCKED: number
+    OUT_OF_SCOPE: number
+    inRevalidation: number
+    LEGACY: number
+  }
 }
 
 const VERDICT_UI: Record<Verdict, { label: string; subtitle: string; cls: string; icon: typeof CheckCircle2 }> = {
@@ -101,47 +138,67 @@ export function SanitaLeads() {
   const [discoveryMeta, setDiscoveryMeta] = useState<Record<string, RegionDiscoveryMeta>>({})
   const [processingName, setProcessingName] = useState<string | null>(null)
   const [freshLeadIds, setFreshLeadIds] = useState<Set<string>>(new Set())
+  const [viewTab, setViewTab] = useState<ViewTab>("audit")
+  const [apiMeta, setApiMeta] = useState<SanitaApiMeta | null>(null)
 
-  /** Conteggi per regione — solo lead visibili in questa sessione + progresso live. */
+  const isLeadActionable = (l: Lead) =>
+    Boolean(l.semantic?.actionable ?? l._actionable ?? isInActionableSalesQueue(l))
+
+  /** Conteggi territoriali da meta.regions (DB), non dall'array filtrato UI. */
   const regionStats = useMemo(() => {
     const out: Record<string, { total: number; done: number; hot: number; pending: number }> = {}
     for (const r of ["Veneto", "Campania"] as const) {
-      const list = leads.filter((l) => l.region === r && l.lastScannedAt)
+      const m = apiMeta?.regions?.[r]
+      const total = m?.total ?? 0
+      const done = m?.done ?? 0
+      // pending da meta; livePending ricalcolato sotto se scansione attiva
+      const metaPending = m?.pending ?? Math.max(0, total - done)
       let hot = 0
-      for (const l of list) {
-        const v = deriveVerdict({
-          lastScannedAt: l.lastScannedAt,
-          policyFound: l.policyFound,
-          websiteReachable: l.websiteReachable,
-          website: l.website,
-          evidence: l.evidence,
-        })
-        if (v === "HOT") hot++
+      for (const l of leads) {
+        if (l.region !== r) continue
+        if (readProcessingState(l.evidence) === "HOT_VERIFIED") hot++
+        else if (
+          deriveVerdict({
+            lastScannedAt: l.lastScannedAt,
+            policyFound: l.policyFound,
+            websiteReachable: l.websiteReachable,
+            website: l.website,
+            evidence: l.evidence,
+          }) === "HOT" &&
+          isLeadActionable(l)
+        ) {
+          hot++
+        }
       }
       const liveTotal =
         isScanning && activeScan?.region === r
-          ? Math.max(activeScan.total, activeScan.done)
-          : list.length
+          ? Math.max(activeScan.total, activeScan.done, total)
+          : total
       const liveDone =
-        isScanning && activeScan?.region === r ? activeScan.done : list.length
+        isScanning && activeScan?.region === r ? Math.max(activeScan.done, done) : done
       out[r] = {
         total: liveTotal,
         done: liveDone,
         hot,
-        pending: Math.max(0, liveTotal - liveDone),
+        pending:
+          isScanning && activeScan?.region === r
+            ? Math.max(0, liveTotal - liveDone)
+            : metaPending,
       }
     }
     return out
-  }, [leads, isScanning, activeScan])
+  }, [leads, apiMeta, isScanning, activeScan])
 
   const fetchLeads = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setIsLoading(true)
     try {
-      const res = await fetch("/api/sanita?includePending=1")
+      const res = await fetch("/api/sanita?includePending=1&includeAll=1")
       const json = await res.json()
       if (json.success) {
         setLeads(json.data)
-        const regions = json.meta?.regions as Record<string, RegionMeta> | undefined
+        const meta = (json.meta ?? {}) as SanitaApiMeta
+        setApiMeta(meta)
+        const regions = meta.regions
         if (regions) {
           const next: Record<string, RegionDiscoveryMeta> = {}
           for (const [r, m] of Object.entries(regions)) {
@@ -150,7 +207,9 @@ export function SanitaLeads() {
           setDiscoveryMeta(next)
         }
         if (!opts?.silent) {
-          toast.success(`${json.data.length} strutture caricate dal database`)
+          const tot = meta.dbTotal ?? json.data.length
+          const act = meta.actionableCount ?? 0
+          toast.success(`DB ${tot} strutture · coda certificata ${act}`)
         }
       } else if (!opts?.silent) {
         toast.error(json.error ?? "Errore nel caricamento")
@@ -440,18 +499,44 @@ export function SanitaLeads() {
     }
   }
 
+  const revalidationUiLock = Boolean(
+    apiMeta?.revalidationUiLock ??
+      ((apiMeta?.actionableCount ?? 0) === 0 && (apiMeta?.dbTotal ?? leads.length) > 0)
+  )
+
+  const guardScanAction = (label: string, run: () => void) => {
+    if (revalidationUiLock) {
+      const ok = confirm(
+        `${label}\n\nRivalidazione completa in corso (coda commerciale fail-closed).\n` +
+          `Avviare comunque una scansione regionale rischia conflitti con giorgio-revalidate.\n\nConfermi esplicitamente?`
+      )
+      if (!ok) return
+    }
+    run()
+  }
+
   const startRegionScan = (region: "Veneto" | "Campania") => {
-    void runFullScan({ region, continueAnalysis: false })
+    guardScanAction(`Scansiona ${region}`, () => {
+      void runFullScan({ region, continueAnalysis: false })
+    })
   }
 
   const continueRegionScan = (region: "Veneto" | "Campania") => {
-    void runFullScan({ region, continueAnalysis: true })
+    guardScanAction(`Continua ${region}`, () => {
+      void runFullScan({ region, continueAnalysis: true })
+    })
   }
 
   const resetRegionScan = (region: "Veneto" | "Campania") => {
-    if (!confirm(`Reset ${region}: cancella i lead e riparte da zero. Confermi?`)) return
-    try { window.localStorage.removeItem(`sanita.scan.${region}`) } catch {}
-    void runFullScan({ region, reset: true })
+    guardScanAction(`Reset ${region}`, () => {
+      if (!confirm(`Reset ${region}: cancella i lead e riparte da zero. Confermi?`)) return
+      try {
+        window.localStorage.removeItem(`sanita.scan.${region}`)
+      } catch {
+        /* */
+      }
+      void runFullScan({ region, reset: true })
+    })
   }
 
   const verdictOf = (l: Lead): Verdict | null =>
@@ -546,10 +631,72 @@ export function SanitaLeads() {
     }
   }
 
-  const visibleLeads = useMemo(
-    () => leads.filter((l) => l.lastScannedAt != null || l.evidence?.trim() || Boolean(l.website?.trim())),
-    [leads]
-  )
+  const visibleLeads = useMemo(() => {
+    const base = leads.filter(
+      (l) => l.lastScannedAt != null || l.evidence?.trim() || Boolean(l.website?.trim())
+    )
+    if (viewTab === "commercial") {
+      return base.filter((l) => isLeadActionable(l))
+    }
+    return base
+  }, [leads, viewTab])
+
+  const auditKpis = useMemo(() => {
+    const k = apiMeta?.kpis
+    if (k) {
+      return {
+        total: k.total,
+        actionable: k.actionable,
+        HOT_VERIFIED: k.HOT_VERIFIED,
+        PUBLISHED_CURRENT: k.PUBLISHED_CURRENT,
+        PUBLISHED_EXPIRED: k.PUBLISHED_EXPIRED,
+        PUBLISHED_DATE_UNKNOWN: k.PUBLISHED_DATE_UNKNOWN,
+        inRevalidation: k.inRevalidation,
+        RETRY_PENDING: k.RETRY_PENDING,
+        REVIEW_HUMAN: k.REVIEW_HUMAN,
+        TECHNICAL_BLOCKED: k.TECHNICAL_BLOCKED,
+        OUT_OF_SCOPE: k.OUT_OF_SCOPE,
+      }
+    }
+    // fallback client se meta assente
+    let HOT_VERIFIED = 0,
+      PUBLISHED_CURRENT = 0,
+      PUBLISHED_EXPIRED = 0,
+      PUBLISHED_DATE_UNKNOWN = 0,
+      RETRY_PENDING = 0,
+      REVIEW_HUMAN = 0,
+      TECHNICAL_BLOCKED = 0,
+      OUT_OF_SCOPE = 0,
+      actionable = 0,
+      inRevalidation = 0
+    for (const l of leads) {
+      if (isLeadActionable(l)) actionable++
+      else inRevalidation++
+      const ps = readProcessingState(l.evidence)
+      const bv = readBusinessVerdict(l.evidence)
+      if (ps === "HOT_VERIFIED") HOT_VERIFIED++
+      else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") PUBLISHED_CURRENT++
+      else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") PUBLISHED_EXPIRED++
+      else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") PUBLISHED_DATE_UNKNOWN++
+      else if (ps === "RETRY_PENDING") RETRY_PENDING++
+      else if (ps === "REVIEW_HUMAN" || bv === "REVIEW_HUMAN") REVIEW_HUMAN++
+      else if (ps === "TECHNICAL_BLOCKED") TECHNICAL_BLOCKED++
+      else if (ps === "OUT_OF_SCOPE" || bv === "OUT_OF_SCOPE") OUT_OF_SCOPE++
+    }
+    return {
+      total: apiMeta?.dbTotal ?? leads.length,
+      actionable: apiMeta?.actionableCount ?? actionable,
+      HOT_VERIFIED,
+      PUBLISHED_CURRENT,
+      PUBLISHED_EXPIRED,
+      PUBLISHED_DATE_UNKNOWN,
+      inRevalidation: apiMeta?.kpis?.inRevalidation ?? inRevalidation,
+      RETRY_PENDING,
+      REVIEW_HUMAN,
+      TECHNICAL_BLOCKED,
+      OUT_OF_SCOPE,
+    }
+  }, [leads, apiMeta])
 
   // Città disponibili (nel set filtrato per regione), ordinate
   const cities = useMemo(() => {
@@ -590,20 +737,19 @@ export function SanitaLeads() {
     [visibleLeads, regionFilter, selectedCity]
   )
   const kpi = useMemo(() => {
-    let hot = 0, pub = 0, review = 0, pending = 0
+    let hot = 0, pub = 0, review = 0
     for (const l of scope) {
       const v = verdictOf(l)
       if (v === "HOT") hot++
       else if (v === "PUBLISHED") pub++
       else if (v === "REVIEW") review++
-      else pending++
     }
     const scanned = scope.filter((l) => l.lastScannedAt != null).length
     const queueTotal =
       isScanning && activeScan && regionFilter === activeScan.region
         ? Math.max(activeScan.total, scanned)
         : scope.length
-  const pendingInQueue =
+    const pendingInQueue =
       isScanning && activeScan && regionFilter === activeScan.region
         ? Math.max(0, queueTotal - scanned)
         : scope.filter((l) => !l.lastScannedAt).length
@@ -622,8 +768,21 @@ export function SanitaLeads() {
   }
 
   const exportCsv = () => {
-    if (filtered.length === 0) { toast.info("Nessun lead da esportare"); return }
-    const rows = filtered.map((l) => {
+    // CSV cliente: solo coda commerciale certificata (mai legacy/retry/review/tech)
+    const commercial = leads.filter((l) => isLeadActionable(l))
+    const exportRows =
+      viewTab === "commercial"
+        ? filtered.filter((l) => isLeadActionable(l))
+        : commercial.filter((l) => {
+            if (regionFilter !== "ALL" && l.region !== regionFilter) return false
+            if (selectedCity && l.city !== selectedCity) return false
+            return true
+          })
+    if (exportRows.length === 0) {
+      toast.info("Nessun lead certificato da esportare (coda commerciale vuota o filtrata)")
+      return
+    }
+    const rows = exportRows.map((l) => {
       const v = verdictOf(l)
       const { body, fonti } = parseEvidenceSections(l.evidence)
       return {
@@ -647,8 +806,8 @@ export function SanitaLeads() {
         FontiControllate: fonti ?? "",
       }
     })
-    downloadCsv(`lead-sanita-${new Date().toISOString().slice(0, 10)}.csv`, rows)
-    toast.success(`Esportati ${rows.length} lead in CSV`)
+    downloadCsv(`lead-sanita-commerciale-${new Date().toISOString().slice(0, 10)}.csv`, rows)
+    toast.success(`Esportati ${rows.length} lead certificati (CSV cliente)`)
   }
 
   const formatDate = (s: string | null) =>
@@ -877,20 +1036,18 @@ export function SanitaLeads() {
   const contactExtras = (l: Lead) =>
     [l.email, l.pec, l.piva].filter(Boolean).length
 
-  const KPIS = [
-    {
-      key: "total",
-      label: "Strutture",
-      value:
-        isScanning && activeScan && regionFilter === activeScan.region && kpi.queueTotal > 0
-          ? `${kpi.total} / ${kpi.queueTotal}`
-          : kpi.total,
-      cls: "",
-      icon: Building2,
-    },
-    { key: "hot", label: "Prioritari Gelli", value: kpi.hot, cls: "text-red-600", icon: ShieldAlert, filter: "HOT" as const },
-    { key: "review", label: "Da verificare", value: kpi.review, cls: "text-amber-600", icon: ShieldQuestion, filter: "REVIEW" as const },
-    { key: "pub", label: "Polizza pubblicata", value: kpi.pub, cls: "text-emerald-600", icon: ShieldCheck, filter: "PUBLISHED" as const },
+  const AUDIT_KPIS: Array<{ key: string; label: string; value: number; cls?: string }> = [
+    { key: "total", label: "Strutture totali", value: auditKpis.total },
+    { key: "actionable", label: "Certificati vendibili", value: auditKpis.actionable, cls: "text-emerald-700" },
+    { key: "HOT_VERIFIED", label: "HOT_VERIFIED", value: auditKpis.HOT_VERIFIED, cls: "text-red-600" },
+    { key: "PUBLISHED_CURRENT", label: "PUBLISHED_CURRENT", value: auditKpis.PUBLISHED_CURRENT, cls: "text-emerald-600" },
+    { key: "PUBLISHED_EXPIRED", label: "PUBLISHED_EXPIRED", value: auditKpis.PUBLISHED_EXPIRED, cls: "text-amber-700" },
+    { key: "PUBLISHED_DATE_UNKNOWN", label: "PUBLISHED_DATE_UNKNOWN", value: auditKpis.PUBLISHED_DATE_UNKNOWN, cls: "text-amber-600" },
+    { key: "inRevalidation", label: "In rivalidazione", value: auditKpis.inRevalidation, cls: "text-indigo-700" },
+    { key: "RETRY_PENDING", label: "RETRY_PENDING", value: auditKpis.RETRY_PENDING, cls: "text-sky-700" },
+    { key: "REVIEW_HUMAN", label: "REVIEW_HUMAN", value: auditKpis.REVIEW_HUMAN, cls: "text-amber-700" },
+    { key: "TECHNICAL_BLOCKED", label: "TECHNICAL_BLOCKED", value: auditKpis.TECHNICAL_BLOCKED, cls: "text-rose-700" },
+    { key: "OUT_OF_SCOPE", label: "OUT_OF_SCOPE", value: auditKpis.OUT_OF_SCOPE, cls: "text-slate-600" },
   ]
 
   return (
@@ -909,12 +1066,63 @@ export function SanitaLeads() {
           </p>
         </div>
 
+        {revalidationUiLock && (
+          <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+            <p className="font-semibold">Rivalidazione completa in corso</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-indigo-900/90">
+              I record non certificati sono visibili soltanto per audit e non fanno parte della coda commerciale.
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Card className="border-border/60 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">A · Totale database</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums">{auditKpis.total}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Tutte le strutture HEALTHCARE in DB</p>
+            </CardContent>
+          </Card>
+          <Card className="border-emerald-200/80 bg-emerald-50/40 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/80">B · Coda commerciale certificata</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">{auditKpis.actionable}</p>
+              <p className="mt-1 text-[11px] text-emerald-900/70">Fail-closed · solo evidence corrente vendibile</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          <button
+            type="button"
+            onClick={() => setViewTab("audit")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition",
+              viewTab === "audit" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Tutte le strutture / Audit
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewTab("commercial")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition",
+              viewTab === "commercial" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Coda commerciale certificata
+          </button>
+        </div>
+
         <Card className="border-border/60 shadow-sm">
           <CardContent className="space-y-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dati</p>
-                <p className="text-[11px] text-muted-foreground">Esporta o ricarica dal database</p>
+                <p className="text-[11px] text-muted-foreground">
+                  CSV cliente = solo certificati · vista {viewTab === "audit" ? "audit" : "commerciale"}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={exportCsv} disabled={isScanning}>
@@ -929,6 +1137,7 @@ export function SanitaLeads() {
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Scansione territoriale
+                {revalidationUiLock ? " · protetta (rivalidazione attiva)" : ""}
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {(["Veneto", "Campania"] as const).map((region) => (
@@ -939,11 +1148,24 @@ export function SanitaLeads() {
                     <p className="text-sm font-semibold text-foreground">{region}</p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
                       {regionStats[region].done}/{regionStats[region].total} strutture analizzate
+                      {regionStats[region].pending > 0
+                        ? ` · ${regionStats[region].pending} pending`
+                        : ""}
                     </p>
                     <Button
                       onClick={() => startRegionScan(region)}
                       disabled={isScanning}
-                      className="mt-3 h-10 w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm hover:from-indigo-700 hover:to-violet-700"
+                      title={
+                        revalidationUiLock
+                          ? "Richiede conferma: rivalidazione in corso"
+                          : undefined
+                      }
+                      className={cn(
+                        "mt-3 h-10 w-full text-white shadow-sm",
+                        revalidationUiLock
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700"
+                      )}
                     >
                       {isScanning && activeScan?.region === region ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -959,6 +1181,11 @@ export function SanitaLeads() {
                         className="h-8 flex-1 text-xs"
                         onClick={() => continueRegionScan(region)}
                         disabled={isScanning}
+                        title={
+                          revalidationUiLock
+                            ? "Richiede conferma: rivalidazione in corso"
+                            : undefined
+                        }
                       >
                         Continua
                       </Button>
@@ -968,6 +1195,11 @@ export function SanitaLeads() {
                         className="h-8 flex-1 text-xs text-muted-foreground"
                         onClick={() => resetRegionScan(region)}
                         disabled={isScanning}
+                        title={
+                          revalidationUiLock
+                            ? "Richiede conferma: rivalidazione in corso"
+                            : undefined
+                        }
                       >
                         Reset
                       </Button>
@@ -1166,31 +1398,18 @@ export function SanitaLeads() {
       </Card>
       )}
 
-      {/* KPI cliccabili */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {KPIS.map((k) => {
-          const active = "filter" in k && verdictFilter === k.filter
-          return (
-            <button
-              key={k.key}
-              onClick={() => "filter" in k && setVerdictFilter(active ? "ALL" : k.filter!)}
-              className={cn(
-                "text-left transition",
-                "filter" in k ? "cursor-pointer" : "cursor-default"
-              )}
-            >
-              <Card className={cn("ring-soft border-border/60", active && "ring-2 ring-primary")}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
-                    <k.icon className={cn("h-4 w-4", k.cls || "text-muted-foreground")} />
-                  </div>
-                  <div className={cn("mt-2 text-2xl font-bold tabular-nums", k.cls)}>{k.value}</div>
-                </CardContent>
-              </Card>
-            </button>
-          )
-        })}
+      {/* KPI audit (meta.kpis) — non calcolati solo dall'array filtrato */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        {AUDIT_KPIS.map((k) => (
+          <Card key={k.key} className="ring-soft border-border/60">
+            <CardContent className="p-3">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {k.label}
+              </span>
+              <div className={cn("mt-1 text-xl font-bold tabular-nums", k.cls)}>{k.value}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* TOOLBAR FILTRI */}
@@ -1221,6 +1440,32 @@ export function SanitaLeads() {
                 )}
               >
                 {r === "ALL" ? "Tutte" : r}
+              </button>
+            ))}
+          </div>
+
+          <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted/40 p-0.5">
+            {(
+              [
+                ["ALL", "Tutti"],
+                ["HOT", "HOT"],
+                ["PUBLISHED", "PUB"],
+                ["REVIEW", "Review"],
+                ["PENDING", "Pending"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setVerdictFilter(key)}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+                  verdictFilter === key
+                    ? "bg-card shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -1287,7 +1532,9 @@ export function SanitaLeads() {
                 toast.info("Seleziona un comune e una regione (Veneto o Campania)")
                 return
               }
-              void runFullScan({ region, city: selectedCity, continueAnalysis: false })
+              guardScanAction(`Scansiona comune ${selectedCity}`, () => {
+                void runFullScan({ region, city: selectedCity, continueAnalysis: false })
+              })
             }}
             disabled={isScanning || !selectedCity}
             className="h-9"
@@ -1316,7 +1563,9 @@ export function SanitaLeads() {
                   )}
                 </div>
               ) : visibleLeads.length === 0
-                ? "Tabella vuota. Clicca Scansiona Veneto o Campania — i lead compariranno uno alla volta, in tempo reale."
+                ? viewTab === "commercial"
+                  ? "Coda commerciale vuota (fail-closed). I record in DB restano nella tab Audit."
+                  : "Tabella vuota. Clicca Scansiona Veneto o Campania — i lead compariranno uno alla volta, in tempo reale."
                 : "Nessun risultato per i filtri selezionati."}
             </div>
           ) : (
@@ -1352,14 +1601,16 @@ export function SanitaLeads() {
                     </tr>
                   )}
                   {filtered.map((l) => {
-                    const v = verdictOf(l)
                     const docs = policyDocLinks(l)
+                    const auditBadge = viewTab === "audit" ? auditQueueBadge(l) : null
+                    const auditUi = auditBadge ? AUDIT_BADGE_UI[auditBadge] : null
                     return (
                     <tr
                       key={l.id}
                       className={cn(
                         "border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors duration-700",
-                        freshLeadIds.has(l.id) && "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200"
+                        freshLeadIds.has(l.id) && "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200",
+                        auditBadge && "bg-slate-50/50"
                       )}
                     >
                       <td className="px-3 py-2.5 align-top">
@@ -1382,6 +1633,16 @@ export function SanitaLeads() {
                             >
                               {l.companyName}
                             </button>
+                            {auditUi && (
+                              <span
+                                className={cn(
+                                  "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold tracking-wide",
+                                  auditUi.cls
+                                )}
+                              >
+                                {auditUi.label}
+                              </span>
+                            )}
                             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                               {l.city && (
                                 <span className="inline-flex items-center gap-0.5">

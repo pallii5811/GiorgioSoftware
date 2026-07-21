@@ -21,6 +21,59 @@ import {
 import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
 import { isInActionableSalesQueue, passesDefaultClientQueueGate } from "@/lib/sanita/actionable-queue";
 import { presentSanitaLead } from "@/lib/sanita/present-sanita-lead";
+import { readBusinessVerdict, readProcessingState } from "@/lib/sanita/processing-state";
+import { isLegacyLead } from "@/lib/sanita/evidence-version";
+
+/** KPI presentation-only — conteggi su DB grezzo, indipendenti dal filtro coda. */
+function buildSanitaAuditKpis(
+  leads: Array<{ evidence?: string | null; lastScannedAt?: Date | string | null }>
+) {
+  const k = {
+    total: leads.length,
+    actionable: 0,
+    HOT_VERIFIED: 0,
+    PUBLISHED_CURRENT: 0,
+    PUBLISHED_EXPIRED: 0,
+    PUBLISHED_DATE_UNKNOWN: 0,
+    PUBLISHED_INCOMPLETE: 0,
+    PUBLISHED_ANALOGOUS_MEASURE: 0,
+    RETRY_PENDING: 0,
+    REVIEW_HUMAN: 0,
+    TECHNICAL_BLOCKED: 0,
+    OUT_OF_SCOPE: 0,
+    inRevalidation: 0,
+    LEGACY: 0,
+  };
+  for (const l of leads) {
+    if (isInActionableSalesQueue(l)) k.actionable++;
+    const ps = readProcessingState(l.evidence);
+    const bv = readBusinessVerdict(l.evidence);
+    if (ps === "HOT_VERIFIED") k.HOT_VERIFIED++;
+    else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.PUBLISHED_CURRENT++;
+    else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") k.PUBLISHED_EXPIRED++;
+    else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") k.PUBLISHED_DATE_UNKNOWN++;
+    else if (ps === "PUBLISHED_INCOMPLETE" || bv === "PUBLISHED_INCOMPLETE") k.PUBLISHED_INCOMPLETE++;
+    else if (ps === "PUBLISHED_ANALOGOUS_MEASURE" || bv === "PUBLISHED_ANALOGOUS_MEASURE") {
+      k.PUBLISHED_ANALOGOUS_MEASURE++;
+    } else if (ps === "RETRY_PENDING") k.RETRY_PENDING++;
+    else if (ps === "REVIEW_HUMAN" || bv === "REVIEW_HUMAN") k.REVIEW_HUMAN++;
+    else if (ps === "TECHNICAL_BLOCKED") k.TECHNICAL_BLOCKED++;
+    else if (ps === "OUT_OF_SCOPE" || bv === "OUT_OF_SCOPE") k.OUT_OF_SCOPE++;
+
+    if (isLegacyLead(l.evidence)) k.LEGACY++;
+    if (
+      !isInActionableSalesQueue(l) &&
+      (ps === "RETRY_PENDING" ||
+        ps === "TECHNICAL_BLOCKED" ||
+        ps === "REVIEW_HUMAN" ||
+        isLegacyLead(l.evidence) ||
+        Boolean(l.lastScannedAt))
+    ) {
+      k.inRevalidation++;
+    }
+  }
+  return k;
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -192,6 +245,8 @@ export async function GET(req: Request) {
             _queueStatus: semantic.queueStatus,
           };
         });
+    const actionableCount = leads.filter((l) => isInActionableSalesQueue(l)).length;
+    const kpis = buildSanitaAuditKpis(leads);
     return NextResponse.json({
       success: true,
       data,
@@ -200,9 +255,14 @@ export async function GET(req: Request) {
         regions: await regionScanMeta(),
         actionableQueueRequireCurrentEvidence:
           process.env.ACTIONABLE_QUEUE_REQUIRE_CURRENT_EVIDENCE !== "0",
-        actionableCount: leads.filter((l) => isInActionableSalesQueue(l)).length,
+        actionableCount,
+        dbTotal: leads.length,
         totalReturned: data.length,
         filteredDefault: actionableOnly,
+        includeAll: Boolean(includeAll),
+        kpis,
+        /** Hint UI: coda commerciale vuota ma DB popolato → rivalidazione / fail-closed. */
+        revalidationUiLock: actionableCount === 0 && leads.length > 0,
       },
     });
   } catch {
