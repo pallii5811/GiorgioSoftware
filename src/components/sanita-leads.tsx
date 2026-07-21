@@ -81,6 +81,16 @@ type ArchiveRevalidationStatus = {
   technicalPending?: number
   absenceFound?: number
   terminal?: number
+  /** Current-state fields (authoritative) */
+  recordsTouched?: number
+  terminalCompleted?: number
+  currentlyInProgress?: number
+  currentRetryQueue?: number
+  reviewCurrent?: number
+  technicalBlockedFinal?: number
+  certifiedCurrentRun?: number
+  hot?: number
+  published?: number
 }
 
 type ScanJob = {
@@ -995,11 +1005,19 @@ export function SanitaLeads() {
     (auditKpis.commercial?.dateUnknown ?? 0) +
     (auditKpis.commercial?.absenceCertified ?? 0)
 
-  const archiveProcessed = archiveStatus?.processed ?? 0
   const archiveTarget = archiveStatus?.targetTotal ?? 877
+  const terminalCompleted = archiveStatus?.terminalCompleted ?? archiveStatus?.terminal ?? 0
+  const recordsTouched = archiveStatus?.recordsTouched ?? archiveStatus?.processed ?? 0
+  const currentRetryQueue = archiveStatus?.currentRetryQueue ?? 0
+  const currentlyInProgress = archiveStatus?.currentlyInProgress ?? 0
+  const reviewCurrent = archiveStatus?.reviewCurrent ?? archiveStatus?.checksNeeded ?? 0
+  const technicalFinal =
+    archiveStatus?.technicalBlockedFinal ?? archiveStatus?.technicalPending ?? 0
+  const certifiedCurrentRun =
+    archiveStatus?.certifiedCurrentRun ?? archiveStatus?.certifiedResults ?? 0
   const archivePct =
     archiveStatus?.percent ??
-    (archiveTarget > 0 ? Math.round((archiveProcessed / archiveTarget) * 1000) / 10 : 0)
+    (archiveTarget > 0 ? Math.round((terminalCompleted / archiveTarget) * 1000) / 10 : 0)
   const archiveActive = Boolean(archiveStatus?.active)
 
   return (
@@ -1037,11 +1055,11 @@ export function SanitaLeads() {
                 Rivalidazione archivio
               </p>
               <p className="mt-3 text-4xl font-bold tabular-nums text-slate-900">
-                {archiveProcessed}
+                {terminalCompleted}
                 <span className="text-2xl font-semibold text-slate-400"> / {archiveTarget}</span>
               </p>
               <p className="mt-2 text-sm text-slate-600">
-                {archiveActive ? "Verifica completa in corso" : (archiveStatus?.statusLabel ?? "Stato verifica")}
+                {archiveActive ? "Verifiche concluse" : (archiveStatus?.statusLabel ?? "Stato verifica")}
               </p>
               <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
@@ -1049,7 +1067,7 @@ export function SanitaLeads() {
                   style={{ width: `${Math.min(100, archivePct)}%` }}
                 />
               </div>
-              <p className="mt-1.5 text-xs tabular-nums text-slate-500">{archivePct}%</p>
+              <p className="mt-1.5 text-xs tabular-nums text-slate-500">{archivePct}% concluse</p>
             </CardContent>
           </Card>
 
@@ -1101,13 +1119,13 @@ export function SanitaLeads() {
             {archivePanelOpen && (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                  <p className="text-xs text-slate-500">Strutture controllate</p>
+                  <p className="text-xs text-slate-500">Verifiche concluse</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                    {archiveProcessed} di {archiveTarget}
+                    {terminalCompleted} / {archiveTarget}
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                  <p className="text-xs text-slate-500">Avanzamento</p>
+                  <p className="text-xs text-slate-500">Avanzamento (concluse)</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{archivePct}%</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
@@ -1117,21 +1135,39 @@ export function SanitaLeads() {
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">Risultati certificati prodotti</p>
+                  <p className="text-xs text-slate-500">Strutture prese in carico</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                    {archiveStatus?.certifiedResults ?? 0}
+                    {recordsTouched}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">In verifica ora</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {currentlyInProgress}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Riprova automatica in corso</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {currentRetryQueue}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Risultati certificati (run corrente)</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {certifiedCurrentRun}
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
                   <p className="text-xs text-slate-500">Controlli necessari</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                    {archiveStatus?.checksNeeded ?? 0}
+                    {reviewCurrent}
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">Verifiche tecniche da completare</p>
+                  <p className="text-xs text-slate-500">Problemi tecnici definitivi</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                    {archiveStatus?.technicalPending ?? 0}
+                    {technicalFinal}
                   </p>
                 </div>
               </div>
@@ -1230,7 +1266,8 @@ export function SanitaLeads() {
               <CardContent className="space-y-3 p-5">
                 <p className="text-sm font-semibold text-slate-900">Rivalida strutture esistenti</p>
                 <p className="text-sm text-slate-600">
-                  Job archivio: {archiveProcessed} / {archiveTarget} ·{" "}
+                  Job archivio: {terminalCompleted} / {archiveTarget} concluse ·{" "}
+                  prese in carico {recordsTouched} ·{" "}
                   {archiveActive ? "in corso" : (archiveStatus?.statusLabel ?? "—")}
                 </p>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
