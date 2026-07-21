@@ -86,14 +86,14 @@ export const VERDICT_META: Record<
     commercial: "Verificare scadenza e opportunità rinnovo — non assume conformità automatica",
   },
   HOT: {
-    label: "Assenza verificata dopo scansione completa",
-    subtitle: "Crawl completo + identità ufficiale — polizza NON trovata sul sito",
+    label: "Polizza non trovata dopo verifica completa",
+    subtitle: "Verifica completa sul sito — pubblicazione non trovata",
     tone: "red",
     commercial: "Vendita RC e messa in regola — chiamare subito",
   },
   REVIEW: {
-    label: "Verifica umana necessaria",
-    subtitle: "Ambiguo dopo waterfall — non è un errore tecnico temporaneo",
+    label: "Controllo necessario",
+    subtitle: "Esito non conclusivo — serve un controllo",
     tone: "amber",
     commercial: "Verifica manuale su sito o portale ASL prima della chiamata",
   },

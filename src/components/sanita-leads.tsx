@@ -66,7 +66,22 @@ type Lead = {
 }
 
 type VerdictFilter = "ALL" | Verdict | "PENDING"
-type ViewTab = "audit" | "commercial"
+type ViewTab = "commercial" | "archive" | "status"
+
+type ArchiveRevalidationStatus = {
+  available?: boolean
+  active?: boolean
+  statusLabel?: string
+  processed?: number
+  targetTotal?: number
+  percent?: number
+  updatedAt?: string | null
+  certifiedResults?: number
+  checksNeeded?: number
+  technicalPending?: number
+  absenceFound?: number
+  terminal?: number
+}
 
 type ScanJob = {
   jobId: string
@@ -124,7 +139,14 @@ type SanitaApiMeta = {
     TECHNICAL_BLOCKED: number
     OUT_OF_SCOPE: number
     inRevalidation: number
+    notYetCertified?: number
     LEGACY: number
+    commercial?: {
+      policyValid: number
+      policyExpired: number
+      dateUnknown: number
+      absenceCertified: number
+    }
   }
 }
 
@@ -161,8 +183,11 @@ export function SanitaLeads() {
   const [scanJobId, setScanJobId] = useState<string | null>(null)
   const [discoveryMeta, setDiscoveryMeta] = useState<Record<string, RegionDiscoveryMeta>>({})
   const [processingName, setProcessingName] = useState<string | null>(null)
-  const [viewTab, setViewTab] = useState<ViewTab>("audit")
+  const [viewTab, setViewTab] = useState<ViewTab>("commercial")
   const [apiMeta, setApiMeta] = useState<SanitaApiMeta | null>(null)
+  const [archiveStatus, setArchiveStatus] = useState<ArchiveRevalidationStatus | null>(null)
+  const [techOpen, setTechOpen] = useState(false)
+  const [archivePanelOpen, setArchivePanelOpen] = useState(true)
 
   const isLeadActionable = (l: Lead) =>
     Boolean(l.semantic?.actionable ?? l._actionable ?? isInActionableSalesQueue(l))
@@ -371,8 +396,8 @@ export function SanitaLeads() {
   const guardScanAction = (label: string, run: () => void) => {
     if (revalidationUiLock) {
       const ok = confirm(
-        `${label}\n\nRivalidazione completa in corso (coda commerciale fail-closed).\n` +
-          `Avviare comunque una scansione regionale rischia conflitti con giorgio-revalidate.\n\nConfermi esplicitamente?`
+        `${label}\n\nRivalidazione archivio in corso: la coda commerciale mostra solo lead certificati.\n` +
+          `La discovery territoriale è separata e non riparte la rivalidazione.\n\nContinuare?`
       )
       if (!ok) return
     }
@@ -496,8 +521,34 @@ export function SanitaLeads() {
     if (viewTab === "commercial") {
       return base.filter((l) => isLeadActionable(l))
     }
+    if (viewTab === "status") {
+      // Casi non conclusi / non ancora in coda commerciale
+      return base.filter((l) => !isLeadActionable(l))
+    }
     return base
   }, [leads, viewTab])
+
+  const fetchArchiveStatus = async () => {
+    try {
+      const res = await fetch("/api/sanita/archive-revalidation", { cache: "no-store" })
+      const json = (await res.json()) as ArchiveRevalidationStatus & { success?: boolean }
+      setArchiveStatus(json)
+    } catch {
+      /* soft-fail: hero shows fallback */
+    }
+  }
+
+  useEffect(() => {
+    // Defer initial fetch so setState is not synchronous inside the effect body.
+    const boot = setTimeout(() => {
+      void fetchArchiveStatus()
+    }, 0)
+    const t = setInterval(() => void fetchArchiveStatus(), 30_000)
+    return () => {
+      clearTimeout(boot)
+      clearInterval(t)
+    }
+  }, [])
 
   const auditKpis = useMemo(() => {
     const k = apiMeta?.kpis
@@ -510,10 +561,18 @@ export function SanitaLeads() {
         PUBLISHED_EXPIRED: k.PUBLISHED_EXPIRED,
         PUBLISHED_DATE_UNKNOWN: k.PUBLISHED_DATE_UNKNOWN,
         inRevalidation: k.inRevalidation,
+        notYetCertified: k.notYetCertified ?? Math.max(0, k.total - k.actionable),
         RETRY_PENDING: k.RETRY_PENDING,
         REVIEW_HUMAN: k.REVIEW_HUMAN,
         TECHNICAL_BLOCKED: k.TECHNICAL_BLOCKED,
         OUT_OF_SCOPE: k.OUT_OF_SCOPE,
+        LEGACY: k.LEGACY ?? 0,
+        commercial: k.commercial ?? {
+          policyValid: 0,
+          policyExpired: 0,
+          dateUnknown: 0,
+          absenceCertified: 0,
+        },
       }
     }
     // fallback client se meta assente
@@ -525,10 +584,18 @@ export function SanitaLeads() {
       REVIEW_HUMAN = 0,
       TECHNICAL_BLOCKED = 0,
       OUT_OF_SCOPE = 0,
+      LEGACY = 0,
       actionable = 0,
       inRevalidation = 0
+    const commercial = {
+      policyValid: 0,
+      policyExpired: 0,
+      dateUnknown: 0,
+      absenceCertified: 0,
+    }
     for (const l of leads) {
-      if (isLeadActionable(l)) actionable++
+      const act = isLeadActionable(l)
+      if (act) actionable++
       else inRevalidation++
       const ps = readProcessingState(l.evidence)
       const bv = readBusinessVerdict(l.evidence)
@@ -540,19 +607,32 @@ export function SanitaLeads() {
       else if (ps === "REVIEW_HUMAN" || bv === "REVIEW_HUMAN") REVIEW_HUMAN++
       else if (ps === "TECHNICAL_BLOCKED") TECHNICAL_BLOCKED++
       else if (ps === "OUT_OF_SCOPE" || bv === "OUT_OF_SCOPE") OUT_OF_SCOPE++
+      if (l._legacy) LEGACY++
+      if (act) {
+        if (ps === "HOT_VERIFIED") commercial.absenceCertified++
+        else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") commercial.policyValid++
+        else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") commercial.policyExpired++
+        else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") commercial.dateUnknown++
+        else if (/\[V:PUB\]/i.test(l.evidence || "")) commercial.dateUnknown++
+        else commercial.absenceCertified++
+      }
     }
+    const total = apiMeta?.dbTotal ?? leads.length
     return {
-      total: apiMeta?.dbTotal ?? leads.length,
+      total,
       actionable: apiMeta?.actionableCount ?? actionable,
       HOT_VERIFIED,
       PUBLISHED_CURRENT,
       PUBLISHED_EXPIRED,
       PUBLISHED_DATE_UNKNOWN,
-      inRevalidation: apiMeta?.kpis?.inRevalidation ?? inRevalidation,
+      inRevalidation,
+      notYetCertified: Math.max(0, total - (apiMeta?.actionableCount ?? actionable)),
       RETRY_PENDING,
       REVIEW_HUMAN,
       TECHNICAL_BLOCKED,
       OUT_OF_SCOPE,
+      LEGACY,
+      commercial,
     }
   }, [leads, apiMeta])
 
@@ -909,462 +989,420 @@ export function SanitaLeads() {
   const contactExtras = (l: Lead) =>
     [l.email, l.pec, l.piva].filter(Boolean).length
 
-  const AUDIT_KPIS: Array<{ key: string; label: string; value: number; cls?: string }> = [
-    { key: "total", label: "Strutture totali", value: auditKpis.total },
-    { key: "actionable", label: "Certificati vendibili", value: auditKpis.actionable, cls: "text-emerald-700" },
-    { key: "HOT_VERIFIED", label: "Assenza certificata (admin)", value: auditKpis.HOT_VERIFIED, cls: "text-red-600" },
-    { key: "PUBLISHED_CURRENT", label: "Polizza valida (admin)", value: auditKpis.PUBLISHED_CURRENT, cls: "text-emerald-600" },
-    { key: "PUBLISHED_EXPIRED", label: "Polizza scaduta (admin)", value: auditKpis.PUBLISHED_EXPIRED, cls: "text-amber-700" },
-    { key: "PUBLISHED_DATE_UNKNOWN", label: "Data sconosciuta (admin)", value: auditKpis.PUBLISHED_DATE_UNKNOWN, cls: "text-amber-600" },
-    { key: "inRevalidation", label: "In rivalidazione", value: auditKpis.inRevalidation, cls: "text-indigo-700" },
-    { key: "RETRY_PENDING", label: "Riprova automatica (admin)", value: auditKpis.RETRY_PENDING, cls: "text-sky-700" },
-    { key: "REVIEW_HUMAN", label: "Controllo identità (admin)", value: auditKpis.REVIEW_HUMAN, cls: "text-amber-700" },
-    { key: "TECHNICAL_BLOCKED", label: "Blocco tecnico (admin)", value: auditKpis.TECHNICAL_BLOCKED, cls: "text-rose-700" },
-    { key: "OUT_OF_SCOPE", label: "Fuori ambito (admin)", value: auditKpis.OUT_OF_SCOPE, cls: "text-slate-600" },
-  ]
+  const commercialSum =
+    (auditKpis.commercial?.policyValid ?? 0) +
+    (auditKpis.commercial?.policyExpired ?? 0) +
+    (auditKpis.commercial?.dateUnknown ?? 0) +
+    (auditKpis.commercial?.absenceCertified ?? 0)
+
+  const archiveProcessed = archiveStatus?.processed ?? 0
+  const archiveTarget = archiveStatus?.targetTotal ?? 877
+  const archivePct =
+    archiveStatus?.percent ??
+    (archiveTarget > 0 ? Math.round((archiveProcessed / archiveTarget) * 1000) / 10 : 0)
+  const archiveActive = Boolean(archiveStatus?.active)
 
   return (
-    <div className="space-y-6">
-      {/* HEADER — gerarchia: titolo → dati → scansioni per regione */}
-      <div className="space-y-4">
+    <div className="space-y-8">
+      {/* HEADER */}
+      <div className="space-y-6">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <span className="brand-gradient grid h-9 w-9 place-items-center rounded-xl text-white shadow-sm">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white shadow-sm">
               <Stethoscope className="h-5 w-5" />
             </span>
             Motore Sanità · Legge Gelli
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Trova strutture private, verifica se la polizza RC è pubblicata online (Art.&nbsp;10) e classifica i lead per priorità commerciale.
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+            Verifica la pubblicazione della polizza RC sulle strutture sanitarie e mostra solo i risultati
+            utilizzabili commercialmente.
           </p>
         </div>
 
-        {revalidationUiLock && (
-          <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
-            <p className="font-semibold">Rivalidazione completa in corso</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-indigo-900/90">
-              I record non certificati sono visibili soltanto per audit e non fanno parte della coda commerciale.
-            </p>
+        {/* HERO — 3 KPI only */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Archivio strutture
+              </p>
+              <p className="mt-3 text-4xl font-bold tabular-nums text-slate-900">{auditKpis.total}</p>
+              <p className="mt-2 text-sm text-slate-600">Strutture sanitarie presenti nel database</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Rivalidazione archivio
+              </p>
+              <p className="mt-3 text-4xl font-bold tabular-nums text-slate-900">
+                {archiveProcessed}
+                <span className="text-2xl font-semibold text-slate-400"> / {archiveTarget}</span>
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                {archiveActive ? "Verifica completa in corso" : (archiveStatus?.statusLabel ?? "Stato verifica")}
+              </p>
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-slate-900 transition-all duration-500"
+                  style={{ width: `${Math.min(100, archivePct)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-xs tabular-nums text-slate-500">{archivePct}%</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/80">
+                Lead certificati
+              </p>
+              <p className="mt-3 text-4xl font-bold tabular-nums text-emerald-800">{auditKpis.actionable}</p>
+              <p className="mt-2 text-sm text-emerald-900/70">Risultati utilizzabili commercialmente</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Rivalidazione archivio — pannello unico */}
+        <Card className="border-slate-200 shadow-sm" id="rivalidazione-archivio">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-base font-semibold text-slate-900">Rivalidazione archivio</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Stato: <span className="font-medium text-slate-900">{archiveActive ? "Verifica in corso" : (archiveStatus?.statusLabel ?? "—")}</span>
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" disabled className="bg-slate-800 text-white hover:bg-slate-800">
+                  {archiveActive ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Rivalidazione in corso
+                    </>
+                  ) : (
+                    "Rivalidazione archivio"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setArchivePanelOpen(true)
+                    setViewTab("status")
+                    document.getElementById("rivalidazione-archivio")?.scrollIntoView({ behavior: "smooth" })
+                  }}
+                >
+                  Visualizza avanzamento
+                </Button>
+              </div>
+            </div>
+
+            {archivePanelOpen && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                  <p className="text-xs text-slate-500">Strutture controllate</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {archiveProcessed} di {archiveTarget}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                  <p className="text-xs text-slate-500">Avanzamento</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{archivePct}%</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                  <p className="text-xs text-slate-500">Ultimo aggiornamento</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {formatDateTime(archiveStatus?.updatedAt ?? null)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Risultati certificati prodotti</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {archiveStatus?.certifiedResults ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Controlli necessari</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {archiveStatus?.checksNeeded ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Verifiche tecniche da completare</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {archiveStatus?.technicalPending ?? 0}
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Tabs */}
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          {(
+            [
+              ["commercial", "Coda commerciale"],
+              ["archive", "Archivio completo"],
+              ["status", "Stato verifiche"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setViewTab(key)}
+              className={cn(
+                "rounded-md px-4 py-2 text-sm font-medium transition",
+                viewTab === key
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Coda commerciale — sintesi 4 categorie */}
+        {viewTab === "commercial" && (
+          <Card className="border-emerald-200/70 bg-white shadow-sm">
+            <CardContent className="p-5">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Coda commerciale</p>
+                  <p className="text-xs text-slate-500">Solo lead certificati e utilizzabili</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={exportCsv} disabled={isScanning}>
+                    <Download className="h-4 w-4" /> Esporta CSV
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void fetchLeads()} disabled={isScanning}>
+                    <RefreshCw className="h-4 w-4" /> Aggiorna
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs text-slate-500">Polizza valida</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
+                    {auditKpis.commercial.policyValid}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs text-slate-500">Polizza scaduta</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-amber-700">
+                    {auditKpis.commercial.policyExpired}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs text-slate-500">Scadenza da verificare</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+                    {auditKpis.commercial.dateUnknown}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs text-slate-500">Assenza certificata</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-red-700">
+                    {auditKpis.commercial.absenceCertified}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                  <p className="text-xs text-emerald-800/80">Totale certificati</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+                    {auditKpis.actionable}
+                  </p>
+                  {commercialSum !== auditKpis.actionable && (
+                    <p className="mt-1 text-[10px] text-amber-700">
+                      Sintesi categorie: {commercialSum} (allineamento in corso)
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Due sezioni distinte: rivalida esistenti vs trova nuove */}
+        {(viewTab === "archive" || viewTab === "status") && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-slate-200 shadow-sm">
+              <CardContent className="space-y-3 p-5">
+                <p className="text-sm font-semibold text-slate-900">Rivalida strutture esistenti</p>
+                <p className="text-sm text-slate-600">
+                  Job archivio: {archiveProcessed} / {archiveTarget} ·{" "}
+                  {archiveActive ? "in corso" : (archiveStatus?.statusLabel ?? "—")}
+                </p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-slate-900"
+                    style={{ width: `${Math.min(100, archivePct)}%` }}
+                  />
+                </div>
+                <Button type="button" disabled className="w-full bg-slate-800 text-white">
+                  {archiveActive ? "Rivalidazione in corso" : "Rivalidazione archivio"}
+                </Button>
+                <p className="text-[11px] text-slate-500">
+                  Non avvia un secondo processo. Pausa/ripresa solo da area amministrativa.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-200 shadow-sm">
+              <CardContent className="space-y-3 p-5">
+                <p className="text-sm font-semibold text-slate-900">Trova nuove strutture</p>
+                <p className="text-xs text-slate-500">Discovery territoriale (separata dalla rivalidazione)</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(["Veneto", "Campania"] as const).map((region) => {
+                    const d = discoveryMeta[region]
+                    const mapsLabel =
+                      d && d.citiesTotal > 0
+                        ? `Comuni Maps ${d.mapsCityOffset}/${d.citiesTotal}`
+                        : "Copertura Maps"
+                    return (
+                      <div key={region} className="rounded-lg border border-slate-200 p-3">
+                        <p className="font-medium text-slate-900">{region}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          {regionStats[region].done}/{regionStats[region].total} in archivio
+                          {regionStats[region].pending > 0
+                            ? ` · ${regionStats[region].pending} in coda`
+                            : ""}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">{mapsLabel}</p>
+                        <Button
+                          onClick={() => startRegionScan(region)}
+                          disabled={isScanning}
+                          className="mt-3 h-9 w-full bg-slate-900 text-white hover:bg-slate-800"
+                        >
+                          {isScanning && activeScan?.region === region ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Search className="h-4 w-4" />
+                          )}
+                          Cerca nuove strutture
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-1 h-8 w-full text-xs"
+                          onClick={() => continueRegionScan(region)}
+                          disabled={isScanning}
+                        >
+                          Continua copertura
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Card className="border-border/60 shadow-sm">
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">A · Totale database</p>
-              <p className="mt-2 text-3xl font-bold tabular-nums">{auditKpis.total}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">Tutte le strutture HEALTHCARE in DB</p>
-            </CardContent>
-          </Card>
-          <Card className="border-emerald-200/80 bg-emerald-50/40 shadow-sm">
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/80">B · Coda commerciale certificata</p>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">{auditKpis.actionable}</p>
-              <p className="mt-1 text-[11px] text-emerald-900/70">Fail-closed · solo evidence corrente vendibile</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+        {/* Area amministrativa collassabile */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50">
           <button
             type="button"
-            onClick={() => setViewTab("audit")}
-            className={cn(
-              "rounded-md px-4 py-2 text-sm font-medium transition",
-              viewTab === "audit" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+            onClick={() => setTechOpen((v) => !v)}
           >
-            Tutte le strutture / Audit
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewTab("commercial")}
-            className={cn(
-              "rounded-md px-4 py-2 text-sm font-medium transition",
-              viewTab === "commercial" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Coda commerciale certificata
-          </button>
-        </div>
-
-        <Card className="border-border/60 shadow-sm">
-          <CardContent className="space-y-4 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dati</p>
-                <p className="text-[11px] text-muted-foreground">
-                  CSV cliente = solo certificati · vista {viewTab === "audit" ? "audit" : "commerciale"}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={exportCsv} disabled={isScanning}>
-                  <Download className="h-4 w-4" /> Esporta CSV
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void fetchLeads()} disabled={isScanning}>
-                  <RefreshCw className="h-4 w-4" /> Carica salvati
-                </Button>
-              </div>
-            </div>
-
             <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Scansione territoriale
-                {revalidationUiLock ? " · protetta (rivalidazione attiva)" : ""}
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {(["Veneto", "Campania"] as const).map((region) => (
-                  <div
-                    key={region}
-                    className="rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/20 p-4"
-                  >
-                    <p className="text-sm font-semibold text-foreground">{region}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {regionStats[region].done}/{regionStats[region].total} strutture analizzate
-                      {regionStats[region].pending > 0
-                        ? ` · ${regionStats[region].pending} pending`
-                        : ""}
-                    </p>
+              <p className="text-sm font-semibold text-slate-800">Dettagli tecnici e controlli</p>
+              <p className="text-xs text-slate-500">Area amministrativa</p>
+            </div>
+            <span className="text-xs font-medium text-slate-500">{techOpen ? "Nascondi" : "Mostra"}</span>
+          </button>
+          {techOpen && (
+            <div className="space-y-4 border-t border-slate-200 px-4 py-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs text-slate-500">Controllo identità</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.REVIEW_HUMAN}</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs text-slate-500">Riprova automatica</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.RETRY_PENDING}</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs text-slate-500">Blocco tecnico</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.TECHNICAL_BLOCKED}</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs text-slate-500">Fuori ambito</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.OUT_OF_SCOPE}</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs text-slate-500">Non ancora certificati</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.notYetCertified}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-400">
+                    = archivio {auditKpis.total} − certificati {auditKpis.actionable}
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                <p className="text-xs font-semibold text-amber-900">Reset discovery (irreversibile)</p>
+                <p className="mt-1 text-[11px] text-amber-800/80">
+                  Non resetta la rivalidazione archivio. Richiede conferma esplicita.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(["Veneto", "Campania"] as const).map((region) => (
                     <Button
-                      onClick={() => startRegionScan(region)}
+                      key={region}
+                      variant="outline"
+                      size="sm"
+                      className="border-amber-300 text-amber-900"
                       disabled={isScanning}
-                      title={
-                        revalidationUiLock
-                          ? "Richiede conferma: rivalidazione in corso"
-                          : undefined
-                      }
-                      className={cn(
-                        "mt-3 h-10 w-full text-white shadow-sm",
-                        revalidationUiLock
-                          ? "bg-amber-600 hover:bg-amber-700"
-                          : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700"
-                      )}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Confermi il reset discovery per ${region}? Non interrompe la rivalidazione archivio.`
+                          )
+                        ) {
+                          resetRegionScan(region)
+                        }
+                      }}
                     >
-                      {isScanning && activeScan?.region === region ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Search className="h-4 w-4" />
-                      )}
-                      Scansiona {region}
+                      Reset {region}
                     </Button>
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 flex-1 text-xs"
-                        onClick={() => continueRegionScan(region)}
-                        disabled={isScanning}
-                        title={
-                          revalidationUiLock
-                            ? "Richiede conferma: rivalidazione in corso"
-                            : undefined
-                        }
-                      >
-                        Continua
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 flex-1 text-xs text-muted-foreground"
-                        onClick={() => resetRegionScan(region)}
-                        disabled={isScanning}
-                        title={
-                          revalidationUiLock
-                            ? "Richiede conferma: rivalidazione in corso"
-                            : undefined
-                        }
-                      >
-                        Reset
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
 
-      {/* Stato scansione — sempre chiaro quale regione e quanto manca */}
-      {(() => {
-        const focusRegion =
-          activeScan?.region ??
-          (regionFilter !== "ALL" ? regionFilter : null)
-
-        const focus =
-          activeScan ??
-          (focusRegion
-            ? {
-                region: focusRegion,
-                done: regionStats[focusRegion].done,
-                total: regionStats[focusRegion].total,
-                round: 0,
-                phase: "",
-                mapsCityOffset: discoveryMeta[focusRegion]?.mapsCityOffset,
-                citiesTotal: discoveryMeta[focusRegion]?.citiesTotal,
-                mapsDiscoveryComplete: discoveryMeta[focusRegion]?.mapsDiscoveryComplete,
-              }
-            : null)
-
-        if (!focus && kpi.total === 0) return null
-
-        const structuresDone = focus ? focus.done >= focus.total && focus.total > 0 : kpi.pending === 0
-        const mapsTotal = focus?.citiesTotal ?? discoveryMeta[focus?.region ?? ""]?.citiesTotal ?? 0
-        const mapsOffset =
-          focus?.mapsCityOffset ?? discoveryMeta[focus?.region ?? ""]?.mapsCityOffset ?? 0
-        const mapsDone =
-          focus?.mapsDiscoveryComplete ??
-          discoveryMeta[focus?.region ?? ""]?.mapsDiscoveryComplete ??
-          (mapsTotal > 0 && mapsOffset >= mapsTotal)
-        const fullyComplete = structuresDone && (mapsTotal === 0 || mapsDone)
-        const structuresOnlyDone = structuresDone && mapsTotal > 0 && !mapsDone
-
-        const structPct = focus && focus.total > 0 ? Math.round((focus.done / focus.total) * 100) : 0
-        const mapsPct = mapsTotal > 0 ? Math.round((mapsOffset / mapsTotal) * 100) : 0
-
-        const statusTitle = isScanning
-          ? `Scansione ${focus?.region} in corso`
-          : fullyComplete
-            ? `${focus?.region ?? "Regione"} — scansione territoriale completata`
-            : structuresOnlyDone
-              ? `${focus?.region} — strutture OK, comuni Maps incompleti`
-              : "Stato analisi"
-
-        return (
-          <Card
-            className={cn(
-              "border-border/60",
-              isScanning && "border-indigo-300 ring-1 ring-indigo-200",
-              structuresOnlyDone && !isScanning && "border-amber-300 ring-1 ring-amber-100"
-            )}
-          >
-            <CardContent className="flex flex-col gap-4 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      "rounded-full p-2",
-                      isScanning
-                        ? "bg-indigo-100"
-                        : fullyComplete
-                          ? "bg-emerald-100"
-                          : structuresOnlyDone
-                            ? "bg-amber-100"
-                            : "bg-primary/10"
-                    )}
-                  >
-                    {isScanning ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                    ) : fullyComplete ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    ) : structuresOnlyDone ? (
-                      <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    ) : (
-                      <FileSearch className="h-4 w-4 text-primary" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">{statusTitle}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {isScanning && focus
-                        ? focus.phase
-                        : scanProgress ??
-                          (focus
-                            ? `${focus.region}: ${focus.done}/${focus.total} strutture analizzate`
-                            : `${scope.filter((l) => l.lastScannedAt).length}/${scope.length} nel filtro attuale`)}
-                    </p>
-                    {structuresOnlyDone && !isScanning && focus && (
-                      <p className="mt-1 text-[11px] font-medium text-amber-800">
-                        Comuni Maps {mapsOffset}/{mapsTotal} — clicca «Continua {focus.region}» per scoprire altre
-                        strutture.
-                      </p>
-                    )}
-                    {isScanning && processingName && (
-                      <p className="mt-1 text-[10px] font-medium text-indigo-700 animate-pulse">
-                        In analisi ora: {processingName}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {focus && focus.total > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="mb-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
-                      <span>Strutture analizzate</span>
-                      <span>
-                        {focus.done} / {focus.total}
-                        {structuresDone && !isScanning ? " ✓" : ""}
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={cn(
-                          "h-full rounded-full transition-all duration-500",
-                          structuresDone && !isScanning
-                            ? "bg-emerald-500"
-                            : "bg-gradient-to-r from-indigo-500 to-violet-500"
-                        )}
-                        style={{ width: `${structPct}%` }}
-                      />
-                    </div>
-                  </div>
-                  {mapsTotal > 0 && (
-                    <div>
-                      <div className="mb-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
-                        <span>Comuni Maps ({focus.region})</span>
-                        <span className={cn(mapsDone && !isScanning && "font-semibold text-emerald-600")}>
-                          {mapsOffset} / {mapsTotal}
-                          {mapsDone && !isScanning ? " ✓" : ` · ${mapsPct}%`}
-                        </span>
-                      </div>
-                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all duration-500",
-                            mapsDone && !isScanning
-                              ? "bg-emerald-500"
-                              : "bg-gradient-to-r from-sky-500 to-blue-600"
-                          )}
-                          style={{ width: `${mapsPct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )
-      })()}
-
-      {scanJob && (
-        <Card className="border-indigo-200/70 bg-indigo-50/40">
-          <CardContent className="space-y-4 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      {/* Live discovery job (se attivo) — fuori dal pannello rivalidazione */}
+      {scanJob && (scanJob.status === "queued" || scanJob.status === "running" || scanJob.status === "interrupted") && (
+        <Card className="border-slate-200 bg-slate-50/60">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-indigo-950">
-                  {scanJob.mode === "single"
-                    ? "Verifica struttura"
-                    : scanJob.mode === "city"
-                      ? `Scansione comune · ${scanJob.city ?? scanJob.region}`
-                      : `Scansione regione · ${scanJob.region}`}
-                </p>
-                <p className="mt-1 text-xs text-indigo-900/80">
-                  {scanJob.lastUpdateLabel ?? "Verifica in corso"} · ultimo aggiornamento {formatDateTime(scanJob.updatedAt)}
+                <p className="text-sm font-semibold text-slate-900">Ricerca nuove strutture in corso</p>
+                <p className="text-xs text-slate-600">
+                  {scanJob.lastUpdateLabel ?? "Verifica in corso"} · {formatDateTime(scanJob.updatedAt)}
                 </p>
               </div>
-              {(scanJob.status === "queued" || scanJob.status === "running") && (
-                <Button variant="outline" size="sm" onClick={() => void cancelScanJob()}>
-                  <PauseCircle className="h-4 w-4" /> Interrompi
-                </Button>
-              )}
+              <Button variant="outline" size="sm" onClick={() => void cancelScanJob()}>
+                <PauseCircle className="h-4 w-4" /> Interrompi
+              </Button>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Stato</p>
-                <p className="mt-1 text-sm font-semibold">{jobStatusLabel(scanJob)}</p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Strutture controllate</p>
-                <p className="mt-1 text-sm font-semibold">
-                  {scanJob.progress.structuresControlled}
-                  {scanJob.progress.totalStructures ? ` / ${scanJob.progress.totalStructures}` : ""}
-                </p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Risultati certificati</p>
-                <p className="mt-1 text-sm font-semibold">{scanJob.progress.certifiedResults}</p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Avanzamento</p>
-                <p className="mt-1 text-sm font-semibold">
-                  {scanJob.progress.percent != null ? `${scanJob.progress.percent}%` : "In attesa"}
-                </p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Verifiche da completare automaticamente</p>
-                <p className="mt-1 text-sm font-semibold">{scanJob.progress.autoVerificationsPending}</p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3">
-                <p className="text-[11px] font-medium text-muted-foreground">Controlli necessari</p>
-                <p className="mt-1 text-sm font-semibold">{scanJob.progress.manualChecksNeeded}</p>
-              </div>
-              <div className="rounded-lg border bg-white/70 p-3 sm:col-span-2">
-                <p className="text-[11px] font-medium text-muted-foreground">Ultimo aggiornamento</p>
-                <p className="mt-1 text-sm font-semibold">
-                  {scanJob.progress.currentMessage ?? "Job pronto."}
-                </p>
-                {scanJob.progress.currentStructure && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    In lavorazione: {scanJob.progress.currentStructure}
-                  </p>
-                )}
-                {scanJob.status === "interrupted" && (
-                  <p className="mt-1 text-xs font-medium text-amber-800">
-                    Job riprendibile senza perdere i risultati già applicati.
-                  </p>
-                )}
-              </div>
-            </div>
+            <p className="text-sm text-slate-700">
+              Controllate: {scanJob.progress.structuresControlled}
+              {scanJob.progress.totalStructures ? ` / ${scanJob.progress.totalStructures}` : ""}
+              {" · "}
+              Certificati: {scanJob.progress.certifiedResults}
+              {" · "}
+              Controlli necessari: {scanJob.progress.manualChecksNeeded}
+            </p>
           </CardContent>
         </Card>
-      )}
-
-      {/* Avanzamento regione */}
-      {(regionStats.Campania.total > 0 || regionStats.Veneto.total > 0 || isScanning) && (
-      <Card className="border-blue-200/60 bg-blue-50/40">
-        <CardContent className="p-4 text-sm">
-          <p className="font-semibold text-blue-900">Avanzamento per regione</p>
-          <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-            {(["Campania", "Veneto"] as const).map((r) => {
-              const d = discoveryMeta[r]
-              const mapsLabel =
-                d && d.citiesTotal > 0
-                  ? ` · comuni Maps ${d.mapsCityOffset}/${d.citiesTotal}${d.mapsDiscoveryComplete ? " ✓" : ""}`
-                  : ""
-              return (
-                <span
-                  key={r}
-                  className="rounded-md border border-emerald-200 bg-white px-2 py-1"
-                >
-                  {r}: {regionStats[r].done}/{regionStats[r].total}
-                  {regionStats[r].pending === 0 && regionStats[r].total > 0
-                    ? " strutture ✓"
-                    : regionStats[r].total > 0
-                      ? ` (${regionStats[r].pending} in coda)`
-                      : ""}
-                  {mapsLabel}
-                </span>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
-      )}
-
-      {/* KPI audit (meta.kpis) — non calcolati solo dall'array filtrato */}
-      {viewTab === "audit" && (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-        {AUDIT_KPIS.map((k) => (
-          <Card key={k.key} className="ring-soft border-border/60">
-            <CardContent className="p-3">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {k.label}
-              </span>
-              <div className={cn("mt-1 text-xl font-bold tabular-nums", k.cls)}>{k.value}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
       )}
 
       {/* TOOLBAR FILTRI */}
-      <Card className="ring-soft border-border/60">
+      <Card className="border-slate-200 shadow-sm">
         <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
-          <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground lg:w-24">
+          <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:w-24">
             Filtra
           </p>
           <div className="relative flex-1">
@@ -1397,10 +1435,10 @@ export function SanitaLeads() {
             {(
               [
                 ["ALL", "Tutti"],
-                ["HOT", "HOT"],
-                ["PUBLISHED", "PUB"],
-                ["REVIEW", "Review"],
-                ["PENDING", "Pending"],
+                ["HOT", "Assenza"],
+                ["PUBLISHED", "Polizza"],
+                ["REVIEW", "Controllo"],
+                ["PENDING", "Da analizzare"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1518,8 +1556,10 @@ export function SanitaLeads() {
                 </div>
               ) : visibleLeads.length === 0
                 ? viewTab === "commercial"
-                  ? "Coda commerciale vuota (fail-closed). I record in DB restano nella tab Audit."
-                  : "Tabella vuota. Clicca Scansiona Veneto o Campania — i lead compariranno uno alla volta, in tempo reale."
+                  ? "Coda commerciale vuota. I risultati certificati compariranno qui."
+                  : viewTab === "status"
+                    ? "Nessun caso in verifica pendente per i filtri selezionati."
+                    : "Archivio vuoto. Usa «Trova nuove strutture» per avviare la discovery."
                 : "Nessun risultato per i filtri selezionati."}
             </div>
           ) : (
@@ -1556,28 +1596,29 @@ export function SanitaLeads() {
                   )}
                   {filtered.map((l) => {
                     const docs = policyDocLinks(l)
-                    const auditBadge = viewTab === "audit" ? auditQueueBadge(l) : null
+                    const auditBadge =
+                      viewTab === "archive" || viewTab === "status" ? auditQueueBadge(l) : null
                     const auditUi = auditBadge ? AUDIT_BADGE_UI[auditBadge] : null
+                    const showScore = viewTab === "commercial" && (l.leadScore ?? 0) >= 80
                     return (
                     <tr
                       key={l.id}
                       className={cn(
                         "border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors duration-700",
-                        auditBadge && "bg-slate-50/50"
+                        auditBadge && "bg-slate-50/40"
                       )}
                     >
                       <td className="px-3 py-2.5 align-top">
                         <div className="flex items-start gap-2">
-                          <span
-                            className={cn(
-                              "mt-0.5 inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                              scoreMeta(l.leadScore).cls
-                            )}
-                            title={scoreMeta(l.leadScore).label}
-                          >
-                            <Flame className="h-2.5 w-2.5" />
-                            {l.leadScore ?? 0}
-                          </span>
+                          {showScore && (
+                            <span
+                              className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums bg-red-50 text-red-700"
+                              title="Priorità commerciale"
+                            >
+                              <Flame className="h-2.5 w-2.5" />
+                              Alta
+                            </span>
+                          )}
                           <div className="min-w-0">
                             <button
                               onClick={() => setDetail(l)}
@@ -1589,7 +1630,7 @@ export function SanitaLeads() {
                             {auditUi && (
                               <span
                                 className={cn(
-                                  "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold tracking-wide",
+                                  "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium",
                                   auditUi.cls
                                 )}
                               >
@@ -1603,13 +1644,8 @@ export function SanitaLeads() {
                                   {l.city}
                                 </span>
                               )}
-                              <Badge variant="outline" className="h-4 px-1 text-[9px]">
-                                {l.region}
-                              </Badge>
+                              <span className="text-slate-400">{l.region}</span>
                             </div>
-                            <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground" title={scopeReason(l)}>
-                              {scopeReason(l)}
-                            </p>
                           </div>
                         </div>
                       </td>
@@ -1706,12 +1742,12 @@ export function SanitaLeads() {
             <div className="space-y-2 text-sm">
               <p className="font-medium text-foreground">Guida al motore Sanità</p>
               <ol className="ml-4 list-decimal space-y-1.5 text-muted-foreground">
-                <li><strong className="text-foreground">Scoperta:</strong> individua case di cura, RSA e poliambulatori su tutto il territorio regionale, integrando l&apos;elenco ufficiale del Ministero della Salute.</li>
-                <li><strong className="text-foreground">Verifica:</strong> analizza il sito web di ogni struttura, con focus sulla sezione Trasparenza e sui documenti PDF allegati.</li>
-                <li><strong className="text-foreground">Classificazione:</strong>
-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700"><ShieldAlert className="h-3 w-3" />Assenza certificata</span> — crawl completo, polizza non trovata; priorità commerciale
-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700"><ShieldCheck className="h-3 w-3" />Polizza pubblicata</span> — verifica validità/scadenza (non assume conformità)
-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700"><ShieldQuestion className="h-3 w-3" />Da verificare</span> — esito non conclusivo; controllo manuale consigliato
+                <li><strong className="text-foreground">Archivio:</strong> strutture sanitarie già presenti nel database.</li>
+                <li><strong className="text-foreground">Rivalidazione:</strong> verifica completa delle strutture esistenti (progresso reale nel pannello sopra).</li>
+                <li><strong className="text-foreground">Coda commerciale:</strong> solo risultati certificati e utilizzabili.
+                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">Assenza certificata</span>
+                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">Polizza pubblicata</span>
+                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700">Controllo necessario</span>
                 </li>
               </ol>
               <p className="text-xs text-muted-foreground">Clicca il nome della struttura per aprire la scheda con contatti, note e promemoria.</p>

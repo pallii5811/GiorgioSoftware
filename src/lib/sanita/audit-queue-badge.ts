@@ -7,6 +7,7 @@ import {
   readProcessingState,
   type SanitaProcessingState,
 } from "@/lib/sanita/processing-state";
+import { CLIENT_QUEUE_BADGE } from "@/lib/sanita/client-facing-copy";
 
 export type AuditQueueBadge =
   | "LEGACY"
@@ -44,24 +45,9 @@ export const AUDIT_BADGE_UI: Record<
   Exclude<AuditQueueBadge, null>,
   { label: string; cls: string }
 > = {
-  LEGACY: {
-    label: "LEGACY — NON CERTIFICATO",
-    cls: "bg-slate-100 text-slate-800 border-slate-300",
-  },
-  IN_REVALIDATION: {
-    label: "IN RIVALIDAZIONE",
-    cls: "bg-indigo-50 text-indigo-800 border-indigo-200",
-  },
-  RETRY: {
-    label: "RETRY TECNICO",
-    cls: "bg-sky-50 text-sky-800 border-sky-200",
-  },
-  REVIEW_IDENTITY: {
-    label: "REVIEW IDENTITÀ",
-    cls: "bg-amber-50 text-amber-900 border-amber-300",
-  },
-  TECHNICAL: {
-    label: "BLOCCO TECNICO",
-    cls: "bg-rose-50 text-rose-800 border-rose-200",
-  },
+  LEGACY: CLIENT_QUEUE_BADGE.LEGACY,
+  IN_REVALIDATION: CLIENT_QUEUE_BADGE.IN_REVALIDATION,
+  RETRY: CLIENT_QUEUE_BADGE.RETRY,
+  REVIEW_IDENTITY: CLIENT_QUEUE_BADGE.REVIEW_IDENTITY,
+  TECHNICAL: CLIENT_QUEUE_BADGE.TECHNICAL,
 };

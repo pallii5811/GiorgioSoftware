@@ -15,17 +15,17 @@ export const PUBLISHED_SUBTYPE_META: Record<
   { label: string; urgency: "none" | "low" | "high"; actionablePriority: 0 | 1 | 2 }
 > = {
   PUBLISHED_CURRENT: {
-    label: "Polizza pubblicata e apparentemente valida",
+    label: "Polizza pubblicata e valida",
     urgency: "none",
     actionablePriority: 0,
   },
   PUBLISHED_EXPIRED: {
-    label: "Polizza pubblicata ma scaduta — opportunità urgente",
+    label: "Polizza pubblicata ma scaduta",
     urgency: "high",
     actionablePriority: 1,
   },
   PUBLISHED_DATE_UNKNOWN: {
-    label: "Polizza pubblicata — scadenza non rilevata",
+    label: "Polizza trovata — scadenza da verificare",
     urgency: "low",
     actionablePriority: 2,
   },

@@ -42,10 +42,18 @@ function buildSanitaAuditKpis(
     TECHNICAL_BLOCKED: 0,
     OUT_OF_SCOPE: 0,
     inRevalidation: 0,
+    notYetCertified: 0,
     LEGACY: 0,
+    commercial: {
+      policyValid: 0,
+      policyExpired: 0,
+      dateUnknown: 0,
+      absenceCertified: 0,
+    },
   };
   for (const l of leads) {
-    if (isInActionableSalesQueue(l)) k.actionable++;
+    const actionable = isInActionableSalesQueue(l);
+    if (actionable) k.actionable++;
     const ps = readProcessingState(l.evidence);
     const bv = readBusinessVerdict(l.evidence);
     if (ps === "HOT_VERIFIED") k.HOT_VERIFIED++;
@@ -62,7 +70,7 @@ function buildSanitaAuditKpis(
 
     if (isLegacyLead(l.evidence)) k.LEGACY++;
     if (
-      !isInActionableSalesQueue(l) &&
+      !actionable &&
       (ps === "RETRY_PENDING" ||
         ps === "TECHNICAL_BLOCKED" ||
         ps === "REVIEW_HUMAN" ||
@@ -71,7 +79,30 @@ function buildSanitaAuditKpis(
     ) {
       k.inRevalidation++;
     }
+
+    // Solo lead certificati/vendibili — le 4 voci devono sommare ad actionable
+    if (actionable) {
+      if (ps === "HOT_VERIFIED") k.commercial.absenceCertified++;
+      else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.commercial.policyValid++;
+      else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") k.commercial.policyExpired++;
+      else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") k.commercial.dateUnknown++;
+      else if (
+        ps === "PUBLISHED_INCOMPLETE" ||
+        ps === "PUBLISHED_ANALOGOUS_MEASURE" ||
+        bv === "PUBLISHED_INCOMPLETE" ||
+        bv === "PUBLISHED_ANALOGOUS_MEASURE" ||
+        (ps && String(ps).startsWith("PUBLISHED")) ||
+        (bv && String(bv).startsWith("PUBLISHED"))
+      ) {
+        k.commercial.dateUnknown++;
+      } else if (/\[V:PUB\]/i.test(l.evidence || "")) {
+        k.commercial.dateUnknown++;
+      } else {
+        k.commercial.absenceCertified++;
+      }
+    }
   }
+  k.notYetCertified = Math.max(0, k.total - k.actionable);
   return k;
 }
 
