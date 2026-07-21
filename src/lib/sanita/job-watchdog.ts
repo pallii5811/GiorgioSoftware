@@ -116,6 +116,33 @@ export function killProcessTree(pid: number | null | undefined) {
   }
 }
 
+function syncSleepMs(ms: number) {
+  if (ms <= 0) return;
+  if (process.platform === "win32") {
+    try {
+      execFileSync("powershell", ["-Command", `Start-Sleep -Milliseconds ${ms}`], {
+        timeout: ms + 2000,
+        stdio: "ignore",
+      });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  try {
+    execFileSync("sleep", [String(Math.max(0.001, ms / 1000))], {
+      timeout: ms + 2000,
+      stdio: "ignore",
+    });
+    return;
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      /* ponytail: busy-wait fallback */
+    }
+  }
+}
+
 /** SIGTERM → attesa → SIGKILL se il processo resta vivo. */
 export function killProcessTreeControlled(
   pid: number | null | undefined,
@@ -128,7 +155,7 @@ export function killProcessTreeControlled(
   const alive = deps.isProcessAlive ?? isProcessAlive;
   while (Date.now() < deadline) {
     if (!alive(pid)) return;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+    syncSleepMs(200);
   }
   try {
     process.kill(-pid, "SIGKILL");
@@ -297,6 +324,36 @@ export function reconcileOneSanitaJob(
   now = Date.now(),
   deps: ReconcileDeps = {}
 ): ReconcileOutcome {
+  if (
+    job.cancelRequested &&
+    (job.status === "queued" || job.status === "running")
+  ) {
+    let killed = false;
+    if (job.pid) {
+      const inspect = inspectSanitaJobProcess(job.pid, job.jobId, deps);
+      if (inspect === "valid") {
+        if (deps.killProcessControlled) deps.killProcessControlled(job.pid);
+        else killProcessTreeControlled(job.pid, deps);
+        killed = true;
+      }
+    }
+    releaseJobTargetLock(job.targetKey, job.jobId);
+    writeSanitaJob({
+      ...job,
+      status: "cancelled",
+      finishedAt: new Date().toISOString(),
+      resumable: false,
+      pid: null,
+      lastUpdateLabel: "Interrotto",
+      progress: {
+        ...job.progress,
+        currentMessage: "Controllo interrotto.",
+        currentStructure: null,
+      },
+    });
+    return { action: "reconciled", reason: "cancel_requested", killed };
+  }
+
   if (!isActiveWithPid(job)) {
     if (
       (job.status === "queued" || job.status === "running") &&
