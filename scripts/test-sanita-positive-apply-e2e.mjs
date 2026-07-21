@@ -5,12 +5,30 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const BASE_URL = (process.env.BASE_URL || "http://168.119.253.47:3000").replace(/\/$/, "");
 const LEAD_ID = process.env.APPLY_LEAD_ID || "cmqktyimz000i111hygme29nh";
 const LEAD_NAME = process.env.APPLY_LEAD_NAME || "Malzoni";
 const TIMEOUT_MS = Number(process.env.APPLY_TIMEOUT_MS || 900_000);
 const POLL_MS = 5000;
+
+function verifyAuditOnServer(jobId, leadId) {
+  const out = execFileSync(
+    "node",
+    [
+      "scripts/verify-sanita-gate-hetzner.mjs",
+      `--jobId=${jobId}`,
+      `--leadId=${leadId}`,
+      "--requireAudit=1",
+      "--failOnError=1",
+    ],
+    { encoding: "utf8", cwd: process.cwd() }
+  );
+  const line = out.trim().split("\n").pop();
+  const parsed = JSON.parse(line);
+  return Boolean(parsed.auditExists);
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -70,8 +88,7 @@ async function main() {
   const evidenceAfter = afterLead?.evidence || "";
   const actionableAfter = await countActionable();
 
-  const applyAuditPath = path.join("data", "sanita-jobs", jobId, `certified-apply-${LEAD_ID}.json`);
-  const applyAuditExists = fs.existsSync(applyAuditPath);
+  const applyAuditExists = await verifyAuditOnServer(jobId, LEAD_ID);
 
   const report = {
     jobId,
