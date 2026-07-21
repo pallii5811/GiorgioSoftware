@@ -15,6 +15,7 @@ import {
   runWithJobLeadTimeout,
   startJobHeartbeat,
   writeJobCheckpoint,
+  reconcileStaleSanitaJobs,
 } from "@/lib/sanita/job-watchdog";
 import { applyCertifiedFromJobLead } from "@/lib/sanita/job-certified-apply";
 import { runPublishedPriorityForJob } from "@/lib/sanita/job-published-priority";
@@ -103,6 +104,8 @@ applyState({
     currentMessage: "Preparazione del controllo.",
   },
 });
+
+reconcileStaleSanitaJobs();
 
 async function ensureNotCancelled() {
   const fresh = readSanitaJob(jobId);

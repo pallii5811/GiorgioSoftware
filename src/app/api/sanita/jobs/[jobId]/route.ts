@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readSanitaJob } from "@/lib/sanita/jobs";
+import { reconcileStaleSanitaJobs, ensureSanitaJobWatchdog } from "@/lib/sanita/job-watchdog";
 import {
   getScanEngineUrl,
   HETZNER_SCAN_ENGINE,
@@ -28,6 +29,8 @@ async function proxyJobGet(jobId: string) {
 export async function GET(_req: Request, ctx: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await ctx.params;
   if (isVercelUiHost()) return proxyJobGet(jobId);
+  ensureSanitaJobWatchdog();
+  reconcileStaleSanitaJobs();
   const job = readSanitaJob(jobId);
   if (!job) {
     return NextResponse.json({ success: false, error: "Job non trovato" }, { status: 404 });

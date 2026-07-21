@@ -50,19 +50,19 @@ export async function POST(_req: Request, ctx: { params: Promise<{ jobId: string
   });
   if (next.pid) {
     killProcessTree(next.pid);
-  } else {
-    next = writeSanitaJob({
-      ...next,
-      status: "cancelled",
-      finishedAt: new Date().toISOString(),
-      resumable: false,
-      pid: null,
-      lastUpdateLabel: "Interrotto",
-      progress: {
-        ...next.progress,
-        currentMessage: "Controllo interrotto.",
-      },
-    });
   }
+  next = writeSanitaJob({
+    ...next,
+    status: "cancelled",
+    finishedAt: new Date().toISOString(),
+    resumable: false,
+    pid: null,
+    cancelRequested: true,
+    lastUpdateLabel: "Interrotto",
+    progress: {
+      ...next.progress,
+      currentMessage: "Controllo interrotto.",
+    },
+  });
   return NextResponse.json({ success: true, job: next });
 }

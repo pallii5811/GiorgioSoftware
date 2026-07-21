@@ -14,7 +14,9 @@ ls -la "$STAGING"
 for f in \
   src/lib/sanita/jobs.ts \
   src/lib/sanita/job-watchdog.ts \
+  src/lib/sanita/job-target-lock.ts \
   src/lib/sanita/job-certified-apply.ts \
+  src/lib/sanita/job-published-priority.ts \
   src/lib/sanita/apply-certified-terminal.ts \
   src/app/api/sanita/jobs/route.ts \
   src/components/sanita-leads.tsx \
@@ -36,7 +38,9 @@ echo "$BK"
 
 install -D -m 0644 "$STAGING/src/lib/sanita/jobs.ts" "$APP/src/lib/sanita/jobs.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/job-watchdog.ts" "$APP/src/lib/sanita/job-watchdog.ts"
+install -D -m 0644 "$STAGING/src/lib/sanita/job-target-lock.ts" "$APP/src/lib/sanita/job-target-lock.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/job-certified-apply.ts" "$APP/src/lib/sanita/job-certified-apply.ts"
+install -D -m 0644 "$STAGING/src/lib/sanita/job-published-priority.ts" "$APP/src/lib/sanita/job-published-priority.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/apply-certified-terminal.ts" "$APP/src/lib/sanita/apply-certified-terminal.ts"
 install -D -m 0644 "$STAGING/src/app/api/sanita/jobs/route.ts" "$APP/src/app/api/sanita/jobs/route.ts"
 install -D -m 0644 "$STAGING/src/app/api/sanita/jobs/[jobId]/route.ts" "$APP/src/app/api/sanita/jobs/[jobId]/route.ts"

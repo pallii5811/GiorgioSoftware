@@ -10,7 +10,7 @@ import {
   writeSanitaJob,
   type SanitaJobMode,
 } from "@/lib/sanita/jobs";
-import { reconcileStaleSanitaJobs } from "@/lib/sanita/job-watchdog";
+import { reconcileStaleSanitaJobs, ensureSanitaJobWatchdog } from "@/lib/sanita/job-watchdog";
 import { prisma } from "@/lib/prisma";
 import {
   getScanEngineUrl,
@@ -91,6 +91,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const onlyActive = url.searchParams.get("active") === "1";
   const limit = Math.max(1, Math.min(20, Number(url.searchParams.get("limit") || 10)));
+  ensureSanitaJobWatchdog();
   reconcileStaleSanitaJobs();
   let jobs = listSanitaJobs();
   if (onlyActive) jobs = jobs.filter((job) => job.status === "queued" || job.status === "running");
@@ -219,6 +220,7 @@ export async function POST(req: Request) {
     skipExistingEvidence: body.skipExistingEvidence,
   });
 
+  ensureSanitaJobWatchdog();
   reconcileStaleSanitaJobs();
 
   if (mode === "region-canary") {

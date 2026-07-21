@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import {
+  acquireJobTargetLock,
+  releaseJobTargetLock,
+} from "@/lib/sanita/job-target-lock";
 export type SanitaJobMode = "single" | "city" | "region" | "region-canary";
 export type SanitaJobStatus =
   | "queued"
@@ -62,15 +66,17 @@ export type SanitaJobRecord = {
 
 export const REGION_CANARY_MAX_TARGETS = 3;
 
-const JOBS_DIR = path.join(process.cwd(), "data", "sanita-jobs");
+function jobsDir() {
+  return path.join(process.cwd(), "data", "sanita-jobs");
+}
 
 export function ensureJobsDir() {
-  fs.mkdirSync(JOBS_DIR, { recursive: true });
+  fs.mkdirSync(jobsDir(), { recursive: true });
 }
 
 export function getSanitaJobsDir() {
   ensureJobsDir();
-  return JOBS_DIR;
+  return jobsDir();
 }
 
 export function getSanitaJobPath(jobId: string) {
@@ -180,25 +186,45 @@ export function readSanitaJob(jobId: string) {
   return JSON.parse(fs.readFileSync(file, "utf8")) as SanitaJobRecord;
 }
 
-export function writeSanitaJob(job: SanitaJobRecord) {
+const TERMINAL_JOB_STATUSES: SanitaJobStatus[] = [
+  "completed",
+  "cancelled",
+  "failed",
+  "interrupted",
+];
+
+export function writeSanitaJob(
+  job: SanitaJobRecord,
+  opts?: { touchHeartbeat?: boolean }
+) {
   ensureJobsDir();
+  const prev = readSanitaJob(job.jobId);
   job.updatedAt = new Date().toISOString();
-  job.lastHeartbeatAt = job.updatedAt;
+  if (opts?.touchHeartbeat || job.status === "running") {
+    job.lastHeartbeatAt = job.updatedAt;
+  }
   const file = getSanitaJobPath(job.jobId);
   const tmp = `${file}.tmp.${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(job, null, 2));
   fs.renameSync(tmp, file);
+  if (job.pid && job.pid !== (prev?.pid ?? null)) {
+    acquireJobTargetLock(job.targetKey, job.jobId, job.pid);
+  }
+  if (TERMINAL_JOB_STATUSES.includes(job.status)) {
+    releaseJobTargetLock(job.targetKey, job.jobId);
+  }
   return job;
 }
 
 export function listSanitaJobs() {
   ensureJobsDir();
+  const dir = jobsDir();
   return fs
-    .readdirSync(JOBS_DIR)
+    .readdirSync(dir)
     .filter((name) => name.endsWith(".json"))
     .map((name) => {
       try {
-        return JSON.parse(fs.readFileSync(path.join(JOBS_DIR, name), "utf8")) as SanitaJobRecord;
+        return JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as SanitaJobRecord;
       } catch {
         return null;
       }
