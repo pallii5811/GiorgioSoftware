@@ -17,6 +17,9 @@ for f in \
   src/lib/sanita/job-target-lock.ts \
   src/lib/sanita/job-certified-apply.ts \
   src/lib/sanita/job-published-priority.ts \
+  src/lib/sanita/canonical-published-terminal.ts \
+  src/lib/sanita/published-fast-path.ts \
+  src/lib/sanita/evidence-version.ts \
   src/lib/sanita/apply-certified-terminal.ts \
   src/app/api/sanita/jobs/route.ts \
   src/components/sanita-leads.tsx \
@@ -41,6 +44,9 @@ install -D -m 0644 "$STAGING/src/lib/sanita/job-watchdog.ts" "$APP/src/lib/sanit
 install -D -m 0644 "$STAGING/src/lib/sanita/job-target-lock.ts" "$APP/src/lib/sanita/job-target-lock.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/job-certified-apply.ts" "$APP/src/lib/sanita/job-certified-apply.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/job-published-priority.ts" "$APP/src/lib/sanita/job-published-priority.ts"
+install -D -m 0644 "$STAGING/src/lib/sanita/canonical-published-terminal.ts" "$APP/src/lib/sanita/canonical-published-terminal.ts"
+install -D -m 0644 "$STAGING/src/lib/sanita/published-fast-path.ts" "$APP/src/lib/sanita/published-fast-path.ts"
+install -D -m 0644 "$STAGING/src/lib/sanita/evidence-version.ts" "$APP/src/lib/sanita/evidence-version.ts"
 install -D -m 0644 "$STAGING/src/lib/sanita/apply-certified-terminal.ts" "$APP/src/lib/sanita/apply-certified-terminal.ts"
 install -D -m 0644 "$STAGING/src/app/api/sanita/jobs/route.ts" "$APP/src/app/api/sanita/jobs/route.ts"
 install -D -m 0644 "$STAGING/src/app/api/sanita/jobs/[jobId]/route.ts" "$APP/src/app/api/sanita/jobs/[jobId]/route.ts"
