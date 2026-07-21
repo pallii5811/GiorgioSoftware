@@ -133,7 +133,7 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    const pending = await prisma.lead.findMany({
+    const unscanned = await prisma.lead.findMany({
       where: {
         type: "HEALTHCARE",
         region,
@@ -144,6 +144,22 @@ export async function POST(req: Request) {
       take: maxTargets,
       select: { id: true, companyName: true, city: true },
     });
+    let pending = unscanned;
+    if (pending.length < maxTargets) {
+      const scanned = await prisma.lead.findMany({
+        where: {
+          type: "HEALTHCARE",
+          region,
+          lastScannedAt: { not: null },
+          website: { not: null },
+          id: { notIn: pending.map((l) => l.id) },
+        },
+        orderBy: [{ lastScannedAt: "asc" }, { city: "asc" }],
+        take: maxTargets - pending.length,
+        select: { id: true, companyName: true, city: true },
+      });
+      pending = [...pending, ...scanned];
+    }
     if (pending.length < maxTargets) {
       return NextResponse.json(
         { success: false, error: `Lead pending insufficienti (${pending.length}/${maxTargets})` },
