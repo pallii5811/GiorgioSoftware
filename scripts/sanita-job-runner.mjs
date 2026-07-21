@@ -17,6 +17,7 @@ import {
   writeJobCheckpoint,
 } from "@/lib/sanita/job-watchdog";
 import { applyCertifiedFromJobLead } from "@/lib/sanita/job-certified-apply";
+import { runPublishedPriorityForJob } from "@/lib/sanita/job-published-priority";
 
 const jobId = process.argv[2];
 if (!jobId) {
@@ -167,9 +168,22 @@ async function runSingleLead() {
       technicalBlocked: 0,
       outOfScope: 0,
     };
-    const analysis = await analyzeLeadWithWatchdog(lead, counters, {
-      message: "Verifica in corso sulla struttura selezionata.",
-    });
+
+    let analysis = { timedOut: false };
+    const pubPriority =
+      job.forceRescan && /\[DOCS:/i.test(lead.evidence || "")
+        ? await runPublishedPriorityForJob(lead)
+        : { handled: false };
+
+    if (pubPriority.handled) {
+      counters.analyzed++;
+      if (pubPriority.policyFound) counters.withPolicy++;
+      if (pubPriority.certified) counters.published++;
+    } else {
+      analysis = await analyzeLeadWithWatchdog(lead, counters, {
+        message: "Verifica in corso sulla struttura selezionata.",
+      });
+    }
 
     const finalLead = await prisma.lead.findUnique({ where: { id: lead.id } });
     if (!finalLead) throw new Error("Lead non trovato dopo analisi");
