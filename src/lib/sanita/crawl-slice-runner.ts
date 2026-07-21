@@ -88,12 +88,6 @@ function relevanceFor(url: string): "critical" | "relevant" | "low" {
   return "relevant";
 }
 
-function pdfNeedsOcr(url: string): boolean {
-  return /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
-    url
-  );
-}
-
 function sameHost(a: string, b: string): boolean {
   try {
     const ha = new URL(a).hostname.replace(/^www\./i, "");
@@ -277,11 +271,22 @@ export async function runCrawlSlice(opts: {
       extraUrls: opts.seedExtraUrls,
     });
   } else {
-    // Re-queue only DISCOVERED. RETRY_PENDING stays until nextRetryAt (pickNextNode).
+    // Re-queue DISCOVERED. Reopen TECHNICAL_BLOCKED so OCR/infra fixes can drain failed nodes.
+    // RETRY_PENDING stays until nextRetryAt (pickNextNode).
     for (const n of listNodes(crawlRunId)) {
       if (n.state === "DISCOVERED") {
         try {
           transitionFrontierNode(n.id, "QUEUED");
+        } catch {
+          /* */
+        }
+      }
+      if (n.state === "TECHNICAL_BLOCKED") {
+        try {
+          transitionFrontierNode(n.id, "RETRY_PENDING", {
+            lastError: n.lastError ? `reopen:${n.lastError}` : "reopen_technical_blocked",
+            nextRetryAt: new Date().toISOString(),
+          });
         } catch {
           /* */
         }
@@ -432,14 +437,23 @@ export async function runCrawlSlice(opts: {
     if (/\.pdf/i.test(node.canonicalUrl) || fetched.contentType.includes("pdf")) {
       pdfProcessed++;
       const prev = process.env.OCR_JOB_TIMEOUT_MS;
-      const prevOcr = process.env.OCR_ENABLED;
-      // Magazine/newsletter PDFs from sitemap: process digitally, OCR only policy-ish URLs
-      process.env.OCR_ENABLED = pdfNeedsOcr(node.canonicalUrl) ? "1" : "0";
+      // Stop-ship: never disable OCR via URL heuristics — thin PDFs must hit real pdftoppm.
       process.env.OCR_JOB_TIMEOUT_MS = String(budget.ocrTimeoutMs);
       try {
         const extracted = await extractPdfFullText(fetched.buf);
         text = extracted.text || "";
-        if (extracted.ocr && (extracted.digital?.length || 0) < 200) ocrUsed = true;
+        if (
+          extracted.rasterize?.status === "OK" ||
+          (extracted.ocr && (extracted.digital?.length || 0) < 200)
+        ) {
+          ocrUsed = true;
+        }
+        if (extracted.rasterize?.rendererPath) {
+          heartbeatCrawlRun(
+            crawlRunId,
+            `ocr_renderer:${extracted.rasterize.rendererPath}:${extracted.status}`
+          );
+        }
         // Scanned PDF + missing renderer / timeout / extraction fail → TECHNICAL_BLOCKED (not REVIEW)
         if (
           extracted.status === "OCR_RENDERER_MISSING" ||
@@ -474,8 +488,6 @@ export async function runCrawlSlice(opts: {
       } finally {
         if (prev == null) delete process.env.OCR_JOB_TIMEOUT_MS;
         else process.env.OCR_JOB_TIMEOUT_MS = prev;
-        if (prevOcr == null) delete process.env.OCR_ENABLED;
-        else process.env.OCR_ENABLED = prevOcr;
       }
     } else {
       const html = fetched.buf.toString("utf8");

@@ -142,73 +142,157 @@ export function isOcrTechnicalFailure(status: OcrStatus): boolean {
   );
 }
 
-/** Resolve pdftoppm binary: PDFTOPPM_PATH → PATH → null. */
-export function resolvePdftoppmPath(): string | null {
-  const envPath = process.env.PDFTOPPM_PATH?.trim();
-  // If PDFTOPPM_PATH is explicitly set, trust it unconditionally — even if the file doesn't exist
-  // yet (test mocking or late mounts). Do NOT fall through to staging candidates, so tests can
-  // force RENDERER_MISSING by pointing to a nonexistent path.
-  if (envPath !== undefined && envPath !== "") return envPath;
-  // Common staging layout (Windows official poppler-windows extract)
-  const stagingCandidates = [
-    path.join(
-      PROJECT_ROOT,
-      "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe"
-    ),
-    path.join(PROJECT_ROOT, "data/staging/poppler/Library/bin/pdftoppm.exe"),
-  ];
-  for (const c of stagingCandidates) {
-    if (fs.existsSync(c)) return c;
+/** Resolve pdftoppm candidates (sync list only — probe is async). */
+export function listPdftoppmCandidates(): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (p: string | null | undefined) => {
+    const v = (p || "").trim();
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+
+  // Test escape hatch: force missing without system fallbacks
+  if (process.env.PDFTOPPM_DISABLE_SYSTEM_FALLBACK === "1") {
+    push(process.env.PDFTOPPM_PATH);
+    return out;
   }
-  return null; // PATH probed asynchronously in resolvePdftoppm()
+
+  push(process.env.PDFTOPPM_PATH);
+  if (process.platform !== "win32") {
+    push("/usr/bin/pdftoppm");
+    push("/bin/pdftoppm");
+  }
+  push("pdftoppm");
+
+  // Staging Windows poppler extract
+  push(
+    path.join(PROJECT_ROOT, "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe")
+  );
+  push(path.join(PROJECT_ROOT, "data/staging/poppler/Library/bin/pdftoppm.exe"));
+  return out;
 }
 
-let cachedPdftoppm: { path: string | null; version: string | null; probed: boolean } = {
-  path: null,
-  version: null,
-  probed: false,
+/** @deprecated use listPdftoppmCandidates + resolvePdftoppm — kept for callers */
+export function resolvePdftoppmPath(): string | null {
+  const c = listPdftoppmCandidates();
+  for (const bin of c) {
+    if (bin.includes("/") || bin.includes("\\")) {
+      if (fs.existsSync(bin)) return bin;
+      continue;
+    }
+  }
+  // bare name — defer to async probe
+  return c.find((x) => !x.includes("/") && !x.includes("\\")) || null;
+}
+
+type PdftoppmCache = {
+  path: string | null;
+  version: string | null;
+  probedAt: number;
+  ok: boolean;
+  diagnostics: string[];
 };
+
+const NEGATIVE_CACHE_TTL_MS = 30_000;
+
+let cachedPdftoppm: PdftoppmCache | null = null;
+
+/** Clear resolver cache (preflight / after OCR_RENDERER_MISSING / tests). */
+export function resetPdftoppmCache(): void {
+  cachedPdftoppm = null;
+}
+
+/** @deprecated alias */
+export function resetPdftoppmCacheForTests(): void {
+  resetPdftoppmCache();
+}
+
+function isExecutableAbsolute(bin: string): boolean {
+  try {
+    if (!fs.existsSync(bin)) return false;
+    fs.accessSync(bin, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function probePdftoppmBinary(bin: string): Promise<{ ok: boolean; version: string | null; error: string | null }> {
+  const isAbs = bin.includes("/") || bin.includes("\\") || /^[A-Za-z]:\\/.test(bin);
+  if (isAbs && !isExecutableAbsolute(bin)) {
+    return { ok: false, version: null, error: `not_executable_or_missing:${bin}` };
+  }
+  try {
+    const { stderr, stdout } = await execFileAsync(bin, ["-v"], {
+      timeout: 5_000,
+      windowsHide: true,
+      env: process.env,
+    });
+    const blob = `${stdout || ""}${stderr || ""}`;
+    const m = blob.match(/pdftoppm version[^\r\n]*/i);
+    const version =
+      (m?.[0] || blob.split(/\r?\n/).find((l) => /pdftoppm/i.test(l)) || blob.trim().split(/\r?\n/)[0] || "").trim() ||
+      null;
+    return { ok: true, version, error: null };
+  } catch (e: unknown) {
+    const err = e as { stderr?: string | Buffer; stdout?: string | Buffer; message?: string };
+    const blob = `${err.stdout?.toString?.() ?? err.stdout ?? ""}${err.stderr?.toString?.() ?? err.stderr ?? ""}${err.message ?? ""}`;
+    // poppler often exits non-zero on -v while still printing version
+    if (/pdftoppm version/i.test(blob)) {
+      const m = blob.match(/pdftoppm version[^\r\n]*/i);
+      return {
+        ok: true,
+        version: (m?.[0] || "").trim() || null,
+        error: null,
+      };
+    }
+    return { ok: false, version: null, error: blob.slice(0, 240) || "exec_failed" };
+  }
+}
 
 export async function resolvePdftoppm(): Promise<{
   path: string | null;
   version: string | null;
+  diagnostics?: string[];
 }> {
-  if (cachedPdftoppm.probed) {
-    return { path: cachedPdftoppm.path, version: cachedPdftoppm.version };
-  }
-  cachedPdftoppm.probed = true;
-  const fromEnv = resolvePdftoppmPath();
-  const candidates = fromEnv ? [fromEnv, "pdftoppm"] : ["pdftoppm"];
-  for (const bin of candidates) {
-    try {
-      const { stderr, stdout } = await execFileAsync(bin, ["-v"], {
-        timeout: 5_000,
-        windowsHide: true,
-      });
-      const ver = `${stdout || ""}${stderr || ""}`.trim().split(/\r?\n/)[0] || null;
-      cachedPdftoppm = { path: bin, version: ver, probed: true };
-      return { path: bin, version: ver };
-    } catch (e: unknown) {
-      const err = e as { stderr?: string | Buffer; stdout?: string | Buffer; message?: string };
-      const blob = `${err.stdout?.toString?.() ?? err.stdout ?? ""}${err.stderr?.toString?.() ?? err.stderr ?? ""}${err.message ?? ""}`;
-      if (/pdftoppm version/i.test(blob)) {
-        const m = blob.match(/pdftoppm version[^\r\n]*/i);
-        cachedPdftoppm = {
-          path: bin,
-          version: (m?.[0] || blob.split(/\r?\n/).find((l) => /pdftoppm/i.test(l)) || "").trim() || null,
-          probed: true,
-        };
-        return { path: cachedPdftoppm.path, version: cachedPdftoppm.version };
-      }
+  const now = Date.now();
+  if (cachedPdftoppm) {
+    if (cachedPdftoppm.ok) {
+      return { path: cachedPdftoppm.path, version: cachedPdftoppm.version, diagnostics: cachedPdftoppm.diagnostics };
+    }
+    // negative cache with TTL — never permanent
+    if (now - cachedPdftoppm.probedAt < NEGATIVE_CACHE_TTL_MS) {
+      return { path: null, version: null, diagnostics: cachedPdftoppm.diagnostics };
     }
   }
-  cachedPdftoppm = { path: null, version: null, probed: true };
-  return { path: null, version: null };
-}
 
-/** Reset cache (tests). */
-export function resetPdftoppmCacheForTests(): void {
-  cachedPdftoppm = { path: null, version: null, probed: false };
+  const diagnostics: string[] = [];
+  const candidates = listPdftoppmCandidates();
+  for (const bin of candidates) {
+    const probed = await probePdftoppmBinary(bin);
+    if (probed.ok) {
+      cachedPdftoppm = {
+        path: bin,
+        version: probed.version,
+        probedAt: now,
+        ok: true,
+        diagnostics: [...diagnostics, `ok:${bin}`],
+      };
+      return { path: bin, version: probed.version, diagnostics: cachedPdftoppm.diagnostics };
+    }
+    diagnostics.push(`fail:${bin}:${probed.error}`);
+  }
+
+  cachedPdftoppm = {
+    path: null,
+    version: null,
+    probedAt: now,
+    ok: false,
+    diagnostics,
+  };
+  return { path: null, version: null, diagnostics };
 }
 
 function extractImagesFromPdfCarving(buffer: Buffer): Buffer[] {
@@ -411,7 +495,12 @@ export async function collectPdfImagesForOcr(
   pdfBuffer: Buffer,
   opts?: { allowCarveFallback?: boolean }
 ): Promise<{ images: Buffer[]; rasterize: RasterizeResult }> {
-  const rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
+  let rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
+  if (rasterize.status === "RENDERER_MISSING") {
+    // One forced re-probe after clearing negative cache (env may have been fixed mid-process)
+    resetPdftoppmCache();
+    rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
+  }
   if (rasterize.status === "OK" && rasterize.images.length > 0) {
     const cleaned: Buffer[] = [];
     for (const png of rasterize.images) {
@@ -664,19 +753,29 @@ export async function extractPdfFullText(pdfBuffer: Buffer): Promise<ExtractPdfF
     };
   }
 
-  if (!isOcrEnabled()) {
-    // Scanned PDF but OCR disabled → technical, not commercial false-negative
+  if (!isOcrEnabled() && digitalMeaningful.length > 80) {
+    // OCR intentionally off and digital text is usable — never claim RENDERER_MISSING.
     return {
       digital,
       ocr: null,
       text: digital,
-      status: digitalMeaningful.length > 80 ? "OCR_NOT_NEEDED" : "OCR_RENDERER_MISSING",
-      reasonCode: digitalMeaningful.length > 80 ? "OCR_NOT_NEEDED" : "OCR_RENDERER_MISSING",
+      status: "OCR_NOT_NEEDED",
+      reasonCode: "OCR_NOT_NEEDED",
       rasterize: null,
     };
   }
-
-  const ocrResult = await ocrPdfText(pdfBuffer);
+  // Fail-closed: thin/scanned digital always attempts OCR even if a caller set OCR_ENABLED=0
+  // (e.g. non-policyish URL gate). OCR_RENDERER_MISSING must mean pdftoppm really missing.
+  // ocrPdfText() itself respects OCR_ENABLED — force-enable for this thin-digital path only.
+  const prevOcrEnabled = process.env.OCR_ENABLED;
+  process.env.OCR_ENABLED = "1";
+  let ocrResult;
+  try {
+    ocrResult = await ocrPdfText(pdfBuffer);
+  } finally {
+    if (prevOcrEnabled == null) delete process.env.OCR_ENABLED;
+    else process.env.OCR_ENABLED = prevOcrEnabled;
+  }
   const policyHint = /polizz|assicuraz|gelli|responsabilit|massimale|rc\b|unipol|184419/i;
 
   let text = digital;

@@ -32,12 +32,13 @@ const ALLOWED_TRANSITIONS: Record<FrontierNodeState, FrontierNodeState[]> = {
   DISCOVERED: ["QUEUED", "EXCLUDED", "RETRY_PENDING"],
   QUEUED: ["FETCHING", "EXCLUDED", "RETRY_PENDING"],
   FETCHING: ["FETCHED", "RETRY_PENDING", "TECHNICAL_BLOCKED", "EXCLUDED"],
-  FETCHED: ["RENDERED", "PARSED", "EXCLUDED", "RETRY_PENDING"],
+  FETCHED: ["RENDERED", "PARSED", "EXCLUDED", "RETRY_PENDING", "TECHNICAL_BLOCKED", "FETCHING"],
   RENDERED: ["PARSED", "RETRY_PENDING"],
   PARSED: ["COMPLETED", "EXCLUDED", "RETRY_PENDING"],
   EXCLUDED: [],
   RETRY_PENDING: ["QUEUED", "FETCHING", "TECHNICAL_BLOCKED"],
-  TECHNICAL_BLOCKED: [],
+  // Infra/OCR fix may reopen blocked nodes on frontier resume.
+  TECHNICAL_BLOCKED: ["RETRY_PENDING", "QUEUED"],
   COMPLETED: [],
 };
 
@@ -543,7 +544,32 @@ export function persistNodeEvidence(input: {
   const existing = d
     .prepare(`SELECT id FROM CrawlNodeEvidence WHERE crawlRunId = ? AND contentHash = ?`)
     .get(input.crawlRunId, input.contentHash) as { id: string } | undefined;
-  if (existing) return;
+  if (existing) {
+    // Same PDF bytes reprocessed (e.g. OCR gate fix) — refresh text/ocr, don't keep stale empty evidence.
+    d.prepare(
+      `UPDATE CrawlNodeEvidence SET
+        normalizedText = ?,
+        policyText = ?,
+        policyFound = ?,
+        policySignalsJson = ?,
+        extractedEntityJson = ?,
+        ocrStatus = COALESCE(?, ocrStatus),
+        playwrightSource = COALESCE(?, playwrightSource),
+        extractedAt = ?
+      WHERE id = ?`
+    ).run(
+      input.normalizedText.slice(0, 120_000),
+      (input.policyText || "").slice(0, 40_000),
+      input.policyFound ? 1 : 0,
+      input.policySignalsJson != null ? JSON.stringify(input.policySignalsJson) : null,
+      input.extractedEntityJson != null ? JSON.stringify(input.extractedEntityJson) : null,
+      input.ocrStatus ?? null,
+      input.playwrightSource ?? null,
+      new Date().toISOString(),
+      existing.id
+    );
+    return;
+  }
   d.prepare(
     `INSERT INTO CrawlNodeEvidence (
       id, crawlRunId, nodeId, canonicalUrl, contentHash, resourceType,

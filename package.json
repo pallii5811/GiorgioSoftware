@@ -39,6 +39,7 @@
     "test:published-gold": "tsx scripts/test-published-gold.mjs",
     "test:playwright-adaptive": "tsx scripts/test-playwright-adaptive.mjs",
     "test:ocr-contract": "tsx scripts/test-ocr-contract.mjs",
+    "test:ocr-pdftoppm": "tsx scripts/test-ocr-pdftoppm-resolver.mjs",
     "preflight:ocr": "tsx scripts/preflight-ocr.mjs",
     "test:stop-ship": "tsx scripts/test-stop-ship.mjs",
     "staging:analyzelead": "tsx scripts/staging-analyzelead-acceptance.mjs",
