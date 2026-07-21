@@ -9,7 +9,7 @@ import {
   Stethoscope, Search, Loader2, AlertTriangle, CheckCircle2, MapPin, Globe,
   Phone, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion,
   Filter, X, RefreshCw, Download, Flame, FileSearch, ExternalLink,
-  Info, Zap, RotateCcw,
+  Info, Zap, RotateCcw, PauseCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -24,7 +24,6 @@ import { downloadCsv } from "@/lib/export-csv"
 import { StatusSelect } from "@/components/status-select"
 import { LeadDetail } from "@/components/lead-detail"
 import { cn } from "@/lib/utils"
-import { consumeSanitaScanStream } from "@/lib/sanita/scan-sse-client"
 import { classifyGelliScope } from "@/lib/sanita/gelli-scope"
 import { auditQueueBadge, AUDIT_BADGE_UI } from "@/lib/sanita/audit-queue-badge"
 import { readProcessingState, readBusinessVerdict } from "@/lib/sanita/processing-state"
@@ -68,6 +67,29 @@ type Lead = {
 
 type VerdictFilter = "ALL" | Verdict | "PENDING"
 type ViewTab = "audit" | "commercial"
+
+type ScanJob = {
+  jobId: string
+  mode: "single" | "city" | "region"
+  status: "queued" | "running" | "completed" | "interrupted" | "cancelled" | "failed"
+  region: "Veneto" | "Campania"
+  city: string | null
+  leadId: string | null
+  updatedAt: string
+  finishedAt: string | null
+  lastUpdateLabel: string | null
+  resumable: boolean
+  progress: {
+    structuresControlled: number
+    totalStructures: number | null
+    certifiedResults: number
+    autoVerificationsPending: number
+    manualChecksNeeded: number
+    percent: number | null
+    currentMessage: string | null
+    currentStructure: string | null
+  }
+}
 
 type RegionDiscoveryMeta = {
   mapsCityOffset: number
@@ -135,9 +157,10 @@ export function SanitaLeads() {
     citiesTotal?: number
     mapsDiscoveryComplete?: boolean
   } | null>(null)
+  const [scanJob, setScanJob] = useState<ScanJob | null>(null)
+  const [scanJobId, setScanJobId] = useState<string | null>(null)
   const [discoveryMeta, setDiscoveryMeta] = useState<Record<string, RegionDiscoveryMeta>>({})
   const [processingName, setProcessingName] = useState<string | null>(null)
-  const [freshLeadIds, setFreshLeadIds] = useState<Set<string>>(new Set())
   const [viewTab, setViewTab] = useState<ViewTab>("audit")
   const [apiMeta, setApiMeta] = useState<SanitaApiMeta | null>(null)
 
@@ -221,281 +244,122 @@ export function SanitaLeads() {
     }
   }
 
+  const hydrateJobUi = (job: ScanJob | null) => {
+    setScanJob(job)
+    setScanJobId(job?.jobId ?? null)
+    if (!job) {
+      setIsScanning(false)
+      setActiveScan(null)
+      setScanProgress(null)
+      setProcessingName(null)
+      return
+    }
+    const active = job.status === "queued" || job.status === "running"
+    setIsScanning(active)
+    setRegionFilter(job.region)
+    setActiveScan({
+      region: job.region,
+      done: job.progress.structuresControlled ?? 0,
+      total: job.progress.totalStructures ?? 0,
+      round: 1,
+      phase: job.progress.currentMessage ?? job.lastUpdateLabel ?? "Verifica in corso",
+    })
+    setScanProgress(job.progress.currentMessage ?? job.lastUpdateLabel ?? null)
+    setProcessingName(job.progress.currentStructure ?? null)
+  }
+
+  const fetchJob = async (jobId: string, opts?: { refreshLeads?: boolean }) => {
+    const res = await fetch(`/api/sanita/jobs/${jobId}`, { cache: "no-store" })
+    const json = await res.json() as { success?: boolean; job?: ScanJob }
+    if (!res.ok || !json.success || !json.job) throw new Error("Impossibile leggere lo stato del job")
+    hydrateJobUi(json.job)
+    if (opts?.refreshLeads) {
+      await fetchLeads({ silent: true })
+    }
+    return json.job
+  }
+
+  const fetchLatestJob = async () => {
+    const res = await fetch("/api/sanita/jobs?limit=1", { cache: "no-store" })
+    const json = await res.json() as { success?: boolean; jobs?: ScanJob[] }
+    if (!res.ok || !json.success) return null
+    const job = json.jobs?.[0] ?? null
+    hydrateJobUi(job)
+    return job
+  }
+
   /** All'avvio carica i lead già salvati nel database condiviso. */
   useEffect(() => {
     const t = setTimeout(() => {
       void fetchLeads({ silent: true });
+      void fetchLatestJob().catch(() => {})
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
-  const upsertLiveLead = (lead: Lead) => {
-    const host = (() => {
-      if (!lead.website) return null
-      try {
-        return new URL(lead.website).hostname.replace(/^www\./i, "").toLowerCase()
-      } catch {
-        return null
-      }
-    })()
-    setLeads((prev) => {
-      let rest = prev.filter((l) => l.id !== lead.id)
-      if (host) rest = rest.filter((l) => {
-        if (!l.website) return true
-        try {
-          return new URL(l.website).hostname.replace(/^www\./i, "").toLowerCase() !== host
-        } catch {
-          return true
-        }
-      })
-      return [lead, ...rest]
-    })
-    setFreshLeadIds((prev) => new Set(prev).add(lead.id))
-    window.setTimeout(() => {
-      setFreshLeadIds((prev) => {
-        const next = new Set(prev)
-        next.delete(lead.id)
-        return next
-      })
+  useEffect(() => {
+    if (!scanJobId) return
+    const timer = window.setInterval(() => {
+      void fetchJob(scanJobId, {
+        refreshLeads: true,
+      }).catch(() => {})
     }, 4000)
-  }
+    return () => window.clearInterval(timer)
+  }, [scanJobId])
 
   const rescanOneLead = async (l: Lead) => {
-    const toastId = toast.loading(`Riscansione ${l.companyName}…`)
+    return createScanJob({
+      mode: "single",
+      region: l.region as "Veneto" | "Campania",
+      leadId: l.id,
+      label: `Verifica struttura · ${l.companyName}`,
+    })
+  }
+
+  const createScanJob = async (body: {
+    mode: "single" | "city" | "region"
+    region: "Veneto" | "Campania"
+    city?: string
+    leadId?: string
+    label: string
+  }) => {
+    const toastId = toast.loading(body.label)
     try {
-      const res = await fetch("/api/sanita/rescan", {
+      const res = await fetch("/api/sanita/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: l.id }),
+        body: JSON.stringify(body),
       })
-      const json = (await res.json()) as { success?: boolean; error?: string; lead?: Lead }
-      if (!res.ok || !json.success || !json.lead) {
-        throw new Error(json.error ?? "Riscansione fallita")
+      const json = await res.json() as { success?: boolean; error?: string; created?: boolean; job?: ScanJob }
+      if (!res.ok || !json.success || !json.job) {
+        throw new Error(json.error ?? "Impossibile avviare il job")
       }
-      upsertLiveLead(json.lead)
-      toast.success("Riscansione completata", { id: toastId })
+      hydrateJobUi(json.job)
+      await fetchLeads({ silent: true })
+      toast.success(
+        json.created === false
+          ? "Job gia' attivo: riprendo il monitoraggio."
+          : "Job avviato. Il controllo continua anche se chiudi il browser.",
+        { id: toastId }
+      )
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore riscansione", { id: toastId })
+      toast.error(err instanceof Error ? err.message : "Errore avvio job", { id: toastId })
     }
   }
 
-  /** Scansione regionale: ogni struttura compare in tabella appena analizzata. */
-  const runFullScan = async (body: {
-    region: "Veneto" | "Campania"
-    city?: string
-    continueAnalysis?: boolean
-    liveRescan?: boolean
-    reset?: boolean
-  }) => {
-    const live = body.liveRescan ?? false
-    const reset = body.reset ?? false
-    const label = body.city
-      ? `Scansione live · ${body.city} (${body.region})`
-      : `Scansione live · ${body.region}`
-    setRegionFilter(body.region)
-    setIsScanning(true)
-    setScanProgress("Connessione al motore live…")
-    setProcessingName(null)
-    if (reset) {
-      setLeads((prev) => prev.filter((l) => l.region !== body.region))
-      setFreshLeadIds(new Set())
-    }
-    setActiveScan({
-      region: body.region,
-      done: 0,
-      total: 0,
-      round: 1,
-      phase: live ? "Avvio scansione…" : "Preparazione…",
-    })
-    const toastId = toast.loading(label)
-    let round = 0
-    // Campania: ~550 comuni Maps → molte riconnessioni SSE automatiche.
-    const maxRounds = body.region === "Campania" ? 280 : 80
-
+  const cancelScanJob = async () => {
+    if (!scanJob?.jobId) return
+    const toastId = toast.loading("Interruzione job in corso…")
     try {
-      await fetchLeads({ silent: true })
-      const scanKey = `sanita.scan.${body.region}`
-      const savedOffset = (() => {
-        try {
-          const raw = window.localStorage.getItem(scanKey)
-          if (!raw) return 0
-          const v = JSON.parse(raw) as { mapsCityOffset?: number } | null
-          return Number(v?.mapsCityOffset ?? 0) || 0
-        } catch {
-          return 0
-        }
-      })()
-      const serverOffset = discoveryMeta[body.region]?.mapsCityOffset ?? 0
-
-      let payload: Record<string, unknown> = {
-        region: body.region,
-        city: body.city,
-        liveRescan: live,
-        freshScan: reset,
-        forceDiscovery: reset || live || !body.continueAnalysis,
-        continueAnalysis: reset ? false : (body.continueAnalysis ?? false),
-        mapsCityOffset: reset ? 0 : Math.max(savedOffset, serverOffset),
+      const res = await fetch(`/api/sanita/jobs/${scanJob.jobId}/cancel`, { method: "POST" })
+      const json = await res.json() as { success?: boolean; error?: string; job?: ScanJob }
+      if (!res.ok || !json.success || !json.job) {
+        throw new Error(json.error ?? "Impossibile interrompere il job")
       }
-
-      while (round < maxRounds) {
-        round++
-        let mapsCityOffset = Number(payload.mapsCityOffset ?? 0)
-        let sessionStats: Record<string, unknown> = {}
-
-        let outcome: "complete" | "paused" | "error" = "paused"
-        try {
-          outcome = await consumeSanitaScanStream(payload, (event, data) => {
-          if (event === "progress") {
-            const done = Number(data.done ?? 0)
-            const total = Number(data.total ?? 0)
-            const phase =
-              data.phase === "discovery"
-                ? String(data.message ?? "Scoperta strutture…")
-                : String(data.message ?? "Analisi in corso…")
-            setProcessingName(
-              typeof data.processingName === "string" ? data.processingName : null
-            )
-            setActiveScan({
-              region: body.region,
-              done,
-              total,
-              round,
-              phase,
-              mapsCityOffset: Number(data.mapsCityOffset ?? mapsCityOffset),
-              citiesTotal: Number(data.citiesTotal ?? discoveryMeta[body.region]?.citiesTotal ?? 0),
-              mapsDiscoveryComplete: Boolean(data.mapsDiscoveryComplete),
-            })
-            setScanProgress(
-              total > 0 ? `${body.region}: ${done}/${total} completati` : phase
-            )
-            toast.loading(
-              total > 0 ? `${label} — ${done}/${total}` : `${label} — ${phase}`,
-              { id: toastId }
-            )
-            // Allinea tabella/KPI al DB se il contatore server è avanti allo stato locale.
-            setLeads((prev) => {
-              const localDone = prev.filter(
-                (l) => l.region === body.region && l.lastScannedAt
-              ).length
-              if (done !== localDone) {
-                queueMicrotask(() => void fetchLeads({ silent: true }))
-              }
-              return prev
-            })
-          }
-          if (event === "lead" && data.lead && typeof data.lead === "object") {
-            upsertLiveLead(data.lead as Lead)
-            setProcessingName(null)
-          }
-          if (event === "paused" || event === "complete") {
-            sessionStats = (data.stats as Record<string, unknown>) ?? {}
-            mapsCityOffset = Number(sessionStats?.mapsCityOffset ?? 0)
-            const citiesTotal = Number(sessionStats?.citiesTotal ?? 0)
-            const mapsDiscoveryComplete = Boolean(sessionStats?.mapsDiscoveryComplete)
-            setDiscoveryMeta((prev) => ({
-              ...prev,
-              [body.region]: {
-                mapsCityOffset,
-                citiesTotal,
-                mapsDiscoveryComplete,
-              },
-            }))
-            setActiveScan((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    mapsCityOffset,
-                    citiesTotal,
-                    mapsDiscoveryComplete,
-                  }
-                : prev
-            )
-            try {
-              window.localStorage.setItem(scanKey, JSON.stringify({ mapsCityOffset }))
-            } catch {
-              /* ignore */
-            }
-          }
-          if (event === "error") {
-            toast.error(String(data.message ?? "Errore scansione"), { id: toastId })
-          }
-        })
-        } catch {
-          outcome = "paused"
-        }
-
-        if (outcome === "paused" && round < maxRounds) {
-          toast.loading(`${label} — riconnessione automatica (round ${round})…`, { id: toastId })
-          payload = {
-            region: body.region,
-            city: body.city,
-            continueAnalysis: true,
-            liveRescan: false,
-            forceDiscovery: false,
-            mapsCityOffset,
-          }
-          await new Promise((r) => setTimeout(r, 1500))
-          continue
-        }
-
-        if (outcome === "error") return
-
-        const stats = sessionStats
-        const total = Number(stats.discovered ?? stats.total ?? 0)
-        const rem = Number(stats.remainingUnscanned ?? 0)
-        const doneCount = Number(stats.done ?? total - rem)
-        const mapsDone = Boolean(stats.mapsDiscoveryComplete)
-        const fullyComplete = Boolean(stats.complete)
-
-        if (outcome === "complete" && fullyComplete) {
-          setActiveScan({
-            region: body.region,
-            done: doneCount,
-            total,
-            round,
-            phase: "Completato ✓",
-            mapsCityOffset: Number(stats.mapsCityOffset ?? 0),
-            citiesTotal: Number(stats.citiesTotal ?? 0),
-            mapsDiscoveryComplete: true,
-          })
-          setProcessingName(null)
-          toast.success(
-            String(stats.message ?? `${body.region} completata: ${total} strutture, tutti i comuni Maps`),
-            { id: toastId, duration: 12000 }
-          )
-          void fetchLeads({ silent: true })
-          return
-        }
-
-        if (!mapsDone && rem === 0 && total > 0 && outcome === "paused") {
-          toast.info(
-            `${body.region}: ${total} strutture analizzate — comuni Maps ${Number(stats.mapsCityOffset ?? 0)}/${Number(stats.citiesTotal ?? "?")}. Clicca «Continua ${body.region}».`,
-            { id: toastId, duration: 14000 }
-          )
-        }
-
-        payload = {
-          region: body.region,
-          city: body.city,
-          continueAnalysis: true,
-          liveRescan: false,
-          forceDiscovery: false,
-          mapsCityOffset,
-        }
-      }
-
-      toast.warning("Sessione terminata — clicca di nuovo Scansiona per continuare i round automatici.", { id: toastId })
-    } catch {
-      toast.error("Errore di connessione — riprova Scansiona", { id: toastId })
-    } finally {
-      setIsScanning(false)
-      setProcessingName(null)
-      setScanProgress(null)
-      // dopo reset: ricarica dal DB per non mostrare lead “vecchi” rimasti in memoria
-      if (reset) {
-        try { await fetchLeads({ silent: true }) } catch {}
-      }
-      setTimeout(() => setActiveScan(null), 8000)
+      hydrateJobUi(json.job)
+      toast.success("Interruzione richiesta inviata.", { id: toastId })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore interruzione job", { id: toastId })
     }
   }
 
@@ -517,25 +381,19 @@ export function SanitaLeads() {
 
   const startRegionScan = (region: "Veneto" | "Campania") => {
     guardScanAction(`Scansiona ${region}`, () => {
-      void runFullScan({ region, continueAnalysis: false })
+      void createScanJob({ mode: "region", region, label: `Scansione regione · ${region}` })
     })
   }
 
   const continueRegionScan = (region: "Veneto" | "Campania") => {
     guardScanAction(`Continua ${region}`, () => {
-      void runFullScan({ region, continueAnalysis: true })
+      void createScanJob({ mode: "region", region, label: `Riprendi scansione · ${region}` })
     })
   }
 
   const resetRegionScan = (region: "Veneto" | "Campania") => {
     guardScanAction(`Reset ${region}`, () => {
-      if (!confirm(`Reset ${region}: cancella i lead e riparte da zero. Confermi?`)) return
-      try {
-        window.localStorage.removeItem(`sanita.scan.${region}`)
-      } catch {
-        /* */
-      }
-      void runFullScan({ region, reset: true })
+      toast.info("Per sicurezza il reset completo non e' esposto nella UI cliente.")
     })
   }
 
@@ -812,6 +670,21 @@ export function SanitaLeads() {
 
   const formatDate = (s: string | null) =>
     s ? new Intl.DateTimeFormat("it-IT").format(new Date(s)) : "—"
+  const formatDateTime = (s: string | null) =>
+    s
+      ? new Intl.DateTimeFormat("it-IT", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date(s))
+      : "—"
+  const jobStatusLabel = (job: ScanJob) => {
+    if (job.status === "queued") return "In attesa"
+    if (job.status === "running") return "Verifica in corso"
+    if (job.status === "completed") return "Job completato"
+    if (job.status === "interrupted") return "Job riprendibile"
+    if (job.status === "cancelled") return "Job interrotto"
+    return "Controllo da verificare"
+  }
   const hostname = (url: string | null) => {
     if (!url) return null
     try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url }
@@ -1039,15 +912,15 @@ export function SanitaLeads() {
   const AUDIT_KPIS: Array<{ key: string; label: string; value: number; cls?: string }> = [
     { key: "total", label: "Strutture totali", value: auditKpis.total },
     { key: "actionable", label: "Certificati vendibili", value: auditKpis.actionable, cls: "text-emerald-700" },
-    { key: "HOT_VERIFIED", label: "HOT_VERIFIED", value: auditKpis.HOT_VERIFIED, cls: "text-red-600" },
-    { key: "PUBLISHED_CURRENT", label: "PUBLISHED_CURRENT", value: auditKpis.PUBLISHED_CURRENT, cls: "text-emerald-600" },
-    { key: "PUBLISHED_EXPIRED", label: "PUBLISHED_EXPIRED", value: auditKpis.PUBLISHED_EXPIRED, cls: "text-amber-700" },
-    { key: "PUBLISHED_DATE_UNKNOWN", label: "PUBLISHED_DATE_UNKNOWN", value: auditKpis.PUBLISHED_DATE_UNKNOWN, cls: "text-amber-600" },
+    { key: "HOT_VERIFIED", label: "Assenza certificata (admin)", value: auditKpis.HOT_VERIFIED, cls: "text-red-600" },
+    { key: "PUBLISHED_CURRENT", label: "Polizza valida (admin)", value: auditKpis.PUBLISHED_CURRENT, cls: "text-emerald-600" },
+    { key: "PUBLISHED_EXPIRED", label: "Polizza scaduta (admin)", value: auditKpis.PUBLISHED_EXPIRED, cls: "text-amber-700" },
+    { key: "PUBLISHED_DATE_UNKNOWN", label: "Data sconosciuta (admin)", value: auditKpis.PUBLISHED_DATE_UNKNOWN, cls: "text-amber-600" },
     { key: "inRevalidation", label: "In rivalidazione", value: auditKpis.inRevalidation, cls: "text-indigo-700" },
-    { key: "RETRY_PENDING", label: "RETRY_PENDING", value: auditKpis.RETRY_PENDING, cls: "text-sky-700" },
-    { key: "REVIEW_HUMAN", label: "REVIEW_HUMAN", value: auditKpis.REVIEW_HUMAN, cls: "text-amber-700" },
-    { key: "TECHNICAL_BLOCKED", label: "TECHNICAL_BLOCKED", value: auditKpis.TECHNICAL_BLOCKED, cls: "text-rose-700" },
-    { key: "OUT_OF_SCOPE", label: "OUT_OF_SCOPE", value: auditKpis.OUT_OF_SCOPE, cls: "text-slate-600" },
+    { key: "RETRY_PENDING", label: "Riprova automatica (admin)", value: auditKpis.RETRY_PENDING, cls: "text-sky-700" },
+    { key: "REVIEW_HUMAN", label: "Controllo identità (admin)", value: auditKpis.REVIEW_HUMAN, cls: "text-amber-700" },
+    { key: "TECHNICAL_BLOCKED", label: "Blocco tecnico (admin)", value: auditKpis.TECHNICAL_BLOCKED, cls: "text-rose-700" },
+    { key: "OUT_OF_SCOPE", label: "Fuori ambito (admin)", value: auditKpis.OUT_OF_SCOPE, cls: "text-slate-600" },
   ]
 
   return (
@@ -1366,6 +1239,80 @@ export function SanitaLeads() {
         )
       })()}
 
+      {scanJob && (
+        <Card className="border-indigo-200/70 bg-indigo-50/40">
+          <CardContent className="space-y-4 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-indigo-950">
+                  {scanJob.mode === "single"
+                    ? "Verifica struttura"
+                    : scanJob.mode === "city"
+                      ? `Scansione comune · ${scanJob.city ?? scanJob.region}`
+                      : `Scansione regione · ${scanJob.region}`}
+                </p>
+                <p className="mt-1 text-xs text-indigo-900/80">
+                  {scanJob.lastUpdateLabel ?? "Verifica in corso"} · ultimo aggiornamento {formatDateTime(scanJob.updatedAt)}
+                </p>
+              </div>
+              {(scanJob.status === "queued" || scanJob.status === "running") && (
+                <Button variant="outline" size="sm" onClick={() => void cancelScanJob()}>
+                  <PauseCircle className="h-4 w-4" /> Interrompi
+                </Button>
+              )}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Stato</p>
+                <p className="mt-1 text-sm font-semibold">{jobStatusLabel(scanJob)}</p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Strutture controllate</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {scanJob.progress.structuresControlled}
+                  {scanJob.progress.totalStructures ? ` / ${scanJob.progress.totalStructures}` : ""}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Risultati certificati</p>
+                <p className="mt-1 text-sm font-semibold">{scanJob.progress.certifiedResults}</p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Avanzamento</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {scanJob.progress.percent != null ? `${scanJob.progress.percent}%` : "In attesa"}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Verifiche da completare automaticamente</p>
+                <p className="mt-1 text-sm font-semibold">{scanJob.progress.autoVerificationsPending}</p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3">
+                <p className="text-[11px] font-medium text-muted-foreground">Controlli necessari</p>
+                <p className="mt-1 text-sm font-semibold">{scanJob.progress.manualChecksNeeded}</p>
+              </div>
+              <div className="rounded-lg border bg-white/70 p-3 sm:col-span-2">
+                <p className="text-[11px] font-medium text-muted-foreground">Ultimo aggiornamento</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {scanJob.progress.currentMessage ?? "Job pronto."}
+                </p>
+                {scanJob.progress.currentStructure && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    In lavorazione: {scanJob.progress.currentStructure}
+                  </p>
+                )}
+                {scanJob.status === "interrupted" && (
+                  <p className="mt-1 text-xs font-medium text-amber-800">
+                    Job riprendibile senza perdere i risultati già applicati.
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Avanzamento regione */}
       {(regionStats.Campania.total > 0 || regionStats.Veneto.total > 0 || isScanning) && (
       <Card className="border-blue-200/60 bg-blue-50/40">
@@ -1399,6 +1346,7 @@ export function SanitaLeads() {
       )}
 
       {/* KPI audit (meta.kpis) — non calcolati solo dall'array filtrato */}
+      {viewTab === "audit" && (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {AUDIT_KPIS.map((k) => (
           <Card key={k.key} className="ring-soft border-border/60">
@@ -1411,6 +1359,7 @@ export function SanitaLeads() {
           </Card>
         ))}
       </div>
+      )}
 
       {/* TOOLBAR FILTRI */}
       <Card className="ring-soft border-border/60">
@@ -1533,7 +1482,12 @@ export function SanitaLeads() {
                 return
               }
               guardScanAction(`Scansiona comune ${selectedCity}`, () => {
-                void runFullScan({ region, city: selectedCity, continueAnalysis: false })
+                void createScanJob({
+                  mode: "city",
+                  region,
+                  city: selectedCity,
+                  label: `Scansione comune · ${selectedCity} (${region})`,
+                })
               })
             }}
             disabled={isScanning || !selectedCity}
@@ -1609,7 +1563,6 @@ export function SanitaLeads() {
                       key={l.id}
                       className={cn(
                         "border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors duration-700",
-                        freshLeadIds.has(l.id) && "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200",
                         auditBadge && "bg-slate-50/50"
                       )}
                     >
