@@ -164,6 +164,140 @@ async function runSingleLead() {
   }
 }
 
+async function runRegionCanary() {
+  const targetTotal = Number(job.targetTotal ?? 3);
+  const leadIds = Array.isArray(job.canaryLeadIds) ? job.canaryLeadIds : [];
+
+  function stopShip(reason) {
+    applyState({
+      status: "failed",
+      finishedAt: new Date().toISOString(),
+      resumable: false,
+      pid: null,
+      lastUpdateLabel: "Errore",
+      errorMessage: `STOP-SHIP: ${reason}`,
+      progress: {
+        currentMessage: `STOP-SHIP: ${reason}`,
+        currentStructure: null,
+      },
+    });
+    process.exit(2);
+  }
+
+  if (targetTotal > 3 || leadIds.length > 3) stopShip("targetTotal > 3");
+  if ((job.processed ?? 0) > 0) stopShip("processed > 0 at start");
+  if (job.resumedFrom != null) stopShip("resumedFrom not null");
+  if (job.noResume !== true) stopShip("noResume not true");
+  if (leadIds.length !== targetTotal) stopShip("leadIds count mismatch");
+
+  const { analyzeLead } = await import("@/lib/sanita/scan-engine");
+  const { terminateOcrWorker } = await import("@/lib/sanita/ocr");
+  const { closeMapsBrowserPool } = await import("@/lib/sanita/playwright-maps");
+
+  let processed = 0;
+  let certifiedResults = 0;
+  let autoVerificationsPending = 0;
+  let manualChecksNeeded = 0;
+  const analyzedLeads = [];
+
+  try {
+    applyState({
+      progress: {
+        structuresControlled: 0,
+        totalStructures: targetTotal,
+        percent: 0,
+        currentMessage: "Controllo canary regionale (max 3 strutture).",
+      },
+    });
+
+    const counters = {
+      analyzed: 0,
+      withPolicy: 0,
+      published: 0,
+      hot: 0,
+      review: 0,
+      reviewHuman: 0,
+      retryPending: 0,
+      technicalBlocked: 0,
+      outOfScope: 0,
+    };
+
+    for (const lid of leadIds) {
+      await ensureNotCancelled();
+      const lead = await prisma.lead.findUnique({ where: { id: lid } });
+      if (!lead) stopShip(`lead missing ${lid}`);
+      if (!leadIds.includes(lead.id)) stopShip("lead outside canary set");
+
+      applyState({
+        progress: {
+          currentStructure: lead.companyName,
+          currentMessage: `Verifica in corso (${processed + 1}/${targetTotal}).`,
+        },
+      });
+
+      await analyzeLead(lead, counters);
+      processed++;
+
+      const finalLead = await prisma.lead.findUnique({ where: { id: lid } });
+      const clientLead = finalLead ? serializeLeadForClient(finalLead) : null;
+      if (clientLead && isCertifiedLead(clientLead)) certifiedResults++;
+      const ps = readProcessingState(finalLead?.evidence ?? null);
+      if (ps === "RETRY_PENDING") autoVerificationsPending++;
+      if (ps === "REVIEW_HUMAN") manualChecksNeeded++;
+
+      analyzedLeads.push({
+        id: lid,
+        companyName: lead.companyName,
+        city: lead.city,
+        processingState: ps,
+        certified: Boolean(clientLead && isCertifiedLead(clientLead)),
+      });
+
+      const percent = Math.round((processed / targetTotal) * 100);
+      applyState({
+        processed,
+        progress: {
+          structuresControlled: processed,
+          totalStructures: targetTotal,
+          certifiedResults,
+          autoVerificationsPending,
+          manualChecksNeeded,
+          percent,
+          currentStructure: lead.companyName,
+          currentMessage:
+            processed >= targetTotal
+              ? "Controllo completato."
+              : `Verifica in corso (${processed}/${targetTotal}).`,
+        },
+      });
+
+      if (processed > targetTotal) stopShip("processed exceeded targetTotal");
+    }
+
+    applyState({
+      status: "completed",
+      finishedAt: new Date().toISOString(),
+      resumable: false,
+      pid: null,
+      processed,
+      lastUpdateLabel: "Completato",
+      progress: {
+        structuresControlled: processed,
+        totalStructures: targetTotal,
+        certifiedResults,
+        autoVerificationsPending,
+        manualChecksNeeded,
+        percent: 100,
+        currentStructure: null,
+        currentMessage: "Controllo completato.",
+      },
+    });
+  } finally {
+    await terminateOcrWorker().catch(() => {});
+    await closeMapsBrowserPool().catch(() => {});
+  }
+}
+
 async function runRegionOrCity() {
   let certifiedResults = 0;
   let autoVerificationsPending = 0;
@@ -215,6 +349,10 @@ async function runRegionOrCity() {
       if (event === "progress") {
         lastStructuresControlled = Number(data.done ?? lastStructuresControlled ?? 0);
         lastTotal = Number(data.total ?? lastTotal ?? 0);
+        if (maxStructures && (lastTotal > maxStructures || lastTotal >= 553)) {
+          stopSignal("failed", `STOP-SHIP: regional total ${lastTotal}`);
+          process.exit(2);
+        }
         const percent = lastTotal > 0 ? Math.max(0, Math.min(100, Math.round((lastStructuresControlled / lastTotal) * 100))) : null;
         const phase = typeof data.phase === "string" ? data.phase : null;
         // Ponytail: keep UI customer-friendly, never surface internal "crawl/discovery" wording.
@@ -298,6 +436,7 @@ async function runRegionOrCity() {
 
 try {
   if (job.mode === "single") await runSingleLead();
+  else if (job.mode === "region-canary") await runRegionCanary();
   else await runRegionOrCity();
   await ensureNotCancelled();
   const finalJob = readSanitaJob(jobId);
