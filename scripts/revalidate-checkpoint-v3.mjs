@@ -6,16 +6,17 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
+/** Commercial/semantic terminals only. TECHNICAL_BLOCKED is admin quarantine, not auto-assigned. */
 export const TERMINAL_STATES = new Set([
   "HOT_VERIFIED",
   "PUBLISHED_CURRENT",
   "PUBLISHED_EXPIRED",
   "PUBLISHED_DATE_UNKNOWN",
   "REVIEW_HUMAN",
-  "TECHNICAL_BLOCKED",
   "OUT_OF_SCOPE",
 ]);
 
+/** Soft ceiling for logging/backoff — does NOT promote to TECHNICAL_BLOCKED. */
 export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 5);
 export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 15 * 60_000);
 
@@ -62,10 +63,11 @@ export function classifyResult(row) {
     if (ps && isTerminalState(ps)) return { kind: "terminal", state: ps };
     return { kind: "terminal", state: ps || "PUBLISHED_DATE_UNKNOWN" };
   }
-  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL/i.test(String(row.reasonCode || ""))) {
+  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL|RETRY_EXHAUSTED|TECHNICAL_BLOCKED/i.test(String(row.reasonCode || ""))) {
     return { kind: "retry", state: "RETRY_PENDING" };
   }
-  if (ps === "TECHNICAL_BLOCKED") return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
+  // Legacy TECHNICAL_BLOCKED rows are not commercial terminals — keep operational.
+  if (ps === "TECHNICAL_BLOCKED") return { kind: "retry", state: "RETRY_PENDING" };
   // unknown incomplete → retry, never terminal certify
   return { kind: "retry", state: "RETRY_PENDING" };
 }

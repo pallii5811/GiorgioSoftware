@@ -286,6 +286,14 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
       CRAWL_RUN_MAX_WALL_CLOCK_MS: process.env.CRAWL_RUN_MAX_WALL_CLOCK_MS || "1800000",
       CRAWL_MAX_HTML_PER_SLICE: process.env.CRAWL_MAX_HTML_PER_SLICE || "12",
       PER_HOST_CONCURRENCY: process.env.PER_HOST_CONCURRENCY || "1",
+      // OCR renderer — never drop these from child env
+      PDFTOPPM_PATH: process.env.PDFTOPPM_PATH || "/usr/bin/pdftoppm",
+      PATH:
+        process.env.PATH ||
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      TESSDATA_PREFIX:
+        process.env.TESSDATA_PREFIX ||
+        path.join(ROOT, ".tesseract-cache"),
     };
     const child = spawn("npx", ["tsx", WORKER], {
       env,
@@ -522,33 +530,34 @@ async function processLeadId(leadId) {
       else if (cls.state === "TECHNICAL_BLOCKED") cp.stats.tech++;
       else cp.stats.review++;
     } else {
+      // Completeness rule: never promote RETRY_EXHAUSTED → TECHNICAL_BLOCKED.
+      // Incomplete/technical work stays operational in retryQueue until a commercial
+      // terminal (PUBLISHED_* / HOT_VERIFIED) or true REVIEW_HUMAN identity case.
       const attempts = cp.attempts[leadId] || 1;
       if (attempts >= MAX_RETRY_ATTEMPTS) {
-        cp.terminal[leadId] = {
-          finishedAt: new Date().toISOString(),
-          processingState: "TECHNICAL_BLOCKED",
-          newVerdict: null,
-          reasonCode: `RETRY_EXHAUSTED_${attempts}`,
-        };
-        finalRow.processingState = "TECHNICAL_BLOCKED";
-        finalRow.reasonCode = `RETRY_EXHAUSTED_${attempts}`;
-        finalRow.terminal = true;
-        writeResultAtomic(outPath, finalRow);
-        cp.stats.tech++;
-        cp.stats.terminal++;
-      } else {
-        cp.retryQueue[leadId] = {
-          attempts,
-          lastReason: finalRow.processingState || "RETRY_PENDING",
-          lastError: finalRow.error || finalRow.reasonCode || null,
-          nextRetryAt: nextRetryAt(attempts),
-          lastRunId: runId,
-          frontierPath,
-          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
-          lastAttemptAt: new Date().toISOString(),
-        };
-        cp.stats.retry++;
+        console.warn(
+          JSON.stringify({
+            event: "retry_ceiling_keep_operational",
+            id: leadId,
+            attempts,
+            maxRetry: MAX_RETRY_ATTEMPTS,
+            lastReason: finalRow.processingState || finalRow.reasonCode || null,
+            note: "TECHNICAL_BLOCKED is admin-only; not a client terminal",
+          })
+        );
       }
+      cp.retryQueue[leadId] = {
+        attempts,
+        lastReason: finalRow.processingState || "RETRY_PENDING",
+        lastError: finalRow.error || finalRow.reasonCode || null,
+        nextRetryAt: nextRetryAt(attempts),
+        lastRunId: runId,
+        frontierPath,
+        firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
+        lastAttemptAt: new Date().toISOString(),
+        operational: true,
+      };
+      cp.stats.retry++;
     }
     cp.stats.processed++;
     saveCheckpointAtomic(CHECKPOINT, cp);

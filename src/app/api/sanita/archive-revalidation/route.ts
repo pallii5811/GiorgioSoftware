@@ -56,20 +56,42 @@ function deriveCurrentState(cp: CheckpointFile) {
   let hot = 0;
   let published = 0;
   let outOfScope = 0;
+  const terminalIds = {
+    hot: [] as string[],
+    published: [] as string[],
+    review: [] as string[],
+    technical: [] as string[],
+  };
 
-  for (const raw of Object.values(terminal)) {
+  for (const [lid, raw] of Object.entries(terminal)) {
     const ps =
       typeof raw === "string"
         ? raw
         : String(raw?.processingState || raw?.state || "").toUpperCase();
-    if (ps === "REVIEW_HUMAN") reviewCurrent++;
-    else if (ps === "TECHNICAL_BLOCKED") technicalBlockedFinal++;
-    else if (ps === "HOT_VERIFIED") hot++;
-    else if (ps.startsWith("PUBLISHED")) published++;
-    else if (ps === "OUT_OF_SCOPE") outOfScope++;
+    if (ps === "REVIEW_HUMAN") {
+      reviewCurrent++;
+      terminalIds.review.push(lid);
+    } else if (ps === "TECHNICAL_BLOCKED") {
+      technicalBlockedFinal++;
+      terminalIds.technical.push(lid);
+    } else if (ps === "HOT_VERIFIED") {
+      hot++;
+      terminalIds.hot.push(lid);
+    } else if (ps.startsWith("PUBLISHED")) {
+      published++;
+      terminalIds.published.push(lid);
+    } else if (ps === "OUT_OF_SCOPE") outOfScope++;
   }
 
-  const terminalCompleted = Object.keys(terminal).length;
+  // Verifiche concluse = esiti commerciali/semantici. TECHNICAL_BLOCKED non conta.
+  const terminalCompleted = Object.keys(terminal).filter((lid) => {
+    const raw = terminal[lid];
+    const ps =
+      typeof raw === "string"
+        ? raw
+        : String(raw?.processingState || raw?.state || "").toUpperCase();
+    return ps !== "TECHNICAL_BLOCKED";
+  }).length;
   const currentlyInProgress = Object.keys(inProgress).length;
   const currentRetryQueue = Object.keys(retryQueue).length;
   const recordsTouched = Number(cp.stats?.processed || 0);
@@ -86,6 +108,7 @@ function deriveCurrentState(cp: CheckpointFile) {
     hot,
     published,
     outOfScope,
+    terminalIds,
   };
 }
 
@@ -115,6 +138,7 @@ function emptyPayload(extra: Record<string, unknown> = {}) {
     certifiedCurrentRun: 0,
     hot: 0,
     published: 0,
+    terminalIds: { hot: [], published: [], review: [], technical: [] },
     ...extra,
   };
 }
@@ -163,6 +187,7 @@ async function readLocalStatus() {
         hot: 0,
         published: 0,
         outOfScope: 0,
+        terminalIds: { hot: [], published: [], review: [], technical: [] },
       };
 
   const percent =
@@ -188,6 +213,7 @@ async function readLocalStatus() {
     certifiedCurrentRun: cur.certifiedCurrentRun,
     hot: cur.hot,
     published: cur.published,
+    terminalIds: cur.terminalIds ?? { hot: [], published: [], review: [], technical: [] },
     // aliases for existing UI fields during rollout
     processed: cur.recordsTouched,
     terminal: cur.terminalCompleted,
