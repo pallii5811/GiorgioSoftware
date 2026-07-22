@@ -40,7 +40,10 @@ export function extractDocumentEntityFingerprint(
   metadata?: { title?: string | null; author?: string | null } | null,
   url?: string | null
 ): EntityFingerprint {
-  const hay = `${metadata?.title || ""}\n${metadata?.author || ""}\n${text || ""}`;
+  // RC-08c — never let raw URLs feed the legal-name regex (e.g. title=policyUrl
+  // matches "Clinica" inside hostname clinicamontevergine.com → false nameConflict).
+  const hayRaw = `${metadata?.title || ""}\n${metadata?.author || ""}\n${text || ""}`;
+  const hay = hayRaw.replace(/https?:\/\/[^\s<>"']+/gi, " ");
   const vat =
     hay.match(/(?:p\.?\s*iva|partita\s+iva|vat)[^\d]{0,16}(\d{11})\b/i)?.[1] || null;
   const tax =
@@ -67,10 +70,11 @@ export function extractDocumentEntityFingerprint(
   const manager =
     hay.match(/(?:gestore|soggetto\s+gestore|direzione)[:\s]+([A-ZÀ-Ú][^,\n;]{3,80})/i)?.[1]?.trim() ||
     null;
-  const legal =
+  let legal =
     hay.match(
       /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
     )?.[1]?.trim() || null;
+  if (legal && /[./]|\.(?:com|it|org|net)\b/i.test(legal)) legal = null;
   const regional =
     hay.match(/(?:codice\s+struttura|codice\s+regionale|codice\s+STS)[^\w]{0,8}([A-Z0-9/-]{4,20})/i)?.[1] ||
     null;
@@ -193,10 +197,13 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
   // and the document does not name a conflicting entity/VAT.
   // Note: domain+seatPage alone is NOT enough — seatPage is set for any URL, so that
   // pair collapses to domain-only (rejected below).
+  const rawDocName = doc.facilityName || doc.legalName;
+  const usableDocName =
+    present(rawDocName) && !/[./]|\.(?:com|it|org|net)\b/i.test(rawDocName!) ? rawDocName : null;
   const nameConflict =
-    present(doc.facilityName || doc.legalName) &&
+    present(usableDocName) &&
     present(facility.facilityName || facility.legalName) &&
-    !nameOverlap(doc.facilityName || doc.legalName, facility.facilityName || facility.legalName);
+    !nameOverlap(usableDocName, facility.facilityName || facility.legalName);
   const vatConflict =
     present(doc.vatId) &&
     present(facility.vatId) &&

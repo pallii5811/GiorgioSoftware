@@ -65,6 +65,22 @@ const facPini = buildFacilityFingerprint({
 const attrParm = canAttributeEntity(parmDoc, facPini);
 ok(attrParm.ok && attrParm.mediumIds.includes("domain"), "RC-08 PARM first-party policy PDF attributed");
 
+// RC-08c — URL-as-title must not invent hostname "Clinica..." name that conflicts
+const mvUrl = "https://www.clinicamontevergine.com/cuore/wp-content/uploads/2025/06/OBBLIGO-DI-ASSICURAZIONE.pdf";
+const mvDoc = extractDocumentEntityFingerprint(
+  "Casa di Cura Privata Montevergine S.p.A. polizza N 450289527 Assicurazioni Generali massimale Euro 5.000.000",
+  { title: mvUrl },
+  mvUrl
+);
+ok(!/clinicamontevergine\.com/i.test(mvDoc.facilityName || mvDoc.legalName || ""), "RC-08c no hostname-as-legal-name");
+const facMv = buildFacilityFingerprint({
+  companyName: "Casa Di Cura Montevergine",
+  city: "Solofra",
+  website: "http://www.clinicamontevergine.com/",
+});
+const attrMv = canAttributeEntity(mvDoc, facMv);
+ok(attrMv.ok, `RC-08c Montevergine attributed (${attrMv.mediumIds}|${attrMv.reasons})`);
+
 // CCNL / bilancio
 const ccnl = classifyNegativeInsuranceDocument(
   "CCNL ARIS RSA Contratto collettivo nazionale",
