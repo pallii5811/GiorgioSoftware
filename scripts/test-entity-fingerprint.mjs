@@ -81,6 +81,24 @@ const facMv = buildFacilityFingerprint({
 const attrMv = canAttributeEntity(mvDoc, facMv);
 ok(attrMv.ok, `RC-08c Montevergine attributed (${attrMv.mediumIds}|${attrMv.reasons})`);
 
+// RC-08f — OCR garbage ("CLINICAL RISK MANAGEMENT", "IRSA…") must not block first-party PARM
+const vfUrl = "https://centromedicovillafelice.com/wp-content/uploads/2026/03/Parm-CentroMedicoVillaFelice-2026-.pdf";
+const vfGarbage = `Piano Annuale CLINICAL RISK MANAGEMENT Anno 2026 ANSE NA Pas a IS Aeg A £00 i >| gg» igs IRSA E SA siii e di FSE e £ RAE 1a Shed 5 i ed RR TR ns ra. INTRODUZIONE Il piano Aziendale di Risk Management (PARM) è redatto dalla direzione del Centro Medico Villa Felice Srl. Polizza Generali numero 450180578 scadenza 15/07/2025`;
+const vfDoc = extractDocumentEntityFingerprint(vfGarbage, { title: vfUrl }, vfUrl);
+ok(!/clinical risk management|irsa e sa/i.test(vfDoc.facilityName || vfDoc.legalName || ""), "RC-08f OCR garbage not a legal name");
+const facVf = buildFacilityFingerprint({
+  companyName: "Centro Medico Residenza Sanitaria Assistenziale Villa Felice S.R.L.",
+  city: "Torrecuso",
+  website: "https://centromedicovillafelice.com/",
+});
+const attrVf = canAttributeEntity(vfDoc, facVf);
+ok(attrVf.ok, `RC-08f Villa Felice attributed (${attrVf.mediumIds}|${attrVf.reasons})`);
+const vfConflict = canAttributeEntity(
+  extractDocumentEntityFingerprint("Polizza intestata a Clinica Santa Maria di Bari S.p.A. numero 123", { title: vfUrl }, vfUrl),
+  facVf
+);
+ok(!vfConflict.ok, "RC-08f real conflicting facility still rejected");
+
 // CCNL / bilancio
 const ccnl = classifyNegativeInsuranceDocument(
   "CCNL ARIS RSA Contratto collettivo nazionale",

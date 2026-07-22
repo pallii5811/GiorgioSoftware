@@ -72,10 +72,27 @@ export function extractDocumentEntityFingerprint(
     null;
   let legal =
     hay.match(
-      /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
+      /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)\b[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
     )?.[1]?.trim() || null;
   // RC-08e: S.p.A. / S.r.l. legitimately contain periods; reject only URL/email patterns.
   if (legal && /https?:\/\/|www\.|\.(?:com|it|org|net|eu|info|biz)\b|@|\//i.test(legal)) legal = null;
+  // RC-08f: OCR garbage ("CLINICAL RISK MANAGEMENT", "IRSA E SA…") must not become a legal name.
+  // Keep the name only if it carries at least one distinctive alphabetic token (≥5 chars)
+  // that is not a facility-type generic word.
+  if (legal) {
+    const tokens = legal
+      .toLowerCase()
+      .replace(/[^a-z0-9àèéìòù]+/gi, " ")
+      .split(/\s+/)
+      .filter(
+        (t) =>
+          t.length >= 5 &&
+          !/^(fondazione|clinica|istituto|poliambulatorio|ospedale|cooperativa|privata|gestione|clinical|management|risk|piano|annuale)$/i.test(
+            t
+          )
+      );
+    if (tokens.length === 0) legal = null;
+  }
   const regional =
     hay.match(/(?:codice\s+struttura|codice\s+regionale|codice\s+STS)[^\w]{0,8}([A-Z0-9/-]{4,20})/i)?.[1] ||
     null;
