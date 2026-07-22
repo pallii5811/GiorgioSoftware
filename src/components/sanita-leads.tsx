@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Stethoscope, Search, Loader2, ShieldAlert, ShieldCheck, ShieldQuestion,
   RefreshCw, Download, FileSearch, ExternalLink, Clock, HelpCircle,
+  Play, Pause, RotateCcw, Repeat,
 } from "lucide-react"
 import {
   Dialog,
@@ -118,6 +119,13 @@ type ArchiveRevalidationStatus = {
 type SanitaApiMeta = {
   actionableCount?: number
   dbTotal?: number
+}
+
+type RevalidationControlState = {
+  active?: boolean
+  checkpointExists?: boolean
+  retryQueueCount?: number
+  job?: { status?: string; mode?: string; startedAt?: string | null } | null
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +304,8 @@ export function SanitaLeads() {
   const [liveLeads, setLiveLeads] = useState<Lead[]>([])
   const [apiMeta, setApiMeta] = useState<SanitaApiMeta | null>(null)
   const [archiveStatus, setArchiveStatus] = useState<ArchiveRevalidationStatus | null>(null)
+  const [controlState, setControlState] = useState<RevalidationControlState | null>(null)
+  const [controlBusy, setControlBusy] = useState<string | null>(null)
   const [runResults, setRunResults] = useState<ShadowResult[]>([])
   const [reviewResults, setReviewResults] = useState<ShadowResult[]>([])
   const [resultsMeta, setResultsMeta] = useState<ResultsMeta | null>(null)
@@ -340,6 +350,36 @@ export function SanitaLeads() {
     }
   }, [])
 
+  const fetchControlState = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sanita/archive-revalidation/control", { cache: "no-store" })
+      const json = await res.json()
+      if (json?.success) setControlState(json)
+    } catch {
+      /* conserva */
+    }
+  }, [])
+
+  const runControlAction = useCallback(
+    async (action: "start" | "pause" | "resume" | "retry-incomplete") => {
+      setControlBusy(action)
+      try {
+        await fetch("/api/sanita/archive-revalidation/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        })
+      } catch {
+        /* errore rete: il polling successivo riallinea lo stato */
+      } finally {
+        setControlBusy(null)
+        fetchControlState()
+        fetchArchiveStatus()
+      }
+    },
+    [fetchControlState, fetchArchiveStatus]
+  )
+
   const fetchRunResults = useCallback(async () => {
     try {
       const res = await fetch("/api/sanita/archive-revalidation/results?scope=run", { cache: "no-store" })
@@ -370,22 +410,23 @@ export function SanitaLeads() {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      await Promise.all([fetchLive(), fetchArchiveStatus(), fetchRunResults()])
+      await Promise.all([fetchLive(), fetchArchiveStatus(), fetchControlState(), fetchRunResults()])
       if (alive) setIsLoading(false)
     })()
     return () => {
       alive = false
     }
-  }, [fetchLive, fetchArchiveStatus, fetchRunResults])
+  }, [fetchLive, fetchArchiveStatus, fetchControlState, fetchRunResults])
 
   // polling 5s: card rivalidazione sempre; risultati run solo quando la tab li mostra
   useEffect(() => {
     const t = setInterval(() => {
       fetchArchiveStatus()
+      fetchControlState()
       if (filtersRef.current.tab === "run") fetchRunResults()
     }, 5000)
     return () => clearInterval(t)
-  }, [fetchArchiveStatus, fetchRunResults])
+  }, [fetchArchiveStatus, fetchControlState, fetchRunResults])
 
   // fetch on-demand quando si entra nelle tab
   useEffect(() => {
@@ -467,6 +508,8 @@ export function SanitaLeads() {
   const terminal = archiveStatus?.terminalCompleted ?? 0
   const target = archiveStatus?.targetTotal ?? 877
   const percent = target > 0 ? Math.min(100, Math.round((terminal / target) * 1000) / 10) : 0
+  const engineRunning = Boolean(controlState?.active)
+  const retryCount = controlState?.retryQueueCount ?? archiveStatus?.currentRetryQueue ?? 0
 
   return (
     <div className="space-y-4">
@@ -513,6 +556,68 @@ export function SanitaLeads() {
           <div className="text-xs text-muted-foreground">
             prese in carico {archiveStatus?.recordsTouched ?? 0} · in corso{" "}
             {archiveStatus?.currentlyInProgress ?? 0} · retry {archiveStatus?.currentRetryQueue ?? 0}
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1" data-testid="revalidation-controls">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="btn-start"
+              disabled={engineRunning || controlBusy !== null}
+              onClick={() => runControlAction("start")}
+            >
+              {controlBusy === "start" ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="mr-1 h-4 w-4" />
+              )}
+              Avvia scansione
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="btn-pause"
+              disabled={!engineRunning || controlBusy !== null}
+              onClick={() => runControlAction("pause")}
+            >
+              {controlBusy === "pause" ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Pause className="mr-1 h-4 w-4" />
+              )}
+              Pausa
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="btn-resume"
+              disabled={engineRunning || controlBusy !== null || !controlState?.checkpointExists}
+              onClick={() => runControlAction("resume")}
+            >
+              {controlBusy === "resume" ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-1 h-4 w-4" />
+              )}
+              Riprendi
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="btn-retry-incomplete"
+              disabled={engineRunning || controlBusy !== null || retryCount === 0}
+              onClick={() => runControlAction("retry-incomplete")}
+            >
+              {controlBusy === "retry-incomplete" ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Repeat className="mr-1 h-4 w-4" />
+              )}
+              Riprova incompleti
+            </Button>
+            <Button variant="outline" size="sm" data-testid="btn-export" onClick={exportCsv}>
+              <Download className="mr-1 h-4 w-4" />
+              Esporta
+            </Button>
           </div>
         </CardContent>
       </Card>
