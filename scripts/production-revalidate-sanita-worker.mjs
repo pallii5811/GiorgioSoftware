@@ -157,6 +157,71 @@ if (stage === "scope" || (!scope.ok && /PUBLIC|SOLO_PROFESSIONISTA|HARD_EXCLUDE|
   }
 }
 
+// Graceful SIGTERM (k3 RC-04 — root cause dimostrata: chrome-headless orfani e
+// requeue "orphan_after_sigterm_graceful_stop" nello stop systemd del 2026-07-21).
+// Scrive SEMPRE una riga risultato operativa (RETRY_PENDING, frontier preservata)
+// ed esce pulito: niente processi appesi, niente requeue implicito non diagnosticato.
+let sigtermHandled = false;
+process.on("SIGTERM", () => {
+  if (sigtermHandled) return;
+  sigtermHandled = true;
+  const row = {
+    id: lead.id,
+    schemaVersion: 3,
+    testedCodeSha,
+    inputSnapshotHash,
+    originalLiveSnapshotHash: inputSnapshotHash,
+    companyName: lead.companyName,
+    region: lead.region,
+    city: lead.city,
+    category: lead.category,
+    crmStatus: lead.status,
+    notes: lead.notes,
+    oldVerdict: readVerdictToken(oldEvidence),
+    newVerdict: null,
+    processingState: "RETRY_PENDING",
+    businessVerdict: null,
+    validationStatus: null,
+    fullEvidence: `${oldEvidence}\n[WORKER_SIGTERM: graceful stop — frontier preserved, nodes recoverable at resume]`,
+    token: null,
+    crawlComplete: false,
+    website: lead.website,
+    websiteReachable: null,
+    policyFound: null,
+    policyCompany: null,
+    policyNumber: null,
+    policyExpiry: null,
+    policyMassimale: null,
+    confidence: null,
+    pagesVisited: null,
+    leadScore: null,
+    phone: lead.phone,
+    email: lead.email,
+    pec: lead.pec,
+    piva: lead.piva,
+    lastScannedAt: new Date().toISOString(),
+    scope: { ok: scope.ok, reason: scope.reason },
+    sourceLineage: lead.osmId || null,
+    runIds: [runId],
+    frontierPaths: [process.env.FRONTIER_DB_PATH],
+    passLabel,
+    wallMs: Date.now() - t0,
+    finishedAt: new Date().toISOString(),
+    error: "WORKER_SIGTERM",
+  };
+  try {
+    writeResultAtomic(outPath, row);
+  } catch {
+    /* */
+  }
+  console.log(JSON.stringify({ event: "worker_sigterm", id: leadId, wallMs: row.wallMs }));
+  setTimeout(() => process.exit(0), 3000).unref();
+  prisma
+    .$disconnect()
+    .catch(() => {})
+    .finally(() => process.exit(0));
+});
+
 openFrontierStore(process.env.FRONTIER_DB_PATH);
 const counters = emptyCounters();
 
