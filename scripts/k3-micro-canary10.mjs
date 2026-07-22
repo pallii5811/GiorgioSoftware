@@ -142,10 +142,26 @@ for (const id of CANARY10) {
   if (violations.length) state.stopReasons.push(`preexisting ${id}: ${violations.join("; ")}`);
   log({ event: "k3_preseed_terminal", id, st: t.processingState, violations });
 }
+// Force canary retries due immediately so long nextRetryAt (sitemap/wall) cannot stall the gate.
+{
+  const nowIso = new Date().toISOString();
+  let forced = 0;
+  for (const id of CANARY10) {
+    if (!cp0.retryQueue?.[id]) continue;
+    if (state.firstOutcome[id]) continue;
+    cp0.retryQueue[id].nextRetryAt = nowIso;
+    forced++;
+  }
+  if (forced) {
+    fs.writeFileSync(CHECKPOINT, JSON.stringify(cp0, null, 2));
+    log({ event: "k3_force_retry_due", forced, at: nowIso });
+  }
+}
 
 const childEnv = {
   ...process.env,
   REVALIDATE_IDS: CANARY10.join(","),
+  FORCE_RESCAN_PUB: "1",
   TOTAL_WORKERS: "1",
   REVALIDATE_CONCURRENCY: "1",
   REVALIDATE_DUAL_HOT: "1",
