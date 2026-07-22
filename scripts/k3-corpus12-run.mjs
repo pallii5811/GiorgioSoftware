@@ -306,10 +306,14 @@ const childEnv = {
   NODE_OPTIONS: "--max-old-space-size=3072",
 };
 
+// RC-08: detached → il v3 ha un process group proprio; requestStop fa kill(-pid)
+// di gruppo (npx→sh→tsx→node v3→worker), altrimenti SIGTERM colpisce solo npx e
+// il v3 resta orfano (riprodotto 2026-07-22: lead rilanciato DOPO corpus_complete).
 const child = spawn("npx", ["tsx", "scripts/production-revalidate-sanita-v3.mjs"], {
   cwd: APP,
   env: childEnv,
   stdio: ["ignore", "pipe", "pipe"],
+  detached: true,
 });
 
 let stderrTail = "";
@@ -322,22 +326,23 @@ child.stderr.on("data", (d) => {
 });
 
 let stopRequested = false;
+function killChildTree(sig) {
+  try {
+    process.kill(-child.pid, sig); // intero process group
+  } catch {
+    try {
+      child.kill(sig);
+    } catch {
+      /* */
+    }
+  }
+}
 function requestStop(why) {
   if (stopRequested) return;
   stopRequested = true;
   log({ event: "k3_stop_requested", why });
-  try {
-    child.kill("SIGTERM");
-  } catch {
-    /* */
-  }
-  setTimeout(() => {
-    try {
-      child.kill("SIGKILL");
-    } catch {
-      /* */
-    }
-  }, 120_000).unref();
+  killChildTree("SIGTERM");
+  setTimeout(() => killChildTree("SIGKILL"), 120_000).unref();
 }
 
 const globalTimer = setTimeout(() => {
