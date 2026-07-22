@@ -35,7 +35,7 @@ const CORPUS = [
   "cmqklex5g00b6108ejom1shk0",
   "cmqkn3ghj0002xnfpr553khla",
   "cmqkld5sa00af108epednu868",
-  "cmqkld5t000ao108e5rrr47s9",
+  "cmqkld5t000ao108esg4xv094", // ICM Agropoli (fix RC-run-01: id spurio ...5rrr47s9 era typo di Montesano)
 ];
 
 const CHECKPOINT_MARKS = [3, 6, 9, 12];
@@ -267,6 +267,24 @@ log({
 if (!cp0) {
   console.error("checkpoint illeggibile — STOP prima di consumare lead");
   process.exit(2);
+}
+
+// Lead del corpus già terminali prima di questo run (es. REVIEW_HUMAN legittimo):
+// contati come gestiti dal checkpoint esistente + audit subito. Senza questo il
+// gate handled12 non sarebbe mai raggiungibile (nessun lead_done per loro).
+for (const id of CORPUS) {
+  const t = cp0.terminal?.[id];
+  if (!t) continue;
+  state.firstOutcome[id] = {
+    processingState: t.processingState,
+    kind: "terminal",
+    at: t.finishedAt,
+    preExisting: true,
+  };
+  const violations = await auditTerminal(id, t.processingState);
+  state.audits[id] = { processingState: t.processingState, violations, preExisting: true };
+  if (violations.length) state.stopReasons.push(`preexisting ${id}: ${violations.join("; ")}`);
+  log({ event: "k3_preseed_terminal", id, st: t.processingState, violations });
 }
 
 const childEnv = {

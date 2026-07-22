@@ -185,14 +185,38 @@ function pendingNewIds() {
 }
 
 let stopping = false;
-process.on("SIGINT", () => {
+// RC-06 — root cause dimostrata 2026-07-22: SIGTERM al v3 non raggiungeva i worker
+// attivi (solo stopping=true); il crawl continuava e i chrome restavano orfani.
+// I worker sono spawnati detached (nuovo process group) e ricevono SIGTERM di gruppo;
+// chi non esce entro la grace window viene ucciso con SIGKILL di gruppo.
+const activeChildren = new Set();
+let shutdownInitiated = false;
+function initiateShutdown(signal) {
   stopping = true;
-  console.error(JSON.stringify({ event: "shutdown_requested" }));
-});
-process.on("SIGTERM", () => {
-  stopping = true;
-  console.error(JSON.stringify({ event: "shutdown_requested" }));
-});
+  console.error(
+    JSON.stringify({ event: "shutdown_requested", signal, activeWorkers: activeChildren.size })
+  );
+  if (shutdownInitiated) return;
+  shutdownInitiated = true;
+  const killTree = (child, sig) => {
+    try {
+      process.kill(-child.pid, sig); // intero process group (npx→tsx→node→chrome)
+    } catch {
+      try {
+        child.kill(sig);
+      } catch {
+        /* */
+      }
+    }
+  };
+  for (const c of activeChildren) killTree(c, "SIGTERM");
+  const graceMs = Number(process.env.REVALIDATE_SHUTDOWN_GRACE_MS || 45_000);
+  setTimeout(() => {
+    for (const c of activeChildren) killTree(c, "SIGKILL");
+  }, graceMs).unref();
+}
+process.on("SIGINT", () => initiateShutdown("SIGINT"));
+process.on("SIGTERM", () => initiateShutdown("SIGTERM"));
 
 function acquireLeadLock(id) {
   const lockPath = path.join(LOCK_DIR, `${id}.lock`);
@@ -300,7 +324,9 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
       cwd: ROOT,
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
+      detached: true, // RC-06: process group proprio → kill(-pid) raggiunge tutta la catena
     });
+    activeChildren.add(child);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
@@ -312,9 +338,11 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
       process.stderr.write(d);
     });
     child.on("close", (code, signal) => {
+      activeChildren.delete(child);
       resolve({ code, signal, stdout, stderr });
     });
     child.on("error", (err) => {
+      activeChildren.delete(child);
       resolve({ code: 99, signal: null, stdout, stderr: String(err) });
     });
   });
