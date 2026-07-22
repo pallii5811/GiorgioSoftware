@@ -6,6 +6,8 @@
 export type EntityFingerprint = {
   legalName?: string | null;
   facilityName?: string | null;
+  /** RC-08g — all legal-name candidates found in the document (deduped, filtered). */
+  legalNameCandidates?: string[] | null;
   manager?: string | null;
   vatId?: string | null;
   taxCode?: string | null;
@@ -70,17 +72,19 @@ export function extractDocumentEntityFingerprint(
   const manager =
     hay.match(/(?:gestore|soggetto\s+gestore|direzione)[:\s]+([A-ZÀ-Ú][^,\n;]{3,80})/i)?.[1]?.trim() ||
     null;
-  let legal =
-    hay.match(
-      /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)\b[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
-    )?.[1]?.trim() || null;
-  // RC-08e: S.p.A. / S.r.l. legitimately contain periods; reject only URL/email patterns.
-  if (legal && /https?:\/\/|www\.|\.(?:com|it|org|net|eu|info|biz)\b|@|\//i.test(legal)) legal = null;
-  // RC-08f: OCR garbage ("CLINICAL RISK MANAGEMENT", "IRSA E SA…") must not become a legal name.
-  // Keep the name only if it carries at least one distinctive alphabetic token (≥5 chars)
-  // that is not a facility-type generic word.
-  if (legal) {
-    const tokens = legal
+  // RC-08g — extract ALL legal-name candidates: keyword-prefixed forms and bare
+  // "<Nome> S.p.A./S.r.l." forms. Taglines ("Casa di Cura Privata Accreditata…")
+  // and insurers/brokers are filtered out. The conflict gate then fires only when
+  // NO candidate matches the facility (see canAttributeEntity).
+  const INSURER_OR_BROKER =
+    /generali|unipol|allianz|zurich|\baxa\b|reale\s+mutua|accelerant|amtrust|berkshire|lloyd'?s|groupama|vittoria|cattolica|\bhdi\b|assicurazioni|assicuratrice|broker|intermediaz/i;
+  const cleanLegalCandidate = (raw: string | null | undefined): string | null => {
+    if (!raw) return null;
+    let c = raw.trim();
+    if (!c) return null;
+    if (/https?:\/\/|www\.|\.(?:com|it|org|net|eu|info|biz)\b|@|\//i.test(c)) return null;
+    if (INSURER_OR_BROKER.test(c)) return null;
+    const tokens = c
       .toLowerCase()
       .replace(/[^a-z0-9àèéìòù]+/gi, " ")
       .split(/\s+/)
@@ -91,8 +95,24 @@ export function extractDocumentEntityFingerprint(
             t
           )
       );
-    if (tokens.length === 0) legal = null;
+    return tokens.length === 0 ? null : c;
+  };
+  const legalCandidates: string[] = [];
+  const pushCandidate = (raw: string | null | undefined) => {
+    const c = cleanLegalCandidate(raw);
+    if (c && !legalCandidates.includes(c)) legalCandidates.push(c);
+  };
+  for (const m of hay.matchAll(
+    /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)\b[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/gi
+  )) {
+    pushCandidate(m[1]);
   }
+  for (const m of hay.matchAll(
+    /([A-ZÀ-Ú][A-Za-zÀ-ÿ'’.-]*(?:\s+[A-Za-zÀ-ÿ'’.-]+){0,4}\s+S\.?\s*p\.?\s*A\.?|[A-ZÀ-Ú][A-Za-zÀ-ÿ'’.-]*(?:\s+[A-Za-zÀ-ÿ'’.-]+){0,4}\s+S\.?\s*r\.?\s*l\.?)/g
+  )) {
+    pushCandidate(m[1]);
+  }
+  const legal = legalCandidates[0] || null;
   const regional =
     hay.match(/(?:codice\s+struttura|codice\s+regionale|codice\s+STS)[^\w]{0,8}([A-Z0-9/-]{4,20})/i)?.[1] ||
     null;
@@ -112,6 +132,7 @@ export function extractDocumentEntityFingerprint(
   return {
     facilityName: insured || legal || null,
     legalName: legal || insured || null,
+    legalNameCandidates: legalCandidates.length ? legalCandidates : null,
     manager: manager || null,
     vatId: vat,
     taxCode: tax,
@@ -184,7 +205,18 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
     medium.push("domain");
   }
 
-  if (nameOverlap(doc.facilityName || doc.legalName, facility.facilityName || facility.legalName)) {
+  // RC-08g — name match/conflict on ALL extracted legal-name candidates:
+  // a tagline ("Casa di Cura Privata Accreditata…") next to the real legal name
+  // ("Montevergine S.p.A.") must not produce a false conflict.
+  const docNameCandidates = (
+    doc.legalNameCandidates?.length
+      ? doc.legalNameCandidates
+      : [doc.facilityName || doc.legalName].filter((c): c is string => present(c))
+  ).filter((c) => present(c) && !/https?:\/\/|www\.|\.(?:com|it|org|net|eu|info|biz)\b|@|\//i.test(c!));
+  const facilityName = facility.facilityName || facility.legalName;
+  const anyNameOverlap =
+    present(facilityName) && docNameCandidates.some((c) => nameOverlap(c, facilityName));
+  if (anyNameOverlap || nameOverlap(doc.facilityName || doc.legalName, facilityName)) {
     medium.push("name");
   }
   if (
@@ -215,13 +247,11 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
   // and the document does not name a conflicting entity/VAT.
   // Note: domain+seatPage alone is NOT enough — seatPage is set for any URL, so that
   // pair collapses to domain-only (rejected below).
-  const rawDocName = doc.facilityName || doc.legalName;
-  const usableDocName =
-    present(rawDocName) && !/[./]|\.(?:com|it|org|net)\b/i.test(rawDocName!) ? rawDocName : null;
+  // RC-08g — conflict only when the doc names entities and NONE matches the facility.
   const nameConflict =
-    present(usableDocName) &&
-    present(facility.facilityName || facility.legalName) &&
-    !nameOverlap(usableDocName, facility.facilityName || facility.legalName);
+    docNameCandidates.length > 0 &&
+    present(facilityName) &&
+    !anyNameOverlap;
   const vatConflict =
     present(doc.vatId) &&
     present(facility.vatId) &&

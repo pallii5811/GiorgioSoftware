@@ -99,6 +99,20 @@ const vfConflict = canAttributeEntity(
 );
 ok(!vfConflict.ok, "RC-08f real conflicting facility still rejected");
 
+// RC-08g — marketing tagline + real legal name + group + insurer in the same PDF
+const mvOcrUrl = "https://www.clinicamontevergine.com/cuore/wp-content/uploads/2025/06/OBBLIGO-DI-ASSICURAZIONE.pdf";
+const mvOcrText = `Montevergine S.p.A. Casa di Cura Privata Accreditata per l'Alta Specialità del Cuore Cardiochirurgia Via Mario Malzoni 83013 Mercogliano (AV) C.F. e P.IVA 00110550647 Società soggetta a direzione e coordinamento di Gruppo Villa Maria S.p.A. ART. 10 COMMA 3 LEGGE 24/2017: obbligo di assicurazione Montevergine S.p.A. rende noto di essere provvista di copertura assicurativa RCT/O in virtù del contratto di polizza N 450289527 stipulato con la compagnia assicurativa Generali Italia S.p.A. con validità 20/04/2025 – 20/04/2026`;
+const mvOcrDoc = extractDocumentEntityFingerprint(mvOcrText, { title: mvOcrUrl }, mvOcrUrl);
+const attrMvOcr = canAttributeEntity(mvOcrDoc, facMv);
+ok(
+  attrMvOcr.ok,
+  `RC-08g Montevergine OCR tagline+legal+group+insurer attributed (${attrMvOcr.mediumIds}|${attrMvOcr.reasons})`
+);
+ok(
+  !(mvOcrDoc.legalNameCandidates || []).some((c) => /generali/i.test(c)),
+  "RC-08g insurer excluded from legal-name candidates"
+);
+
 // CCNL / bilancio
 const ccnl = classifyNegativeInsuranceDocument(
   "CCNL ARIS RSA Contratto collettivo nazionale",
