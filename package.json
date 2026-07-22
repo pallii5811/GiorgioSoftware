@@ -78,7 +78,7 @@
     "certify:full": "tsx scripts/quality-gate.mjs && tsx scripts/delivery-certification.mjs",
     "refresh:analyzed": "tsx scripts/refresh-analyzed-leads.mjs",
     "audit:strict": "tsx scripts/strict-audit-all.mjs",
-    "test:canonicalize-case": "tsx scripts/test-canonicalize-case.mjs"
+    "preflight:production-revalidate": "tsx scripts/preflight-production-revalidate.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
