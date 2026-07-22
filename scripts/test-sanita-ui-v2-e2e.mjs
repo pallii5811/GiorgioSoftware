@@ -48,7 +48,16 @@ const selectTab = async (testid) => {
   await page.locator(`[data-testid="${testid}"]`).click();
   await page.waitForTimeout(1800); // fetch on tab enter
 };
+const waitForRows = async (timeout = 45000) => {
+  await page.waitForSelector('[data-testid="leads-table"]', { timeout });
+  await page.waitForSelector('[data-testid="lead-row"]', { timeout });
+};
 const sleep = (ms) => page.waitForTimeout(ms);
+const screenshot = async (name) => {
+  const p = `data/playwright-ui-v2/${name}.png`;
+  await page.screenshot({ path: p, fullPage: true });
+  console.log(`screenshot: ${p}`);
+};
 
 async function apiJson(path) {
   const res = await page.request.get(`${BASE}${path}`);
@@ -89,7 +98,7 @@ try {
 
   // ---- 2/3. Campania solo Campania, poi ritorno a Tutte (su archivio: dati garantiti) ----
   await selectTab("tab-archive");
-  await page.waitForSelector('[data-testid="lead-row"]', { timeout: 15000 });
+  await waitForRows();
   const totalAll = await rowCount();
   await page.selectOption('[data-testid="region-filter"]', "Campania");
   await sleep(800);
@@ -181,6 +190,9 @@ try {
   // reset filtri per cortesia verso altri test manuali
   await page.goto(`${BASE}/sanita`, { waitUntil: "domcontentloaded" });
 } catch (e) {
+  try {
+    await screenshot("e2e-error");
+  } catch {}
   check("esecuzione E2E senza eccezioni", false, String(e).slice(0, 300));
 } finally {
   // ---- 11. nessun errore console ----
