@@ -74,8 +74,10 @@ export function detectInsuranceSignals(text: string): {
   mediumCount: number;
 } {
   const t = text || "";
+  // RC-08b — PARM/PARS Art.10 docs often say "auto-assicurazione" / "posizione assicurativa"
+  // without "numero polizza"; hyphenated autoassicurazione must count as strong.
   const strong =
-    /numero\s+(?:di\s+)?polizza|polizza\s+n[°o.]?\s*[A-Z0-9\-_/]{4,}|contratto\s+assicurativ|attestazione\s+assicurativ|autoassicuraz|gestione\s+diretta\s+del\s+rischio/i.test(
+    /numero\s+(?:di\s+)?polizza|polizza\s+n[°o.]?\s*[A-Z0-9\-_/]{4,}|contratto\s+assicurativ|attestazione\s+assicurativ|auto-?\s*assicuraz|gestione\s+diretta\s+del\s+rischio|posizione\s+assicurativ/i.test(
       t
     );
   let medium = 0;
@@ -84,5 +86,6 @@ export function detectInsuranceSignals(text: string): {
   if (/\bRCT\b|\bRCO\b|responsabilit[aà]\s+civile/i.test(t)) medium++;
   if (/scadenza|decorrenza|dal\s+\d{1,2}[\/.\-]/i.test(t)) medium++;
   if (/art\.?\s*10|legge\s*gelli|l\.\s*24\/2017/i.test(t)) medium++;
+  if (/\bPARM\b|\bPARS\b|piano\s+annuale\s+(?:di\s+)?rischio/i.test(t)) medium++;
   return { strong, mediumCount: medium };
 }

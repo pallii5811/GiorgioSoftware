@@ -188,10 +188,30 @@ export function canAttributeEntity(doc: EntityFingerprint, facility: EntityFinge
   const nameManagerSeat =
     medium.includes("name") && medium.includes("manager") && medium.includes("groupSeat");
 
+  // RC-08 — PARM/PARS PDFs on the facility host often lack extractable name/VAT.
+  // Accept first-party *policy document* URLs (pdf / polizza path) when domain matches
+  // and the document does not name a conflicting entity/VAT.
+  // Note: domain+seatPage alone is NOT enough — seatPage is set for any URL, so that
+  // pair collapses to domain-only (rejected below).
+  const nameConflict =
+    present(doc.facilityName || doc.legalName) &&
+    present(facility.facilityName || facility.legalName) &&
+    !nameOverlap(doc.facilityName || doc.legalName, facility.facilityName || facility.legalName);
+  const vatConflict =
+    present(doc.vatId) &&
+    present(facility.vatId) &&
+    normId(doc.vatId) !== normId(facility.vatId);
+  const docUrl = doc.seatPageUrl || "";
+  const looksLikePolicyDoc =
+    /\.pdf(\?|#|$)/i.test(docUrl) ||
+    /(?:^|\/)(?:parm|pars|polizza|assicur|rc[to]|trasparen)/i.test(docUrl);
+  const firstPartyPolicyDoc =
+    medium.includes("domain") && looksLikePolicyDoc && !nameConflict && !vatConflict;
+
   if (strong.length >= 1) {
     return { ok: true, strongIds: strong, mediumIds: medium, reasons: [] };
   }
-  if (nameGeoDomain || nameManagerSeat || medium.length >= 3) {
+  if (firstPartyPolicyDoc || nameGeoDomain || nameManagerSeat || medium.length >= 3) {
     return { ok: true, strongIds: strong, mediumIds: medium, reasons: [] };
   }
   if (medium.length === 1 && medium[0] === "domain") {

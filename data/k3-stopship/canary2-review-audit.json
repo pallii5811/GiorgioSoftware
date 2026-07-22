@@ -1,0 +1,198 @@
+[
+  {
+    "id": "cmqklex5q00bh108eq9blm01k",
+    "company": "Villa Dei Pini Casa di Cura Privata S.p.a.",
+    "city": "Villamaina",
+    "processingState": "REVIEW_HUMAN",
+    "token": "REVIEW",
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "REVIEW_HUMAN",
+    "wallMs": 68112,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:REVIEW_HUMAN]"
+    ],
+    "BV": [
+      "[BV:REVIEW_HUMAN]"
+    ],
+    "V": [
+      "[V:REV]"
+    ],
+    "VS": [
+      "[VS:CONFLICT_FOUND]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:false]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "REVIEW",
+      "OCR"
+    ],
+    "ev_tail": "eria di responsabilità professionale degli esercenti le professioni sanitarie) ha normato e raffo [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=15,f=0,pdf=0,ocr=0,n=1] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:CONFLICT_FOUND] — [FONTI: sito web (1 pagina: /villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf) · fonte polizza PDF: https://villadeipini.com/villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf · PDF polizza letti 1/1 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-22 15:53]"
+  },
+  {
+    "id": "cmqktyimz000i111hygme29nh",
+    "company": "Casa Di Cura Malzoni Villa Platani Spa",
+    "city": "Villanova del Battista",
+    "processingState": "REVIEW_HUMAN",
+    "token": "REVIEW",
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "REVIEW_HUMAN",
+    "wallMs": 124484,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:REVIEW_HUMAN]"
+    ],
+    "BV": [
+      "[BV:REVIEW_HUMAN]"
+    ],
+    "V": [
+      "[V:REV]"
+    ],
+    "VS": [
+      "[VS:CONFLICT_FOUND]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:false]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "REVIEW",
+      "OCR"
+    ],
+    "ev_tail": "ad oggi / Per tutti i sini [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=173,f=0,pdf=52,ocr=0,n=4] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:CONFLICT_FOUND] — [FONTI: sito web (4 pagine, sezione Trasparenza letta: /societa-trasparente, /wp-content/uploads/2021/09/PARS-2025-Malzoni-Research-Hospital-S.p.A..pdf) · fonte polizza PDF: https://www.malzoni.it/wp-content/uploads/2024/01/Modello-PARM-17.03.2023.pdf · PDF polizza letti 3/55 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-22 15:55]"
+  },
+  {
+    "id": "cmqkld5rk009b108ekvol7g87",
+    "company": "Casa Di Cura Montevergine",
+    "city": "Solofra",
+    "processingState": "REVIEW_HUMAN",
+    "token": "REVIEW",
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "REVIEW_HUMAN",
+    "wallMs": 164145,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:REVIEW_HUMAN]"
+    ],
+    "BV": [
+      "[BV:REVIEW_HUMAN]"
+    ],
+    "V": [
+      "[V:REV]"
+    ],
+    "VS": [
+      "[VS:CONFLICT_FOUND]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:false]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "REVIEW",
+      "OCR"
+    ],
+    "ev_tail": "a S.p.A. con validità 20/04/2025 – 20/04/2026 . -- [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=176,f=0,pdf=26,ocr=0,n=12] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:CONFLICT_FOUND] — [FONTI: sito web (12 pagine, sezione Trasparenza letta: /amministrazione-trasparente, /societa-trasparente) · fonte polizza PDF: https://www.clinicamontevergine.com/cuore/wp-content/uploads/2025/06/OBBLIGO-DI-ASSICURAZIONE.pdf · PDF polizza letti 6/32 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-22 15:51]"
+  },
+  {
+    "id": "cmql4d399000uc9w7yzw2dgac",
+    "company": "Casa di Cura 'Andrea Grimaldi'",
+    "city": "Scala",
+    "processingState": "REVIEW_HUMAN",
+    "token": null,
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "IDENTITY_MISMATCH",
+    "wallMs": 9336,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:RETRY_PENDING]",
+      "[STATE:RETRY_PENDING]"
+    ],
+    "BV": [
+      "[BV:NONE]"
+    ],
+    "V": [],
+    "VS": [
+      "[VS:REVALIDATION_PENDING]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:false]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "MISMATCH",
+      "Contaminazione",
+      "OCR"
+    ],
+    "ev_tail": "ldi.com/wp-content/uploads/2026/03/all-ms-6-parm-x-anno-2025-clinica.pdf ni del territorio. La Legge 24/2017, conosciuta come \"Legge Gelli\", in materia di sicurezza delle cure e della persona assistita (nonché in materia di responsabilità professionale degli esercenti le professioni sanitarie) ha normato e raffo [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:MISMATCH] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=515,f=0,pdf=0,ocr=0,n=1] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-22 15:55] [STATE:RETRY_PENDING]"
+  },
+  {
+    "id": "cmql4qrif000yc9w74e0tmpqt",
+    "company": "Centro Medico Residenza Sanitaria Assistenziale Villa Felice S.R.L.",
+    "city": "Torrecuso",
+    "processingState": "REVIEW_HUMAN",
+    "token": "REVIEW",
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "REVIEW_HUMAN",
+    "wallMs": 48455,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:REVIEW_HUMAN]"
+    ],
+    "BV": [
+      "[BV:REVIEW_HUMAN]"
+    ],
+    "V": [
+      "[V:REV]"
+    ],
+    "VS": [
+      "[VS:CONFLICT_FOUND]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:false]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "REVIEW",
+      "OCR"
+    ],
+    "ev_tail": "17 richiede pubblicazione aggiornata — irregolarità normativa. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=28,f=0,pdf=0,ocr=0,n=1] [STATE:REVIEW_HUMAN] [BV:REVIEW_HUMAN] [VS:CONFLICT_FOUND] — [FONTI: sito web (1 pagina: /wp-content/uploads/2026/03/Parm-CentroMedicoVillaFelice-2026-.pdf) · fonte polizza PDF: https://centromedicovillafelice.com/wp-content/uploads/2026/03/Parm-CentroMedicoVillaFelice-2026-.pdf · PDF polizza letti 1/1 · Google Maps (sito e telefono struttura)] [Verifica: 2026-07-22 15:56]"
+  },
+  {
+    "id": "cmqn40oou0002kwqdfi0ipn2g",
+    "company": "Casa di riposo Villa Primavera",
+    "city": "Giugliano in Campania",
+    "processingState": "REVIEW_HUMAN",
+    "token": "REVIEW",
+    "businessVerdict": "REVIEW_HUMAN",
+    "reasonCode": "DUAL_HOT_DISAGREE",
+    "wallMs": 199683,
+    "policyFound": false,
+    "error": null,
+    "STATE": [
+      "[STATE:RETRY_PENDING]",
+      "[STATE:RETRY_PENDING]"
+    ],
+    "BV": [
+      "[BV:NONE]"
+    ],
+    "V": [],
+    "VS": [
+      "[VS:REVALIDATION_PENDING]"
+    ],
+    "CRAWL": [
+      "[CRAWL_COMPLETE:true]"
+    ],
+    "hits": [
+      "IDENTITY",
+      "OCR"
+    ],
+    "ev_tail": "SL/regionali consultati: assenza pubblicazione confermata. Ricerca su portali regionali/ASL eseguita: nessun documento trovato. Art. 10 Gelli: polizza non risulta pubblicata sulle fonti istituzionali consultate. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:true] [FRONTIER:EXHAUSTED,p=0,f=0,pdf=0,ocr=0,n=4] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-22 15:49] [STATE:RETRY_PENDING]"
+  }
+]

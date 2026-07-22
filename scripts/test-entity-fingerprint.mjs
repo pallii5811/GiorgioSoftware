@@ -51,6 +51,20 @@ const otherDoc = extractDocumentEntityFingerprint(
 const attrOther = canAttributeEntity(otherDoc, facC);
 ok(!attrOther.ok, "first-party PDF of other entity rejected");
 
+// RC-08 — first-party PARM PDF with no extractable name still attributes via domain+seatPage
+const parmDoc = extractDocumentEntityFingerprint(
+  "PARM 2025 Piano annuale del rischio. Posizione assicurativa RCT/O Massimale Euro 5000000.",
+  { title: "PARM_2025.pdf" },
+  "https://villadeipini.com/villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf"
+);
+const facPini = buildFacilityFingerprint({
+  companyName: "Villa Dei Pini Casa di Cura Privata S.p.a.",
+  city: "Villamaina",
+  website: "https://www.villadeipini.com/site/",
+});
+const attrParm = canAttributeEntity(parmDoc, facPini);
+ok(attrParm.ok && attrParm.mediumIds.includes("domain"), "RC-08 PARM first-party policy PDF attributed");
+
 // CCNL / bilancio
 const ccnl = classifyNegativeInsuranceDocument(
   "CCNL ARIS RSA Contratto collettivo nazionale",

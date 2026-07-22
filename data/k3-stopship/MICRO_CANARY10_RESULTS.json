@@ -1,24 +1,278 @@
 {
-  "verdict": "NON PASS",
-  "note": "Run 1 aborted after commercial gate already impossible (0/10 terminal). Root cause RC-07 identified: production-revalidate-sanita-worker.mjs lacked FORCE_RESCAN_PUB → analyzeLead early-return on legacy PUB+policyFound (wallMs 20-40ms) → coordinator demoted to RETRY_PENDING. Maione missing lead_done left runner hung; processes SIGTERM'd. Patch+re-run required before 877.",
-  "rootCause": "RC-07",
-  "stoppedAt": "2026-07-22T14:55:00.000Z",
-  "gate": {
-    "handled10": false,
-    "completedCommercial": 0,
-    "minCompleted8": false,
-    "falseHot": 0,
-    "falsePub": 0,
-    "ocrRendererMissing": 0,
-    "internalTechnicalTerminal": 0
+ "verdict": "NON PASS",
+ "stoppedAt": "2026-07-22T15:57:15.000Z",
+ "startedAt": "2026-07-22T15:02:36.587Z",
+ "exitCode": -1,
+ "stopReasons": [],
+ "canary": [
+  "cmqktyimz000i111hygme29nh",
+  "cmqklex5q00bh108eq9blm01k",
+  "cmql4qrif000yc9w74e0tmpqt",
+  "cmql4d399000uc9w7yzw2dgac",
+  "cmqkld5rk009b108ekvol7g87",
+  "cmqkld5s700a8108eti0nofjv",
+  "cmql46eia000ac9w78xh0rxdl",
+  "cmqmaor4t00389g5c2iuoauuw",
+  "cmqn40oou0002kwqdfi0ipn2g",
+  "cmqkld5s0009u108eghihpoxi"
+ ],
+ "firstOutcome": {
+  "cmqkld5s700a8108eti0nofjv": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T15:06:17.936Z"
   },
-  "observedSkipPubIds": [
-    "cmqktyimz000i111hygme29nh",
-    "cmqklex5q00bh108eq9blm01k",
-    "cmql4qrif000yc9w74e0tmpqt",
-    "cmql4d399000uc9w7yzw2dgac",
-    "cmqkld5rk009b108ekvol7g87"
-  ],
-  "missingFirstOutcome": ["cmqkld5s700a8108eti0nofjv"],
-  "byState": { "RETRY_PENDING": 10 }
+  "cmql46eia000ac9w78xh0rxdl": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T15:07:27.902Z"
+  },
+  "cmqkld5s0009u108eghihpoxi": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T15:37:29.398Z"
+  },
+  "cmqmaor4t00389g5c2iuoauuw": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T15:38:43.625Z"
+  },
+  "cmqn40oou0002kwqdfi0ipn2g": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:49:13.165Z"
+  },
+  "cmqkld5rk009b108ekvol7g87": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:51:58.795Z"
+  },
+  "cmqklex5q00bh108eq9blm01k": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:53:08.337Z"
+  },
+  "cmqktyimz000i111hygme29nh": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:55:14.226Z"
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:55:25.069Z"
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T15:56:14.947Z"
+  }
+ },
+ "checkpoints": [
+  {
+   "mark": 3,
+   "at": "2026-07-22T15:37:29.399Z",
+   "canaryTerminal": 0,
+   "canaryRetry": 10,
+   "byState": {},
+   "stats": {
+    "processed": 116,
+    "terminal": 13,
+    "hot": 2,
+    "pub": 0,
+    "review": 11,
+    "retry": 103,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "RETRY_PENDING": 6,
+    "SITEMAP_UNRESOLVED": 1,
+    "FRONTIER_INCOMPLETE": 1,
+    "CRAWL_CAP": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 1
+   }
+  },
+  {
+   "mark": 6,
+   "at": "2026-07-22T15:51:58.796Z",
+   "canaryTerminal": 2,
+   "canaryRetry": 8,
+   "byState": {
+    "REVIEW_HUMAN": 2
+   },
+   "stats": {
+    "processed": 119,
+    "terminal": 15,
+    "hot": 2,
+    "pub": 0,
+    "review": 13,
+    "retry": 104,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "RETRY_PENDING": 4,
+    "SITEMAP_UNRESOLVED": 1,
+    "FRONTIER_INCOMPLETE": 1,
+    "CRAWL_CAP": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 1
+   }
+  },
+  {
+   "mark": 9,
+   "at": "2026-07-22T15:55:25.070Z",
+   "canaryTerminal": 5,
+   "canaryRetry": 5,
+   "byState": {
+    "REVIEW_HUMAN": 5
+   },
+   "stats": {
+    "processed": 122,
+    "terminal": 18,
+    "hot": 2,
+    "pub": 0,
+    "review": 16,
+    "retry": 104,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "RETRY_PENDING": 1,
+    "SITEMAP_UNRESOLVED": 1,
+    "FRONTIER_INCOMPLETE": 1,
+    "CRAWL_CAP": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 1
+   }
+  },
+  {
+   "mark": 10,
+   "at": "2026-07-22T15:56:14.948Z",
+   "canaryTerminal": 6,
+   "canaryRetry": 4,
+   "byState": {
+    "REVIEW_HUMAN": 6
+   },
+   "stats": {
+    "processed": 123,
+    "terminal": 19,
+    "hot": 2,
+    "pub": 0,
+    "review": 17,
+    "retry": 104,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "SITEMAP_UNRESOLVED": 1,
+    "FRONTIER_INCOMPLETE": 1,
+    "CRAWL_CAP": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 1
+   }
+  }
+ ],
+ "audits": {
+  "cmqn40oou0002kwqdfi0ipn2g": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmqkld5rk009b108ekvol7g87": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmqklex5q00bh108eq9blm01k": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmqktyimz000i111hygme29nh": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  }
+ },
+ "terminal": {
+  "cmqktyimz000i111hygme29nh": {
+   "finishedAt": "2026-07-22T15:55:14.115Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmqklex5q00bh108eq9blm01k": {
+   "finishedAt": "2026-07-22T15:53:08.229Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "finishedAt": "2026-07-22T15:56:14.834Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "finishedAt": "2026-07-22T15:55:24.944Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": null,
+   "reasonCode": "IDENTITY_MISMATCH"
+  },
+  "cmqkld5rk009b108ekvol7g87": {
+   "finishedAt": "2026-07-22T15:51:58.652Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmqn40oou0002kwqdfi0ipn2g": {
+   "finishedAt": "2026-07-22T15:49:13.161Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "DUAL_HOT_DISAGREE"
+  }
+ },
+ "retry": {
+  "cmqkld5s700a8108eti0nofjv": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "SITEMAP_UNRESOLVED",
+   "attempts": 8
+  },
+  "cmql46eia000ac9w78xh0rxdl": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "FRONTIER_INCOMPLETE",
+   "attempts": 6
+  },
+  "cmqmaor4t00389g5c2iuoauuw": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "CRAWL_CAP",
+   "attempts": 2
+  },
+  "cmqkld5s0009u108eghihpoxi": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "LEAD_WALL_TIMEOUT_1800000ms",
+   "attempts": 4
+  }
+ },
+ "gate": {
+  "handled10": true,
+  "completedCommercial": 0,
+  "minCompleted8": false,
+  "internalTechnicalTerminal": 0,
+  "ocrRendererMissing": 0,
+  "falseHot": 0,
+  "falsePub": 0,
+  "auditViolations": 0,
+  "checkpointPreserved": true
+ },
+ "byState": {
+  "REVIEW_HUMAN": 6
+ }
 }
