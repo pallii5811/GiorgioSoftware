@@ -236,9 +236,27 @@ function digits(v: string): string {
   return v.replace(/\D/g, "");
 }
 function softMatch(a: string, b: string): boolean {
-  const na = a.toLowerCase().replace(/[^a-z0-9àèéìòù]/gi, "");
-  const nb = b.toLowerCase().replace(/[^a-z0-9àèéìòù]/gi, "");
-  return na.length >= 3 && nb.length >= 3 && (na.includes(nb) || nb.includes(na));
+  const strip = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\b(casa\s+di\s+cura|clinica|istituto|fondazione|privata|spa|s\.?\s*p\.?\s*a\.?|s\.?\s*r\.?\s*l\.?)\b/gi, " ")
+      .replace(/[^a-z0-9àèéìòù]/gi, "");
+  const na = strip(a);
+  const nb = strip(b);
+  if (na.length >= 3 && nb.length >= 3 && (na.includes(nb) || nb.includes(na))) return true;
+  // Distinctive token ≥5 chars shared (e.g. Montevergine vs Casa Di Cura Montevergine)
+  const tokens = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9àèéìòù]+/gi, " ")
+      .split(/\s+/)
+      .filter(
+        (t) =>
+          t.length >= 5 &&
+          !/^(della|delle|degli|dello|casa|cura|privata|fondazione|clinica|istituto|centro|medico|residenza)$/i.test(t)
+      );
+  const A = new Set(tokens(a));
+  return tokens(b).some((t) => A.has(t));
 }
 function nameOverlap(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!present(a) || !present(b)) return false;
