@@ -12,6 +12,8 @@ export type PublishedEmitEvidence = {
   contentFetched: boolean;
   contentExcerpt: string | null | undefined;
   entityAttributed: boolean;
+  /** Diagnostic detail from canAttributeEntity (shown in gate failure reasons). */
+  attributionDetail?: string;
   groupSeatVerified?: boolean;
   hasStrongInsuranceSignal: boolean;
   hasMediumInsuranceSignals: number;
@@ -44,7 +46,11 @@ export function canEmitPublished(ev: PublishedEmitEvidence): PublishedDecision {
   if (!ev.exactUrl?.trim()) reasons.push("URL esatto assente");
   if (!ev.contentFetched) reasons.push("contenuto non acquisito");
   if (!ev.contentExcerpt?.trim()) reasons.push("estratto assente");
-  if (!ev.entityAttributed) reasons.push("attribuzione entità mancante");
+  if (!ev.entityAttributed) {
+    reasons.push(
+      `attribuzione entità mancante${ev.attributionDetail ? ` [${ev.attributionDetail}]` : ""}`
+    );
+  }
   if (ev.criticalConflict) reasons.push("conflitto critico");
   if (!ev.category?.trim()) reasons.push("categoria assente");
   if (/NON_SANITARIA|SOLO_SOCIALE|NON_CLASSIFICATA/i.test(ev.category || "")) {

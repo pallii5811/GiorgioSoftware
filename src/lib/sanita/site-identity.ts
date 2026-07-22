@@ -227,6 +227,18 @@ export function validateSiteIdentity(
   }
 
   if (!cityOnSite(city, corpus)) {
+    // RC-08e: se esiste un documento polizza first-party che cita il nome della struttura,
+    // non bloccare come MISMATCH per città diversa su siti multi-sede (es. sede legale vs sede operativa).
+    const firstPartyPolicyDoc =
+      crawl.policyPdfUrl &&
+      (crawl.policyPdfsRead ?? 0) > 0 &&
+      hostCompatibleWithWebsite(website, hostKey(crawl.policyPdfUrl));
+    if (firstPartyPolicyDoc && companyNameOnSite(companyName, crawl.policyText || corpus)) {
+      return {
+        ok: true,
+        reason: "Identità confermata da documento polizza first-party (città multi-sede)",
+      };
+    }
     // Se il sito cita chiaramente un altro comune italiano ≠ atteso → omonimia/URL errato.
     const otherCity =
       /\b(milano|roma|torino|bologna|firenze|genova|palermo|bari|catania|verona|padova|venezia|brescia|bergamo|monza)\b/i.exec(

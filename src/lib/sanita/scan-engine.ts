@@ -831,7 +831,16 @@ export async function analyzeLead(
 
   try {
     if (verdict === "PUBLISHED") {
-      const docFingerprint = extractDocumentEntityFingerprint(corpus, { title: policyUrl }, policyUrl);
+      // RC-08e: policyUrl può essere la pagina HTML wrapper; per l'attribution del
+      // documento polizza serve l'URL reale del PDF letto, altrimenti canAttributeEntity
+      // vede solo una pagina HTML generica e firstPartyPolicyDoc non si attiva.
+      const docUrl =
+        crawl.pagesVisited.find(
+          (u) =>
+            /\.pdf(?:$|\?|#)/i.test(u) &&
+            /polizz|parm|pars|assicuraz|rinnovo|_rc_|\/rc[-_]/i.test(u.toLowerCase())
+        ) || policyUrl;
+      const docFingerprint = extractDocumentEntityFingerprint(corpus, { title: docUrl }, docUrl);
       const facilityFingerprint = buildFacilityFingerprint({
         companyName: lead.companyName,
         city: lead.city,
@@ -845,7 +854,12 @@ export async function analyzeLead(
         pageUrl: policyUrl,
         facilityWebsite: website,
         contentFetched: crawl.ok,
-        contentExcerpt: corpus.slice(0, 4000),
+        // RC-08d: quando la polizza è stata trovata, il corpus per i segnali assicurativi
+        // deve includere il testo del documento polizza (analysis.evidence), perché
+        // crawl.policyText/text possono contenere solo la pagina HTML wrapper.
+        contentExcerpt: (analysis.policyFound && analysis.evidence
+          ? `${analysis.evidence}\n${corpus}`
+          : corpus).slice(0, 4000),
         docFingerprint,
         facilityFingerprint,
         policyObsolete: analysis.policyObsolete,

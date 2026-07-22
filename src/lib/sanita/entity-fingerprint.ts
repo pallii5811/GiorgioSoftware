@@ -74,7 +74,8 @@ export function extractDocumentEntityFingerprint(
     hay.match(
       /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/i
     )?.[1]?.trim() || null;
-  if (legal && /[./]|\.(?:com|it|org|net)\b/i.test(legal)) legal = null;
+  // RC-08e: S.p.A. / S.r.l. legitimately contain periods; reject only URL/email patterns.
+  if (legal && /https?:\/\/|www\.|\.(?:com|it|org|net|eu|info|biz)\b|@|\//i.test(legal)) legal = null;
   const regional =
     hay.match(/(?:codice\s+struttura|codice\s+regionale|codice\s+STS)[^\w]{0,8}([A-Z0-9/-]{4,20})/i)?.[1] ||
     null;

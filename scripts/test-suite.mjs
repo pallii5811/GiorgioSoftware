@@ -620,6 +620,59 @@ async function testSiteIdentity() {
   assert(!similarNameWrongAddr.ok, "nome simile indirizzo/città diversa → fail");
   console.log("  ✓ sito nome simile + indirizzo differente bloccato");
 
+  // RC-08e: sito multi-sede con polizza first-party che cita il nome → non MISMATCH
+  const multiLocationPolicy = validateSiteIdentity(
+    "Casa di Cura 'Andrea Grimaldi'",
+    "http://www.andreagrimaldi.com/",
+    {
+      ok: true,
+      text: "Casa di Cura Andrea Grimaldi S.p.A. sede legale Firenze",
+      policyText: "Casa di Cura Andrea Grimaldi S.p.A. polizza RC PARM",
+      pagesVisited: ["http://www.andreagrimaldi.com/"],
+      foundRelevantPage: true,
+      policyExhaustive: true,
+      policyPdfsQueued: 1,
+      policyPdfsRead: 1,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: "https://www.andreagrimaldi.com/wp-content/uploads/2026/03/all-ms-6-parm-x-anno-2025-clinica.pdf",
+    },
+    "Scala"
+  );
+  assert(multiLocationPolicy.ok, "multi-sede con polizza first-party → identity ok");
+  console.log("  ✓ RC-08e multi-sede con polizza first-party consentita");
+
+  const noPolicyMismatch = validateSiteIdentity(
+    "Casa Di Cura Montevergine",
+    "http://www.clinicamontevergine.com/",
+    {
+      ok: true,
+      text: "Casa di Cura Montevergine Bari sede",
+      policyText: "",
+      pagesVisited: ["http://www.clinicamontevergine.com/"],
+      foundRelevantPage: true,
+      policyExhaustive: true,
+      policyPdfsQueued: 0,
+      policyPdfsRead: 0,
+      needsOcrReview: false,
+      emails: [],
+      pec: null,
+      phones: [],
+      piva: null,
+      error: null,
+      policyPdfAnalysis: null,
+      policyPdfUrl: null,
+    },
+    "Solofra"
+  );
+  assert(!noPolicyMismatch.ok, "mismatch senza polizza first-party → ancora bloccato");
+  console.log("  ✓ mismatch senza polizza first-party resta bloccato");
+
   console.log("  SITE IDENTITY: TUTTI I TEST PASSATI ✓");
 }
 

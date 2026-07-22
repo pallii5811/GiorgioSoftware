@@ -90,6 +90,9 @@ export function buildPublishedEmitEvidence(opts: {
     contentFetched: opts.contentFetched,
     contentExcerpt: opts.contentExcerpt,
     entityAttributed: attr.ok,
+    attributionDetail: attr.ok
+      ? undefined
+      : `url=${opts.pageUrl || "null"} strong=${attr.strongIds.join("+") || 0} medium=${attr.mediumIds.join("+") || 0}`,
     groupSeatVerified: opts.facilityFingerprint.groupSeatVerified === true,
     hasStrongInsuranceSignal: sig.strong,
     hasMediumInsuranceSignals: sig.mediumCount,
