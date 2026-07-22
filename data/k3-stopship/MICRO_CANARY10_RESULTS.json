@@ -1,0 +1,24 @@
+{
+  "verdict": "NON PASS",
+  "note": "Run 1 aborted after commercial gate already impossible (0/10 terminal). Root cause RC-07 identified: production-revalidate-sanita-worker.mjs lacked FORCE_RESCAN_PUB → analyzeLead early-return on legacy PUB+policyFound (wallMs 20-40ms) → coordinator demoted to RETRY_PENDING. Maione missing lead_done left runner hung; processes SIGTERM'd. Patch+re-run required before 877.",
+  "rootCause": "RC-07",
+  "stoppedAt": "2026-07-22T14:55:00.000Z",
+  "gate": {
+    "handled10": false,
+    "completedCommercial": 0,
+    "minCompleted8": false,
+    "falseHot": 0,
+    "falsePub": 0,
+    "ocrRendererMissing": 0,
+    "internalTechnicalTerminal": 0
+  },
+  "observedSkipPubIds": [
+    "cmqktyimz000i111hygme29nh",
+    "cmqklex5q00bh108eq9blm01k",
+    "cmql4qrif000yc9w74e0tmpqt",
+    "cmql4d399000uc9w7yzw2dgac",
+    "cmqkld5rk009b108ekvol7g87"
+  ],
+  "missingFirstOutcome": ["cmqkld5s700a8108eti0nofjv"],
+  "byState": { "RETRY_PENDING": 10 }
+}

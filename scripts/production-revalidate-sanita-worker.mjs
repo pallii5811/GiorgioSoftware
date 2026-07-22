@@ -32,6 +32,11 @@ process.env.OCR_ENABLED = process.env.OCR_ENABLED ?? "1";
 process.env.POLICY_EXHAUSTIVE = "1";
 process.env.SCAN_FAST = "0";
 delete process.env.SCAN_FAST;
+// RC-07 — without this, analyzeLead early-returns on legacy [V:PUB]+policyFound
+// (wallMs≈20–40ms, no crawl) and the coordinator demotes to RETRY_PENDING because
+// evidence lacks [STATE:]/[BV:] stamps. sanita-job-runner already sets this; the
+// isolated revalidate worker must too or Published known leads never re-verify.
+process.env.FORCE_RESCAN_PUB = process.env.FORCE_RESCAN_PUB || "1";
 
 const testedCodeSha = (process.env.GIT_HEAD || process.env.RELEASE_SHA || "").trim() || null;
 const runId = process.env.SHADOW_RUN_ID || `reval-${passLabel}-${leadId}-${Date.now()}`;
