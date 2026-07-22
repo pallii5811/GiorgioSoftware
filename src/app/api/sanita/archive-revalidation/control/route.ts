@@ -65,6 +65,30 @@ function isJobActive(job: RevalidationJob | null): boolean {
   );
 }
 
+/** Rileva un motore già attivo fuori dal job file UI (micro-canary / systemd / CLI). */
+function findExternalEnginePids(): number[] {
+  if (IS_WINDOWS) return [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const out = execSync("pgrep -f '[p]roduction-revalidate-sanita-v3.mjs' || true", {
+      encoding: "utf8",
+      timeout: 3000,
+    });
+    return out
+      .split(/\s+/)
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 1);
+  } catch {
+    return [];
+  }
+}
+
+function isEngineBusy(job: RevalidationJob | null): boolean {
+  if (isJobActive(job)) return true;
+  return findExternalEnginePids().length > 0;
+}
+
 function readCheckpointMeta() {
   try {
     const raw = fs.readFileSync(CHECKPOINT_PATH, "utf8");
@@ -127,9 +151,14 @@ function spawnEngine(mode: RevalidationJob["mode"], extraEnv: Record<string, str
 
 function startLike(mode: "start" | "resume" | "retry-incomplete") {
   const current = readJob();
-  if (isJobActive(current)) {
+  if (isEngineBusy(current)) {
     return NextResponse.json(
-      { success: false, error: "Job già in esecuzione", job: current },
+      {
+        success: false,
+        error: "Job già in esecuzione",
+        job: current,
+        externalPids: findExternalEnginePids(),
+      },
       { status: 409 }
     );
   }
@@ -197,23 +226,34 @@ export async function POST(req: Request) {
   if (action === "start" || action === "resume") return startLike(action);
   if (action === "retry-incomplete") return startLike("retry-incomplete");
 
-  // pause
+  // pause — ferma job UI e/o motore esterno (CLI / micro-canary / systemd oneshot)
   const job = readJob();
-  if (!job || job.status !== "running") {
+  const external = findExternalEnginePids();
+  if ((!job || job.status !== "running") && external.length === 0) {
     return NextResponse.json(
       { success: false, error: "Nessun job in esecuzione", job },
       { status: 409 }
     );
   }
-  if (job.pid) killProcessTree(job.pid);
+  if (job?.pid) killProcessTree(job.pid);
+  for (const pid of external) {
+    try {
+      killProcessTree(pid);
+    } catch {
+      /* ignore */
+    }
+  }
   const paused: RevalidationJob = {
-    ...job,
+    jobId: job?.jobId || `reval-ext-${Date.now().toString(36)}`,
     pid: null,
     status: "paused",
+    startedAt: job?.startedAt || null,
     finishedAt: new Date().toISOString(),
+    targetTotal: job?.targetTotal || TARGET_TOTAL_DEFAULT,
+    mode: job?.mode || "start",
   };
   writeJob(paused);
-  return NextResponse.json({ success: true, job: paused });
+  return NextResponse.json({ success: true, job: paused, killedExternalPids: external });
 }
 
 export async function GET() {
@@ -231,11 +271,13 @@ export async function GET() {
     job.finishedAt = job.finishedAt || new Date().toISOString();
     writeJob(job);
   }
+  const externalPids = findExternalEnginePids();
   const cp = readCheckpointMeta();
   return NextResponse.json({
     success: true,
     job,
-    active: isJobActive(job),
+    active: isJobActive(job) || externalPids.length > 0,
+    externalPids,
     checkpointExists: cp.exists,
     checkpointUpdatedAt: cp.updatedAt,
     retryQueueCount: cp.retryIds.length,
