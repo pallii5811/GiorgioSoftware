@@ -1,0 +1,80 @@
+{
+  "updatedAt": "2026-07-21T23:45:00Z",
+  "matrix": [
+    {
+      "id": "RC-01",
+      "lead": "cmqkld5s700a8108eti0nofjv (Casa di Cura Villa Maione, Villaricca)",
+      "class": "DNS",
+      "evidence": "curl/getent dal server: NXDOMAIN su villamaione.it e www.villamaione.it (2026-07-21T23:40Z). Frontier reval-p1-...-1784574907297: 16 TECHNICAL_BLOCKED + 14 RETRY_PENDING err='fetch failed' http=null, retryCount fino a 98.",
+      "rootCause": "Host esterno realmente irrisolvibile (dominio non delegato). Il motore non ha circuit breaker per host: 94-98 retry su DNS morto, wall 889s.",
+      "commercialOutcome": "MAI HOT. Resta retry operativo documentato (sito esterno indisponibile).",
+      "patch": "circuit breaker per host in crawl-slice-runner (consecutiveNetworkFailures>=3 → nodi pending same-host TECHNICAL_BLOCKED host_circuit_open, lead RETRY_PENDING rapido)",
+      "regressionTest": "scripts/test-crawl-resilience.mjs (host DNS morto → circuito apre, 0 refetch inutili)"
+    },
+    {
+      "id": "RC-02",
+      "lead": "cmql46eia000ac9w78xh0rxdl (Laboratorio Analisi Cliniche Nuova Alba, Albanella)",
+      "class": "WAF",
+      "evidence": "curl server: GET /download → http=403 in 0.27s; GET / → 200. Frontier: 30 COMPLETED, 1 TECHNICAL_BLOCKED http_403 retry=6 su /download (seed_guess). Fast-loop parent: wall 9-20s ripetuti.",
+      "rootCause": "WAF path-specifico (403) su seed_guess /download; nessuna escalation HTTP→browser per nodo; il parent rilancia subito il lead che riblocca in secondi.",
+      "commercialOutcome": "operativo finché il perimetro non è verificabile; /download va risolto via browser o marcato irraggiungibile senza HOT.",
+      "patch": "escalation 403/429 → fetch via Playwright del singolo nodo prima di TECHNICAL_BLOCKED",
+      "regressionTest": "scripts/test-crawl-resilience.mjs (403 su HTTP, 200 via browser)"
+    },
+    {
+      "id": "RC-03",
+      "lead": "corpus 12 (8/12)",
+      "class": "budget globale / wall monolitico",
+      "evidence": "SUMMARY.json: 8/12 last errors LEAD_WALL_TIMEOUT_1800000ms. Watchdog di progresso assente; slice con backoff futuri bruciate istantaneamente (riprodotto in debug: 8 slice in <2s).",
+      "rootCause": "Nessuna rilevazione di stallo: run può consumare wall senza progresso frontier; backoff nodi futuri → slice vuote immediate.",
+      "patch": "progress watchdog in crawl-slice-runner: nessun cambio stato frontier per NODE_STALL_MS (default 10min) → stopReason NODE_STALL_WATCHDOG, resume salvato, lead RETRY_PENDING",
+      "regressionTest": "scripts/test-crawl-resilience.mjs (stall simulato → watchdog scatta)"
+    },
+    {
+      "id": "RC-04",
+      "lead": "tutti",
+      "class": "bug FSM / SIGTERM",
+      "evidence": "systemd log 20:19: chrome-headless orfani dopo stop unit; checkpoint: cmqmaf01p... requeueReason=orphan_after_sigterm_graceful_stop. Worker senza handler SIGTERM (grep=0).",
+      "rootCause": "Worker canonico senza graceful SIGTERM: nodi restano FETCHING, browser orfani, requeue orphan.",
+      "patch": "handler SIGTERM nel worker: stop scheduling, scrivi result RETRY_PENDING worker_sigterm, chiudi prisma, exit 0 (root cause dimostrata → modifica worker autorizzata dal mandato)",
+      "regressionTest": "scripts/test-crawl-resilience.mjs non copre worker; verifica E2E corpus: stop→resume senza perdita"
+    },
+    {
+      "id": "RC-05",
+      "lead": "tutti (JS sites)",
+      "class": "bug timeout browser",
+      "evidence": "policy-playwright.ts:201,255 page.goto timeout 45000 hardcoded; scan-config.ts:97-105 PLAYWRIGHT_POLICY_MAX_MS const congelata all'import → override per-slice (crawl-slice-runner.ts:594) inefficace.",
+      "rootCause": "Timeout navigazione non rispetta BROWSER_NAVIGATION_TIMEOUT_MS; budget playwright per-slice ignorato (default 20min su engine).",
+      "patch": "policy-playwright legge env a call-time; goto usa budget.browserNavigationTimeoutMs",
+      "regressionTest": "scripts/test-crawl-resilience.mjs (override budget rispettato)"
+    },
+    {
+      "id": "RC-06",
+      "lead": "tutti (stop/resume)",
+      "class": "bug shutdown / propagazione segnali",
+      "evidence": "2026-07-22T07:56Z: SIGTERM al v3 (pid 3711882) → solo stopping=true; worker su Montesano ha continuato a lanciare chrome-headless per 3+ minuti dopo il segnale (verificato via /proc: chrome nati 28s prima del check, 5 min dopo SIGTERM). v3 non tracciava i child né propagava il segnale.",
+      "rootCause": "spawnWorker senza tracking dei child; handler SIGTERM del v3 non propagava ai worker attivi. Il graceful SIGTERM del worker (RC-04) non veniva mai innescato dal parent.",
+      "patch": "v3: activeChildren Set, spawn detached:true (nuovo process group), initiateShutdown → SIGTERM di gruppo kill(-pid) su tutti i worker attivi + SIGKILL di gruppo dopo grace 45s (REVALIDATE_SHUTDOWN_GRACE_MS)",
+      "regressionTest": "scripts/test-v3-shutdown-propagation.mjs 8/8 PASS Linux (polite: handler+figlio morto; ignore: SIGKILL entro grace)"
+    },
+    {
+      "id": "RC-run-01",
+      "lead": "cmqkld5t000ao108esg4xv094 (Icm-Istituto Clinico Mediterraneo, Agropoli)",
+      "class": "data issue corpus runner",
+      "evidence": "Runner k3-corpus12-run.mjs v1 conteneva id spurio cmqkld5t000ao108e5rrr47s9 (NOT_FOUND nello shadow DB; suffisso 5rrr47s9 copiato da Montesano). v3 log: totalCandidates=11 su 12.",
+      "rootCause": "Typo di trascrizione nella lista hardcoded del runner; corpus12-leads.json corretto.",
+      "patch": "id corretto nel runner + pre-seed dei lead corpus già terminali (Montesano REVIEW_HUMAN) così il gate handled12 resta raggiungibile",
+      "regressionTest": "rilancio corpus: revalidate_v3_start totalCandidates=12 atteso"
+    },
+    {
+      "id": "RC-07-analisi",
+      "lead": "cmqkld5t300av108e5rrr47s9 (Via G. F. Montesano, Roccapiemonte)",
+      "class": "classificazione verificata NON-bug",
+      "evidence": "fetch diretto 2026-07-22: montesano.it = 'Notaio Montesano — studio notarile, uffici Paola e Scalea'. NON è la casa di cura. Result row: REVIEW_HUMAN/IDENTITY_MISMATCH, evidence [IDENTITY:MISMATCH] + crawl incompleto 1/20 PDF (26 min su sito di altra entità).",
+      "rootCause": "Sito CRM errato (omonimia). La promozione RETRY_PENDING+IDENTITY:MISMATCH → REVIEW_HUMAN nel worker è CORRETTA: l'identity check di homepage è indipendente dalla completezza del crawl polizza; crawlare 20 PDF del notaio sarebbe lavoro inutile.",
+      "commercialOutcome": "REVIEW_HUMAN legittimo (da controllare, non risultato commerciale). Non riaperto.",
+      "patch": "nessuna patch di classificazione. Candidata ottimizzazione (post-gate): short-circuit crawl polizza quando identity mismatch è già confermato — risparmia ~26 min/lead senza toccare i gate.",
+      "regressionTest": "n/a"
+    }
+  ]
+}
