@@ -9,6 +9,18 @@ import { analyzePolicy, isGelliComplianceReportOnly } from "@/lib/sanita/detecto
 import { isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
 import { PLAYWRIGHT_POLICY_MAX_MS, PLAYWRIGHT_POLICY_MAX_URLS } from "@/lib/sanita/scan-config";
 
+/** Budget a call-time (k3 RC-05): la const di scan-config è congelata all'import,
+ *  quindi l'override per-slice via env non funzionava. Leggere sempre qui. */
+function policyMaxMs(): number {
+  const n = Number(process.env.PLAYWRIGHT_POLICY_MAX_MS || 0);
+  return Number.isFinite(n) && n > 0 ? n : PLAYWRIGHT_POLICY_MAX_MS;
+}
+/** Timeout navigazione granulare — rispetta BROWSER_NAVIGATION_TIMEOUT_MS. */
+function navTimeoutMs(): number {
+  const n = Number(process.env.BROWSER_NAVIGATION_TIMEOUT_MS || 0);
+  return Number.isFinite(n) && n >= 1000 ? n : 60_000;
+}
+
 const POLICY_PATH =
   /trasparen|documenti|amministrazione|polizz|assicuraz|gelli|responsabilit|societa-trasparente|note-legali|legal/i;
 
@@ -123,7 +135,7 @@ export async function enrichCrawlWithPlaywright(
   opts?: { surfaceErrors?: boolean }
 ): Promise<CrawlResult> {
   if (!needsPlaywrightPolicyPass(crawl)) return crawl;
-  const maxMs = PLAYWRIGHT_POLICY_MAX_MS;
+  const maxMs = policyMaxMs();
   let aborted = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   if (maxMs > 0) {
@@ -198,7 +210,7 @@ async function enrichCrawlWithPlaywrightInner(
 
     /** Footer/menu WordPress: link «Assicurazione RCT», «Trasparenza» spesso solo nel DOM renderizzato. */
     try {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: navTimeoutMs() }).catch(() => {});
       await page.waitForTimeout(2_500);
       const footerHrefs = await page.evaluate(() => {
         const roots = [
@@ -252,7 +264,7 @@ async function enrichCrawlWithPlaywrightInner(
       visited.add(url);
       try {
         await page
-          .goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 })
+          .goto(url, { waitUntil: "domcontentloaded", timeout: navTimeoutMs() })
           .catch(() => {});
         await Promise.race([
           page

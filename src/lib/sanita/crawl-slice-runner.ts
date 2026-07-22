@@ -282,6 +282,15 @@ export async function runCrawlSlice(opts: {
         }
       }
       if (n.state === "TECHNICAL_BLOCKED") {
+        // Circuit breaker (k3 RC-01): nodi bloccati da circuito aperto NON vengono
+        // riaperti a ogni resume — l'host viene ri-sondato solo dopo REPROBE_MS
+        // (default 6h). Evita 90+ refetch/run su host DNS-morti (Villa Maione).
+        const cb = /^host_circuit_open@(\d+)/.exec(String(n.lastError || ""));
+        if (cb) {
+          const openedAt = Number(cb[1] || 0);
+          const reprobeMs = Math.max(60_000, Number(process.env.CRAWL_HOST_CIRCUIT_REPROBE_MS || 6 * 3_600_000));
+          if (!openedAt || Date.now() - openedAt < reprobeMs) continue;
+        }
         try {
           transitionFrontierNode(n.id, "RETRY_PENDING", {
             lastError: n.lastError ? `reopen:${n.lastError}` : "reopen_technical_blocked",
@@ -323,6 +332,76 @@ export async function runCrawlSlice(opts: {
   const htmlSamples: string[] = [];
   let linksDiscoveredTotal = 0;
 
+  // --- resilience (k3): progress watchdog + per-host circuit breaker ---------
+  // Watchdog: se la frontier non fa progressi per stallMs → stop diagnostico,
+  // mai terminale commerciale (il parent rischedula; resume preservato).
+  const stallMs = Math.max(1000, Number(process.env.CRAWL_NODE_STALL_MS || 600_000));
+  let lastProgressAt = Date.now();
+  // Circuit breaker: soglia fallimenti di rete consecutivi per host; a circuito
+  // aperto i nodi pending dello stesso host vengono bloccati SENZA altri fetch
+  // (un host DNS-morto non può bruciare il wall clock con 90+ retry).
+  const circuitThreshold = Math.max(2, Number(process.env.CRAWL_HOST_CIRCUIT_THRESHOLD || 3));
+  const hostNetFailures = new Map<string, number>();
+  const hostOf = (u: string): string | null => {
+    try {
+      return new URL(u).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+  const browserEscalationEnabled = process.env.CRAWL_BROWSER_ESCALATION !== "0";
+  // Blocco circuito tramite transizioni FSM legali (DISCOVERED/QUEUED non possono
+  // andare diretti a TECHNICAL_BLOCKED — il throw silenzioso annullerebbe il blocco).
+  function blockNodeForCircuit(nodeId: string, lastError: string): void {
+    const tryT = (to: "QUEUED" | "FETCHING" | "TECHNICAL_BLOCKED", bump = false): boolean => {
+      try {
+        transitionFrontierNode(nodeId, to, bump ? { lastError, bumpRetry: true } : {});
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (tryT("TECHNICAL_BLOCKED", true)) return; // RETRY_PENDING/FETCHING/FETCHED
+    if (tryT("QUEUED")) tryT("FETCHING");
+    tryT("TECHNICAL_BLOCKED", true);
+  }
+  let sliceBrowser: import("playwright").Browser | null = null;
+  async function fetchSinglePageViaBrowser(
+    url: string
+  ): Promise<{ ok: boolean; html: string; status: number; error?: string }> {
+    try {
+      if (!sliceBrowser) {
+        const { chromium } = await import("playwright");
+        sliceBrowser = await chromium.launch({
+          headless: true,
+          args: ["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+        });
+      }
+      const ctx = await sliceBrowser.newContext({
+        locale: "it-IT",
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      });
+      const page = await ctx.newPage();
+      try {
+        const resp = await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: budget.browserNavigationTimeoutMs,
+        });
+        const status = resp?.status() || 0;
+        if (status >= 400) {
+          return { ok: false, html: "", status, error: `browser_http_${status}` };
+        }
+        await page.waitForTimeout(1500);
+        return { ok: true, html: await page.content(), status: status || 200 };
+      } finally {
+        await ctx.close().catch(() => {});
+      }
+    } catch (e) {
+      return { ok: false, html: "", status: 0, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   const deadline = t0 + budget.sliceBudgetMs;
 
   while (Date.now() < deadline && processed < budget.maxHtmlPerSlice) {
@@ -335,6 +414,19 @@ export async function runCrawlSlice(opts: {
     let node = pickNextNode(crawlRunId);
     if (!node) break;
 
+    // Progress watchdog: nessun progresso frontier da stallMs → stop diagnostico.
+    if (Date.now() - lastProgressAt > stallMs) {
+      stopReason = "NODE_STALL_WATCHDOG";
+      heartbeatCrawlRun(crawlRunId, "NODE_STALL_WATCHDOG");
+      break;
+    }
+
+    const nodeHost = hostOf(node.canonicalUrl);
+    // Circuito aperto su questo host → niente fetch: blocco immediato diagnostico.
+    if (nodeHost && (hostNetFailures.get(nodeHost) || 0) >= circuitThreshold) {
+      blockNodeForCircuit(node.id, `host_circuit_open@${Date.now()}:${nodeHost}`);
+      continue;
+    }
     // Cap HTML breadth — do NOT abort PDF drain (HOT/PUB fail-closed needs documents).
     const completedHtml = listNodes(crawlRunId).filter(
       (n) => n.state === "COMPLETED" && n.resourceType === "html"
@@ -369,8 +461,79 @@ export async function runCrawlSlice(opts: {
     }
 
     heartbeatCrawlRun(crawlRunId, `fetch:${canonicalizeUrl(node.canonicalUrl).slice(0, 80)}`);
-    const fetched = await fetchResource(node.canonicalUrl, budget);
+    // Stall guard in-flight: se il fetch supera stallMs senza concludersi, il nodo
+    // resta recuperabile al resume e il run si ferma con diagnosi (mai terminale).
+    const fetchPromise = fetchResource(node.canonicalUrl, budget);
+    fetchPromise.catch(() => {});
+    let stallTimer: NodeJS.Timeout | null = null;
+    const stallRace = new Promise<"stall">((resolve) => {
+      stallTimer = setTimeout(() => resolve("stall"), stallMs);
+      stallTimer.unref?.();
+    });
+    const raced = await Promise.race([fetchPromise, stallRace]);
+    if (stallTimer) clearTimeout(stallTimer);
+    if (raced === "stall") {
+      stopReason = "NODE_STALL_WATCHDOG";
+      heartbeatCrawlRun(crawlRunId, "NODE_STALL_WATCHDOG:inflight");
+      break;
+    }
+    let fetched = raced;
     processed++;
+    lastProgressAt = Date.now(); // ogni fetch concluso (ok o errore) è progresso reale
+
+    // Escalation WAF: 403/429 su HTML → un tentativo via browser reale prima di
+    // classificare come tecnico (root cause RC-02: 403 path-specifico su WAF).
+    if (
+      !fetched.ok &&
+      (fetched.status === 403 || fetched.status === 429) &&
+      !/\.pdf/i.test(node.canonicalUrl) &&
+      browserEscalationEnabled
+    ) {
+      heartbeatCrawlRun(crawlRunId, `browser_escalation_try:${nodeHost || "?"}`);
+      const viaBrowser = await fetchSinglePageViaBrowser(node.canonicalUrl);
+      if (viaBrowser.ok) {
+        fetched = {
+          ok: true,
+          status: viaBrowser.status || 200,
+          buf: Buffer.from(viaBrowser.html, "utf8"),
+          contentType: "text/html; charset=utf-8",
+        };
+        heartbeatCrawlRun(crawlRunId, `browser_escalation_ok:${nodeHost || "?"}`);
+      } else {
+        heartbeatCrawlRun(
+          crawlRunId,
+          `browser_escalation_fail:${(viaBrowser.error || "unknown").slice(0, 80)}`
+        );
+      }
+    }
+
+    // Circuit breaker: conteggio fallimenti di rete consecutivi per host.
+    if (nodeHost) {
+      if (fetched.ok) {
+        hostNetFailures.delete(nodeHost);
+      } else if (!fetched.status) {
+        const fails = (hostNetFailures.get(nodeHost) || 0) + 1;
+        hostNetFailures.set(nodeHost, fails);
+        if (fails >= circuitThreshold) {
+          // Apri il circuito: tutti i nodi pending dello stesso host bloccati senza fetch.
+          for (const x of listNodes(crawlRunId)) {
+            if (
+              (x.state === "DISCOVERED" || x.state === "QUEUED" || x.state === "RETRY_PENDING") &&
+              hostOf(x.canonicalUrl) === nodeHost
+            ) {
+              blockNodeForCircuit(
+                x.id,
+                `host_circuit_open@${Date.now()}:${(fetched.error || "network").slice(0, 100)}`
+              );
+            }
+          }
+          heartbeatCrawlRun(crawlRunId, `host_circuit_open:${nodeHost}`);
+          stopReason = `host_circuit_open:${nodeHost}`;
+          lastProgressAt = Date.now();
+          continue;
+        }
+      }
+    }
 
     if (!fetched.ok) {
       const retries = (node.retryCount || 0) + 1;
@@ -557,6 +720,13 @@ export async function runCrawlSlice(opts: {
   }
 
   // Adaptive / forced Playwright — never silent swallow
+  try {
+    // cast: TS non traccia l'assegnazione dentro la closure fetchSinglePageViaBrowser
+    await (sliceBrowser as import("playwright").Browser | null)?.close();
+  } catch {
+    /* */
+  }
+  sliceBrowser = null;
   const completedHtmlCount = listNodes(crawlRunId).filter(
     (n) => n.state === "COMPLETED" && n.resourceType === "html"
   ).length;
@@ -665,9 +835,10 @@ export async function runCrawlSlice(opts: {
       settle = "RUN_WALL_CLOCK";
     } else if (pendingWork || Date.now() >= deadline) {
       if (settle !== "PUBLISHED_SIGNAL") {
-        stopReason = SLICE_BUDGET_EXHAUSTED;
+        // preserva diagnosi precedenti (NODE_STALL_WATCHDOG, host_circuit_open, …)
+        stopReason = stopReason ?? SLICE_BUDGET_EXHAUSTED;
         settle = "SLICE_CHECKPOINTED";
-        heartbeatCrawlRun(crawlRunId, SLICE_BUDGET_EXHAUSTED);
+        heartbeatCrawlRun(crawlRunId, stopReason);
         releaseWorkerLock(crawlRunId);
       }
     }
