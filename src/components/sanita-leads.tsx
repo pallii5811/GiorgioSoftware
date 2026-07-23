@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { deriveVerdict } from "@/lib/sanita/verdict"
+import { deriveVerdict, readVerdictToken } from "@/lib/sanita/verdict"
 import {
   isHotPublishedExpiredEvidence,
   expiredDaysFromEvidence,
@@ -63,6 +63,7 @@ type Lead = {
     actionable?: boolean
     processingState?: string | null
     businessVerdict?: string | null
+    verdictToken?: string | null
     queueStatus?: string
   } | null
   _actionable?: boolean
@@ -158,7 +159,8 @@ function readFiltersFromUrl(): Filters {
   const region = sp.get("region")
   const outcome = sp.get("outcome")
   return {
-    tab: tab === "live" || tab === "review" || tab === "archive" || tab === "run" ? tab : "run",
+    // Default archivio: i lead già scansionati (legacy) devono essere visibili subito.
+    tab: tab === "live" || tab === "review" || tab === "archive" || tab === "run" ? tab : "archive",
     region: region === "Campania" || region === "Veneto" ? region : "ALL",
     city: sp.get("city") || "",
     outcome:
@@ -235,10 +237,20 @@ function liveOutcome(l: Lead): UiOutcome {
     website: l.website,
     evidence: l.evidence,
   })
-  if (v === "PUBLISHED") return "date_unknown"
+  // Legacy [V:PUB]/[V:HOT] (pre-revalidate): mostrali come esiti cliente, non "pending".
+  if (v === "PUBLISHED") return "policy_valid"
   if (v === "HOT") return "hot"
   if (v === "REVIEW") return "review"
   return "pending"
+}
+
+/** HOT/PUB già scansionati (anche evidence legacy senza marker v2) — da mostrare in UI. */
+function isLegacyScannedCert(l: Lead): boolean {
+  const v =
+    readVerdictToken(l.evidence) ||
+    (l.semantic?.verdictToken as string | null | undefined) ||
+    null
+  return v === "HOT" || v === "PUBLISHED"
 }
 
 function liveToRow(l: Lead): UiRow {
@@ -489,14 +501,21 @@ export function SanitaLeads() {
   const tabRows = useMemo((): UiRow[] => {
     let rows: UiRow[]
     if (filters.tab === "run") {
-      rows = runResults.map(shadowToRow)
+      // Nuovo run vuoto → non lasciare il cliente su tabella vuota: mostra archivio live.
+      rows =
+        runResults.length > 0
+          ? runResults.map(shadowToRow)
+          : liveLeads.map(liveToRow)
     } else if (filters.tab === "review") {
       rows = reviewResults.map(shadowToRow)
     } else if (filters.tab === "live") {
-      // Certificati: shadow nuovo run (anche applyLive=0) + legacy live, badge distinti.
+      // Certificati: shadow nuovo run + HOT/PUB legacy (anche senza marker evidence v2).
       const shadowCert = runResults.filter(isShadowCertified).map(shadowToRow)
       const shadowIds = new Set(shadowCert.map((r) => r.id))
-      const legacyLive = liveLeads.filter(isLeadActionable).map(liveToRow).filter((r) => !shadowIds.has(r.id))
+      const legacyLive = liveLeads
+        .filter((l) => isLeadActionable(l) || isLegacyScannedCert(l))
+        .map(liveToRow)
+        .filter((r) => !shadowIds.has(r.id))
       rows = [...shadowCert, ...legacyLive]
     } else {
       const runById = new Map(runResults.map((r) => [r.leadId, r]))
@@ -614,8 +633,12 @@ export function SanitaLeads() {
   const otherTerminal = archiveStatus?.otherNonCommercialTerminal ?? 0
   const technicalFinal = archiveStatus?.technicalBlockedFinal ?? 0
   const selfIns = archiveStatus?.selfInsurance ?? 0
-  const legacyCertified = apiMeta?.actionableCount ?? 0
-  const archiveTotal = apiMeta?.dbTotal ?? 919
+  // Conta HOT/PUB già in DB (incluso evidence legacy luglio), non solo coda commerciale v2.
+  const legacyCertified = useMemo(
+    () => liveLeads.filter(isLegacyScannedCert).length,
+    [liveLeads]
+  )
+  const archiveTotal = apiMeta?.dbTotal ?? liveLeads.length ?? 919
   const counterSum = certifiedRun + reviewCount + otherTerminal + technicalFinal
 
   const kpiCards: { label: string; value: string | number; testid: string; onClick?: () => void }[] = [
