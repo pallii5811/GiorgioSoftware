@@ -791,12 +791,14 @@ async function pump() {
       lastMetrics = Date.now();
       concurrency = adaptiveConcurrency(concurrency);
       const rr = recentRetryRate();
-      if (rr > 0.2) {
-        concurrency = 1;
-        console.log(JSON.stringify({ event: "concurrency_backoff", retryRate: rr, concurrency }));
-      } else if (rr > 0.15) {
+      // Soft backoff only — never pin to 1 forever: slice retries are expected and
+      // single-worker mode leaves one hard lead blocking the whole 877.
+      if (rr > 0.35) {
         concurrency = Math.min(concurrency, 2);
         console.log(JSON.stringify({ event: "concurrency_soft_backoff", retryRate: rr, concurrency }));
+      } else if (rr > 0.2) {
+        concurrency = Math.min(concurrency, Math.max(2, concurrency));
+        console.log(JSON.stringify({ event: "concurrency_hold", retryRate: rr, concurrency }));
       }
     }
     const due = dueRetryIds();
