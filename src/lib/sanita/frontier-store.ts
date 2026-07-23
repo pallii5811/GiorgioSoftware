@@ -799,6 +799,123 @@ export function computeBackoffMs(attempt: number, baseMs = 2000, maxMs = 300_000
   return exp + jitter;
 }
 
+/** Invariant: RETRY_PENDING must always carry nextRetryAt. */
+export function countRetryPendingMissingNextRetryAt(crawlRunId?: string): number {
+  const d = db();
+  if (crawlRunId) {
+    const row = d
+      .prepare(
+        `SELECT count(*) as c FROM CrawlFrontierNode
+         WHERE crawlRunId = ? AND state = 'RETRY_PENDING'
+           AND (nextRetryAt IS NULL OR nextRetryAt = '')`
+      )
+      .get(crawlRunId) as { c: number };
+    return Number(row?.c || 0);
+  }
+  const row = d
+    .prepare(
+      `SELECT count(*) as c FROM CrawlFrontierNode
+       WHERE state = 'RETRY_PENDING' AND (nextRetryAt IS NULL OR nextRetryAt = '')`
+    )
+    .get() as { c: number };
+  return Number(row?.c || 0);
+}
+
+/** Assign controlled nextRetryAt to orphan RETRY_PENDING nodes (preserves run/frontier). */
+export function repairOrphanRetryPending(crawlRunId: string): number {
+  const orphans = listNodes(crawlRunId).filter(
+    (n) => n.state === "RETRY_PENDING" && (!n.nextRetryAt || n.nextRetryAt === "")
+  );
+  let n = 0;
+  for (const node of orphans) {
+    try {
+      transitionFrontierNode(node.id, "RETRY_PENDING", {
+        nextRetryAt: new Date(
+          Date.now() + computeBackoffMs((node.retryCount || 0) + 1)
+        ).toISOString(),
+        lastError: node.lastError || "repaired_null_nextRetryAt",
+      });
+      n++;
+    } catch {
+      /* */
+    }
+  }
+  return n;
+}
+
+/**
+ * Demote html-link/sitemap nodes wrongly stored as critical/relevant under the
+ * old "every HTML is relevant" classifier — prevents fake CRAWL_CAP / incomplete.
+ */
+export function reclassifySpuriousRelevance(
+  crawlRunId: string,
+  classify: (url: string, opts?: { discoverySource?: string | null }) => "critical" | "relevant" | "low"
+): number {
+  const d = db();
+  let n = 0;
+  for (const node of listNodes(crawlRunId)) {
+    const src = String(node.discoverySource || "");
+    if (src !== "html-link" && src !== "sitemap" && !src.startsWith("sitemap") && src !== "playwright") {
+      continue;
+    }
+    if (node.relevance !== "critical" && node.relevance !== "relevant") continue;
+    const next = classify(node.canonicalUrl, { discoverySource: src });
+    if (next === node.relevance) continue;
+    if (next !== "low") continue;
+    d.prepare(`UPDATE CrawlFrontierNode SET relevance = ?, updatedAt = ? WHERE id = ?`).run(
+      next,
+      new Date().toISOString(),
+      node.id
+    );
+    n++;
+  }
+  if (n) refreshRunCounts(crawlRunId);
+  return n;
+}
+
+export function frontierDiagnosticSummary(crawlRunId: string): {
+  byState: Record<string, number>;
+  byRelevance: Record<string, number>;
+  pdfFound: number;
+  pdfCompleted: number;
+  unresolvedCriticalRelevant: number;
+  nullRetryNextAt: number;
+  sitemapStatus: string | null;
+  urlCapReached: boolean;
+  timeCapReached: boolean;
+  runState: string | null;
+  heartbeat: string | null;
+} {
+  const nodes = listNodes(crawlRunId);
+  const byState: Record<string, number> = {};
+  const byRelevance: Record<string, number> = {};
+  for (const n of nodes) {
+    byState[n.state] = (byState[n.state] || 0) + 1;
+    byRelevance[n.relevance] = (byRelevance[n.relevance] || 0) + 1;
+  }
+  const pdfs = nodes.filter((n) => n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl));
+  const pending = new Set(["DISCOVERED", "QUEUED", "FETCHING", "FETCHED", "RENDERED", "PARSED", "RETRY_PENDING"]);
+  const unresolvedCriticalRelevant = nodes.filter(
+    (n) => (n.relevance === "critical" || n.relevance === "relevant") && pending.has(n.state)
+  ).length;
+  const run = getCrawlRun(crawlRunId);
+  return {
+    byState,
+    byRelevance,
+    pdfFound: pdfs.length,
+    pdfCompleted: pdfs.filter((n) => n.state === "COMPLETED").length,
+    unresolvedCriticalRelevant,
+    nullRetryNextAt: nodes.filter((n) => n.state === "RETRY_PENDING" && !n.nextRetryAt).length,
+    sitemapStatus: run ? String(run.sitemapStatus || "") : null,
+    urlCapReached: Boolean(run?.urlCapReached),
+    timeCapReached: Boolean(run?.timeCapReached),
+    runState: run ? String(run.state || "") : null,
+    heartbeat: run
+      ? String(run.stopReason || run.heartbeatAt || run.currentCheckpoint || "")
+      : null,
+  };
+}
+
 export function canonicalizeUrl(raw: string): string {
   try {
     const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);

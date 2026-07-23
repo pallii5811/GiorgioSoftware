@@ -22,7 +22,16 @@ import {
 
 function frontierInspect(frontierPath) {
   if (!frontierPath || !fs.existsSync(frontierPath)) {
-    return { exists: false, pending: 0, urlCap: 0, timeCap: 0, state: null };
+    return {
+      exists: false,
+      pending: 0,
+      blocked: 0,
+      pdfPending: 0,
+      urlCap: 0,
+      timeCap: 0,
+      state: null,
+      sitemapStatus: null,
+    };
   }
   try {
     const helper = path.join(ROOT, "scripts/_frontier_inspect.py");
@@ -34,12 +43,24 @@ function frontierInspect(frontierPath) {
     return {
       exists: true,
       pending: Number(row.pending || 0),
+      blocked: Number(row.blocked || 0),
+      pdfPending: Number(row.pdfPending || 0),
       urlCap: Number(row.urlCap || 0),
       timeCap: Number(row.timeCap || 0),
       state: row.state ? String(row.state) : null,
+      sitemapStatus: row.sitemapStatus ? String(row.sitemapStatus) : null,
     };
   } catch {
-    return { exists: true, pending: -1, urlCap: 0, timeCap: 0, state: null };
+    return {
+      exists: true,
+      pending: -1,
+      blocked: 0,
+      pdfPending: 0,
+      urlCap: 0,
+      timeCap: 0,
+      state: null,
+      sitemapStatus: null,
+    };
   }
 }
 
@@ -52,6 +73,20 @@ function frontierClearCaps(frontierPath) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Isolate TECHNICAL_BLOCKED / stuck PDFs — never wipe completed nodes. */
+function frontierQuarantineBlocked(frontierPath, { isolatePdfs = false } = {}) {
+  if (!frontierPath || !fs.existsSync(frontierPath)) return null;
+  try {
+    const helper = path.join(ROOT, "scripts/_frontier_quarantine_blocked.py");
+    const args = [helper, frontierPath];
+    if (isolatePdfs) args.push("--isolate-pdfs");
+    const out = execFileSync("python3", args, { encoding: "utf8", timeout: 8000 }).trim();
+    return JSON.parse(out || "{}");
+  } catch {
+    return null;
   }
 }
 
@@ -209,15 +244,49 @@ leads.sort((a, b) => {
 
 function dueRetryIds() {
   const now = Date.now();
-  return Object.entries(cp.retryQueue)
-    .filter(([, meta]) => new Date(meta.nextRetryAt || 0).getTime() <= now)
-    .map(([id]) => id);
+  const ids = Object.entries(cp.retryQueue)
+    .filter(([, meta]) => {
+      const attempts = Number(meta?.attempts || 0);
+      if (attempts >= MAX_RETRY_ATTEMPTS) return false;
+      const t = new Date(meta.nextRetryAt || 0).getTime();
+      return Number.isFinite(t) && t <= now;
+    })
+    .map(([id, meta]) => ({ id, meta }));
+  // Fairness: due soonest first, then fewer attempts (avoid starving new / hot-looping one lead).
+  ids.sort((a, b) => {
+    const ta = new Date(a.meta?.nextRetryAt || 0).getTime();
+    const tb = new Date(b.meta?.nextRetryAt || 0).getTime();
+    if (ta !== tb) return ta - tb;
+    const aa = Number(a.meta?.attempts || 0);
+    const ab = Number(b.meta?.attempts || 0);
+    if (aa !== ab) return aa - ab;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  return ids.map((x) => x.id);
 }
 
 function pendingNewIds() {
   return leads
     .map((l) => l.id)
     .filter((id) => !cp.terminal[id] && !cp.retryQueue[id] && !cp.inProgress[id]);
+}
+
+/** Max 1 due-retry every 4 new leads — new pool must not be blocked by old retries. */
+function buildFairQueue(due, news) {
+  const queue = [];
+  let i = 0;
+  let j = 0;
+  while (i < due.length || j < news.length) {
+    for (let k = 0; k < 4 && j < news.length; k++) {
+      queue.push(news[j++]);
+    }
+    if (i < due.length) queue.push(due[i++]);
+    if (j >= news.length) {
+      while (i < due.length) queue.push(due[i++]);
+      break;
+    }
+  }
+  return queue;
 }
 
 let stopping = false;
@@ -329,7 +398,7 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId, strategy
       strategyEnv.REVALIDATE_LEAD_WALL_MS ||
         process.env.REVALIDATE_SLICE_WALL_MS ||
         process.env.REVALIDATE_LEAD_WALL_MS ||
-        8 * 60_000
+        3_300_000
     );
     const env = {
       ...process.env,
@@ -352,9 +421,14 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId, strategy
       CRAWL_RUN_MAX_WALL_CLOCK_MS:
         strategyEnv.CRAWL_RUN_MAX_WALL_CLOCK_MS ||
         process.env.CRAWL_RUN_MAX_WALL_CLOCK_MS ||
-        sliceWall,
+        "2700000",
       CRAWL_MAX_HTML_PER_SLICE:
         strategyEnv.CRAWL_MAX_HTML_PER_SLICE || process.env.CRAWL_MAX_HTML_PER_SLICE || "24",
+      OCR_TIMEOUT_MS: strategyEnv.OCR_TIMEOUT_MS || process.env.OCR_TIMEOUT_MS || "180000",
+      PDF_FETCH_TIMEOUT_MS:
+        strategyEnv.PDF_FETCH_TIMEOUT_MS || process.env.PDF_FETCH_TIMEOUT_MS || "60000",
+      MAX_DOCUMENT_RETRIES:
+        strategyEnv.MAX_DOCUMENT_RETRIES || process.env.MAX_DOCUMENT_RETRIES || "3",
       PER_HOST_CONCURRENCY: process.env.PER_HOST_CONCURRENCY || "1",
       REVALIDATE_LEAD_WALL_MS: sliceWall,
       PDFTOPPM_PATH: process.env.PDFTOPPM_PATH || "/usr/bin/pdftoppm",
@@ -462,14 +536,48 @@ async function processLeadId(leadId) {
   const prevErr = String(prevRetry?.lastError || prevRetry?.lastReason || "");
   const attemptsSoFar = cp.attempts[leadId] || 0;
   let strategy = pickRetryStrategy(attemptsSoFar, prevErr, prevRetry?.strategy || null);
-  const insp = frontierInspect(prevRetry?.frontierPath);
-  // Resume only when pending nodes remain. pending<=0 (or inspect fail) → fresh —
-  // otherwise resume_boost clears caps on an empty FAILED frontier and no-ops forever.
-  if (insp.exists && (insp.pending === 0 || insp.pending < 0)) {
-    strategy = "fresh";
+  let insp = frontierInspect(prevRetry?.frontierPath);
+  // TECHNICAL_BLOCKED / stuck PDFs are not "pending" but still block HOT — isolate then resume.
+  if (
+    insp.exists &&
+    prevRetry?.frontierPath &&
+    (insp.blocked > 0 || (/PDF_UNPROCESSED/i.test(prevErr) && insp.pdfPending > 0))
+  ) {
+    const q = frontierQuarantineBlocked(prevRetry.frontierPath, {
+      isolatePdfs: /PDF_UNPROCESSED|ANALYZE_ERROR|LEAD_WALL/i.test(prevErr),
+    });
+    console.log(JSON.stringify({ event: "frontier_quarantine", id: leadId, prevErr, q, insp }));
+    insp = frontierInspect(prevRetry.frontierPath);
+    if (strategy === "fresh") strategy = "resume_boost";
+  }
+  // Sitemap external fail with empty queue: remap status via quarantine helper, stay on resume.
+  if (
+    insp.exists &&
+    prevRetry?.frontierPath &&
+    insp.pending === 0 &&
+    /SITEMAP_UNRESOLVED|ROBOTS_REFERENCED_FAILED|DISCOVERED_FAILED/i.test(
+      prevErr + " " + String(insp.sitemapStatus || "")
+    )
+  ) {
+    const q = frontierQuarantineBlocked(prevRetry.frontierPath, { isolatePdfs: false });
+    insp = frontierInspect(prevRetry.frontierPath);
+    strategy = "resume_boost";
+    console.log(JSON.stringify({ event: "frontier_sitemap_quarantine", id: leadId, q, insp }));
+  }
+  // STOP-SHIP: never recreate frontier from zero for the same lead when file exists.
+  // Cap with empty pending → clear caps + resume_boost, not fresh rediscovery.
+  if (
+    insp.exists &&
+    insp.pending === 0 &&
+    insp.blocked === 0 &&
+    (insp.state === "FAILED" || insp.urlCap || insp.timeCap) &&
+    /CRAWL_CAP|URL_CAP/i.test(prevErr) &&
+    !/ROBOTS_REFERENCED_FAILED|DISCOVERED_FAILED/i.test(String(insp.sitemapStatus || ""))
+  ) {
+    strategy = "resume_boost";
     console.log(
       JSON.stringify({
-        event: "frontier_force_fresh_no_pending",
+        event: "frontier_resume_boost_no_fresh",
         id: leadId,
         prevErr,
         insp,
@@ -480,30 +588,61 @@ async function processLeadId(leadId) {
     Boolean(prevRetry?.frontierPath) &&
     Boolean(prevRetry?.lastRunId) &&
     fs.existsSync(prevRetry.frontierPath);
-  const reuse = strategy !== "fresh" && canReuseFile && insp.pending > 0;
+  if (strategy === "fresh" && canReuseFile) {
+    strategy = "resume_boost";
+  }
+  const workLeft = insp.pending > 0 || insp.blocked > 0 || insp.pdfPending > 0;
+  const reuse = strategy !== "fresh" && canReuseFile && (workLeft || insp.pending === 0 || canReuseFile);
   const runId = reuse ? prevRetry.lastRunId : `reval-p1-${leadId}-${Date.now()}`;
   const frontierPath = reuse ? prevRetry.frontierPath : path.join(FRONTIER_DIR, `${runId}.sqlite`);
-  if (reuse && (strategy === "resume_boost" || insp.urlCap || insp.timeCap || insp.state === "FAILED")) {
+  if (
+    reuse &&
+    (strategy === "resume_boost" ||
+      insp.urlCap ||
+      insp.timeCap ||
+      insp.state === "FAILED" ||
+      insp.state === "PAUSED")
+  ) {
     const cleared = frontierClearCaps(frontierPath);
     console.log(JSON.stringify({ event: "frontier_clear_caps", id: leadId, cleared, strategy, insp }));
   }
+  // STOP-SHIP budgets: one lead wall up to 55m; crawl run wall 45m.
+  const sliceBase = Number(
+    process.env.REVALIDATE_SLICE_WALL_MS || process.env.REVALIDATE_LEAD_WALL_MS || 3_300_000
+  );
+  const sliceHardCap = Math.min(3_300_000, Math.max(60_000, sliceBase));
+  const overallMax = Math.min(
+    3_300_000,
+    Number(process.env.REVALIDATE_OVERALL_LEAD_WALL_MS || process.env.REVALIDATE_LEAD_WALL_MS || 3_300_000)
+  );
+  let stretch = sliceHardCap;
+  // Finalize-only short wall ONLY when resuming an existing empty frontier —
+  // never for brand-new leads (missing frontier reports pending=0 and was
+  // incorrectly capped at 10m → LEAD_WALL_TIMEOUT_600000ms storm).
+  if (canReuseFile && insp.pending === 0 && insp.blocked === 0 && insp.pdfPending === 0) {
+    stretch = Math.min(sliceHardCap, 10 * 60_000);
+  } else if (/PDF_UNPROCESSED|ANALYZE_ERROR|LEAD_WALL|PLAYWRIGHT/i.test(prevErr) || insp.pdfPending > 3) {
+    stretch = sliceHardCap;
+  }
+  void overallMax;
   const strategyEnv = {};
+  if (insp.pending === 0 && insp.blocked === 0 && strategy !== "fresh") {
+    strategyEnv.FORCE_RESCAN_PUB = "0";
+    strategyEnv.REVALIDATE_FINALIZE_RESUME = "1";
+  }
   if (strategy === "resume_boost") {
     strategyEnv.CRAWL_HTML_URL_CAP = String(
-      Math.max(150, Number(process.env.CRAWL_HTML_URL_CAP || 100) + 50)
+      Math.max(100, Number(process.env.CRAWL_HTML_URL_CAP || 100))
     );
-    strategyEnv.CRAWL_MAX_HTML_PER_SLICE = "36";
-    strategyEnv.REVALIDATE_LEAD_WALL_MS = String(
-      Number(process.env.REVALIDATE_SLICE_WALL_MS || 10 * 60_000)
-    );
+    strategyEnv.CRAWL_MAX_HTML_PER_SLICE = process.env.CRAWL_MAX_HTML_PER_SLICE || "24";
+    strategyEnv.CRAWL_RUN_MAX_WALL_CLOCK_MS = process.env.CRAWL_RUN_MAX_WALL_CLOCK_MS || "2700000";
+    strategyEnv.REVALIDATE_LEAD_WALL_MS = String(stretch);
   } else if (strategy === "fresh") {
-    strategyEnv.CRAWL_HTML_URL_CAP = String(process.env.CRAWL_HTML_URL_CAP || "120");
-    strategyEnv.CRAWL_MAX_HTML_PER_SLICE = "30";
+    strategyEnv.CRAWL_HTML_URL_CAP = String(process.env.CRAWL_HTML_URL_CAP || "100");
+    strategyEnv.CRAWL_MAX_HTML_PER_SLICE = process.env.CRAWL_MAX_HTML_PER_SLICE || "24";
+    strategyEnv.REVALIDATE_LEAD_WALL_MS = String(stretch);
   } else {
-    // resume: short slice wall, keep raised caps from systemd
-    strategyEnv.REVALIDATE_LEAD_WALL_MS = String(
-      process.env.REVALIDATE_SLICE_WALL_MS || 8 * 60_000
-    );
+    strategyEnv.REVALIDATE_LEAD_WALL_MS = String(stretch);
   }
   strategyEnv.REVALIDATE_RETRY_STRATEGY = strategy;
   if (reuse) {
@@ -673,28 +812,36 @@ async function processLeadId(leadId) {
       if (attempts >= MAX_RETRY_ATTEMPTS) {
         console.warn(
           JSON.stringify({
-            event: "retry_ceiling_keep_operational",
+            event: "retry_ceiling_technical_blocked",
             id: leadId,
             attempts,
             maxRetry: MAX_RETRY_ATTEMPTS,
             lastReason: errCode,
-            note: "TECHNICAL_BLOCKED is admin-only; not a client terminal",
           })
         );
+        cp.terminal[leadId] = {
+          finishedAt: finalRow.finishedAt || new Date().toISOString(),
+          processingState: "TECHNICAL_BLOCKED",
+          newVerdict: null,
+          reasonCode: `RETRY_EXHAUSTED_${attempts}:${errCode}`,
+        };
+        cp.stats.terminal++;
+        cp.stats.tech++;
+      } else {
+        cp.retryQueue[leadId] = {
+          attempts,
+          lastReason: errCode,
+          lastError: errCode,
+          nextRetryAt: nextRetryAt(attempts, { sliceContinue }),
+          lastRunId: runId,
+          frontierPath,
+          strategy,
+          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
+          lastAttemptAt: new Date().toISOString(),
+          operational: true,
+        };
+        cp.stats.retry++;
       }
-      cp.retryQueue[leadId] = {
-        attempts,
-        lastReason: errCode,
-        lastError: errCode,
-        nextRetryAt: nextRetryAt(attempts, { sliceContinue }),
-        lastRunId: runId,
-        frontierPath,
-        strategy,
-        firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
-        lastAttemptAt: new Date().toISOString(),
-        operational: true,
-      };
-      cp.stats.retry++;
     }
     cp.stats.processed++;
     saveCheckpointAtomic(CHECKPOINT, cp);
@@ -712,17 +859,28 @@ async function processLeadId(leadId) {
   } catch (e) {
     delete cp.inProgress[leadId];
     const attempts = cp.attempts[leadId] || 1;
-    cp.retryQueue[leadId] = {
-      attempts,
-      lastReason: "PARENT_CATCH",
-      lastError: String(e),
-      nextRetryAt: nextRetryAt(attempts),
-      lastRunId: runId,
-      frontierPath,
-      firstSeenAt: new Date().toISOString(),
-      lastAttemptAt: new Date().toISOString(),
-    };
-    cp.stats.errors++;
+    if (attempts >= MAX_RETRY_ATTEMPTS) {
+      cp.terminal[leadId] = {
+        finishedAt: new Date().toISOString(),
+        processingState: "TECHNICAL_BLOCKED",
+        newVerdict: null,
+        reasonCode: `RETRY_EXHAUSTED_${attempts}:PARENT_CATCH`,
+      };
+      cp.stats.terminal++;
+      cp.stats.tech++;
+    } else {
+      cp.retryQueue[leadId] = {
+        attempts,
+        lastReason: "PARENT_CATCH",
+        lastError: String(e),
+        nextRetryAt: nextRetryAt(attempts),
+        lastRunId: runId,
+        frontierPath,
+        firstSeenAt: new Date().toISOString(),
+        lastAttemptAt: new Date().toISOString(),
+      };
+      cp.stats.errors++;
+    }
     saveCheckpointAtomic(CHECKPOINT, cp);
     console.error(JSON.stringify({ event: "lead_error", id: leadId, error: String(e) }));
   } finally {
@@ -734,8 +892,7 @@ let concurrency = Math.min(
   6,
   Math.max(1, Number(process.env.TOTAL_WORKERS || process.env.REVALIDATE_CONCURRENCY || 2))
 );
-// Start ramp at min(2, TOTAL_WORKERS)
-concurrency = Math.min(2, concurrency);
+concurrency = Math.min(3, concurrency);
 
 console.log(
   JSON.stringify({
@@ -800,15 +957,8 @@ async function pump() {
     }
     const due = dueRetryIds();
     const news = pendingNewIds();
-    // Round-robin: prefer due retries (auto, no client click), interleave 2:1 with new.
-    const queue = [];
-    let i = 0;
-    let j = 0;
-    while (i < due.length || j < news.length) {
-      if (i < due.length) queue.push(due[i++]);
-      if (i < due.length) queue.push(due[i++]);
-      if (j < news.length) queue.push(news[j++]);
-    }
+    // Fair queue: at most 1 retry every 4 new leads.
+    const queue = buildFairQueue(due, news);
     if (limit != null && Number.isFinite(limit)) {
       // limit applies to new processing attempts this run
     }

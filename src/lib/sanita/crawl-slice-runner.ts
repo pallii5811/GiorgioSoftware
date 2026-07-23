@@ -27,10 +27,14 @@ import {
   classifyTerminalMissingUrl,
   isTechnicalFetchFailure,
   persistNodeEvidence,
+  countRetryPendingMissingNextRetryAt,
+  repairOrphanRetryPending,
+  reclassifySpuriousRelevance,
 } from "@/lib/sanita/frontier-store";
 import { extractPdfFullText } from "@/lib/sanita/ocr";
 import { analyzePolicy } from "@/lib/sanita/detector";
 import { shouldActivatePlaywright, type PlaywrightMode } from "@/lib/sanita/playwright-adaptive";
+import { classifyUrlRelevance } from "@/lib/sanita/crawl-relevance";
 
 const TRANSPARENCY_SEEDS = [
   "/",
@@ -78,14 +82,11 @@ export type CrawlSliceResult = {
   wallMs: number;
 };
 
-function relevanceFor(url: string): "critical" | "relevant" | "low" {
-  const policyish =
-    /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
-      url
-    );
-  if (/\.pdf/i.test(url)) return policyish ? "critical" : "low";
-  if (policyish || /document/i.test(url)) return "critical";
-  return "relevant";
+function relevanceFor(
+  url: string,
+  discoverySource?: string | null
+): "critical" | "relevant" | "low" {
+  return classifyUrlRelevance(url, { discoverySource });
 }
 
 function sameHost(a: string, b: string): boolean {
@@ -153,7 +154,7 @@ function enqueue(
       parentUrl: parent,
       discoverySource: source,
       resourceType: /\.pdf/i.test(url) ? "pdf" : "html",
-      relevance: relevanceFor(url),
+      relevance: relevanceFor(url, source),
     });
     return created;
   } catch {
@@ -357,6 +358,12 @@ export async function runCrawlSlice(opts: {
   }
   // RC-11: drop alt-TLD seed pollution (.com DNS-dead vs official .it) before drain.
   excludeForeignSeedNodes(crawlRunId, opts.website);
+  // STOP-SHIP: never leave RETRY_PENDING orphans without nextRetryAt.
+  repairOrphanRetryPending(crawlRunId);
+  const demoted = reclassifySpuriousRelevance(crawlRunId, classifyUrlRelevance);
+  if (demoted > 0) {
+    heartbeatCrawlRun(crawlRunId, `relevance_demoted:${demoted}`);
+  }
 
   heartbeatCrawlRun(crawlRunId, "slice_start");
 
@@ -416,10 +423,8 @@ export async function runCrawlSlice(opts: {
     try {
       if (!sliceBrowser) {
         const { chromium } = await import("playwright");
-        sliceBrowser = await chromium.launch({
-          headless: true,
-          args: ["--no-sandbox", "--disable-blink-features=AutomationControlled"],
-        });
+        const { playwrightChromiumLaunchOptions } = await import("@/lib/sanita/playwright-launch");
+        sliceBrowser = await chromium.launch(playwrightChromiumLaunchOptions());
       }
       const ctx = await sliceBrowser.newContext({
         locale: "it-IT",
@@ -488,21 +493,64 @@ export async function runCrawlSlice(opts: {
       blockNodeForCircuit(node.id, `host_circuit_open@${Date.now()}:${nodeHost}`);
       continue;
     }
-    // Cap HTML breadth — do NOT abort PDF drain (HOT/PUB fail-closed needs documents).
+    // Cap HTML breadth — never mark urlCapReached when only low nodes remain.
+    // Exclude surplus low with LOW_RELEVANCE_BREADTH_CAP; keep draining critical/relevant/PDF.
     const completedHtml = listNodes(crawlRunId).filter(
       (n) => n.state === "COMPLETED" && n.resourceType === "html"
     ).length;
-    const htmlCap = Number(process.env.CRAWL_HTML_URL_CAP || 40);
+    const htmlCap = Number(process.env.CRAWL_HTML_URL_CAP || 100);
     const nodeIsPdf = node.resourceType === "pdf" || /\.pdf/i.test(node.canonicalUrl);
-    if (Number.isFinite(htmlCap) && htmlCap > 0 && completedHtml >= htmlCap && !nodeIsPdf) {
-      setCrawlRunFlags(crawlRunId, { urlCapReached: true });
-      const pdfNode = pickNextNode(crawlRunId, Date.now(), { pdfOnly: true });
-      if (!pdfNode) {
-        stopReason = "URL_CAP_REACHED";
-        outcome = "RUN_WALL_CLOCK";
-        break;
+    if (Number.isFinite(htmlCap) && htmlCap > 0 && completedHtml >= htmlCap) {
+      const pendingLowHtml = listNodes(crawlRunId).filter(
+        (n) =>
+          ["DISCOVERED", "QUEUED", "RETRY_PENDING", "FETCHING"].includes(n.state) &&
+          n.relevance === "low" &&
+          !(n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl))
+      );
+      for (const low of pendingLowHtml) {
+        try {
+          if (low.state === "RETRY_PENDING" || low.state === "DISCOVERED") {
+            transitionFrontierNode(low.id, "QUEUED");
+          }
+          if (low.state === "QUEUED" || low.state === "DISCOVERED" || low.state === "RETRY_PENDING") {
+            // FSM: EXCLUDED from QUEUED
+            transitionFrontierNode(low.id, "EXCLUDED", {
+              lastError: "LOW_RELEVANCE_BREADTH_CAP",
+              exclusionReason: "LOW_RELEVANCE_BREADTH_CAP",
+            });
+          }
+        } catch {
+          try {
+            transitionFrontierNode(low.id, "EXCLUDED", {
+              lastError: "LOW_RELEVANCE_BREADTH_CAP",
+              exclusionReason: "LOW_RELEVANCE_BREADTH_CAP",
+            });
+          } catch {
+            /* */
+          }
+        }
       }
-      node = pdfNode;
+      if (!nodeIsPdf && node.relevance === "low") {
+        try {
+          transitionFrontierNode(node.id, "EXCLUDED", {
+            lastError: "LOW_RELEVANCE_BREADTH_CAP",
+            exclusionReason: "LOW_RELEVANCE_BREADTH_CAP",
+          });
+        } catch {
+          /* */
+        }
+        const pdfNode = pickNextNode(crawlRunId, Date.now(), { pdfOnly: true });
+        const next = pdfNode || pickNextNode(crawlRunId);
+        if (!next) {
+          stopReason = "LOW_RELEVANCE_BREADTH_CAP";
+          break;
+        }
+        node = next;
+      } else if (!nodeIsPdf) {
+        // critical/relevant HTML still allowed past cap — do NOT set urlCapReached
+        const nextCrit = pickNextNode(crawlRunId);
+        if (nextCrit) node = nextCrit;
+      }
     }
 
     // Cap mid-run: do not start another heavy PDF if wall clock already exhausted
@@ -678,12 +726,9 @@ export async function runCrawlSlice(opts: {
             `ocr_renderer:${extracted.rasterize.rendererPath}:${extracted.status}`
           );
         }
-        // Scanned PDF + missing renderer / timeout / extraction fail → TECHNICAL_BLOCKED (not REVIEW)
-        if (
-          extracted.status === "OCR_RENDERER_MISSING" ||
-          extracted.status === "OCR_TIMEOUT" ||
-          extracted.status === "OCR_EXTRACTION_FAILED"
-        ) {
+        // OCR_RENDERER_MISSING → TECHNICAL_BLOCKED immediate.
+        // OCR_TIMEOUT / OCR_EXTRACTION_FAILED → retry with nextRetryAt until maxDocumentRetries.
+        if (extracted.status === "OCR_RENDERER_MISSING") {
           try {
             transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
               lastError: extracted.reasonCode || extracted.status,
@@ -695,16 +740,54 @@ export async function runCrawlSlice(opts: {
           }
           heartbeatCrawlRun(crawlRunId, `ocr_tech:${extracted.status}`);
           stopReason = extracted.reasonCode || extracted.status;
-          // Keep processing other nodes; mark technical for finalize
+          await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
+          continue;
+        }
+        if (
+          extracted.status === "OCR_TIMEOUT" ||
+          extracted.status === "OCR_EXTRACTION_FAILED"
+        ) {
+          const retries = (node.retryCount || 0) + 1;
+          const max = budget.maxDocumentRetries;
+          try {
+            if (retries >= max) {
+              transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+                lastError: extracted.reasonCode || extracted.status,
+                contentHash: hash,
+                bumpRetry: true,
+              });
+            } else {
+              transitionFrontierNode(node.id, "RETRY_PENDING", {
+                lastError: extracted.reasonCode || extracted.status,
+                contentHash: hash,
+                bumpRetry: true,
+                nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+              });
+            }
+          } catch {
+            /* */
+          }
+          heartbeatCrawlRun(crawlRunId, `ocr_retry:${extracted.status}:a${retries}`);
+          stopReason = extracted.reasonCode || extracted.status;
           await new Promise((r) => setTimeout(r, budget.perHostDelayMs));
           continue;
         }
       } catch (e) {
+        const retries = (node.retryCount || 0) + 1;
+        const max = budget.maxDocumentRetries;
         try {
-          transitionFrontierNode(node.id, "RETRY_PENDING", {
-            lastError: e instanceof Error ? e.message : String(e),
-            bumpRetry: true,
-          });
+          if (retries >= max) {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              lastError: e instanceof Error ? e.message : String(e),
+              bumpRetry: true,
+            });
+          } else {
+            transitionFrontierNode(node.id, "RETRY_PENDING", {
+              lastError: e instanceof Error ? e.message : String(e),
+              bumpRetry: true,
+              nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+            });
+          }
         } catch {
           /* */
         }
@@ -875,6 +958,14 @@ export async function runCrawlSlice(opts: {
   }
 
   const nodesAfter = listNodes(crawlRunId);
+  const orphanRetries = countRetryPendingMissingNextRetryAt(crawlRunId);
+  if (orphanRetries > 0) {
+    repairOrphanRetryPending(crawlRunId);
+    const still = countRetryPendingMissingNextRetryAt(crawlRunId);
+    if (still > 0) {
+      throw new Error(`invariant_retry_pending_null_nextRetryAt count=${still}`);
+    }
+  }
   const pendingWork = nodesAfter.some((n) =>
     ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING"].includes(n.state)
   );

@@ -11,6 +11,7 @@ import {
   getCrawlRun,
   type FrontierNodeState,
 } from "@/lib/sanita/frontier-store";
+import { classifyUrlRelevance } from "@/lib/sanita/crawl-relevance";
 
 export type SitemapTraceEntry = {
   url: string;
@@ -58,14 +59,11 @@ function resourceTypeFor(url: string): string {
   return "html";
 }
 
-function relevanceFor(url: string): "critical" | "relevant" | "low" {
-  const policyish =
-    /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
-      url
-    );
-  if (/\.pdf/i.test(url)) return policyish ? "critical" : "low";
-  if (policyish || /document/i.test(url)) return "critical";
-  return "relevant";
+function relevanceFor(
+  url: string,
+  discoverySource?: string | null
+): "critical" | "relevant" | "low" {
+  return classifyUrlRelevance(url, { discoverySource });
 }
 
 function extractLocs(xml: string): string[] {
@@ -107,7 +105,7 @@ function enqueueUrl(crawlRunId: string, url: string, website: string, source: st
       parentUrl: null,
       discoverySource: source,
       resourceType: resourceTypeFor(url),
-      relevance: relevanceFor(url),
+      relevance: relevanceFor(url, source),
       state: "DISCOVERED" as FrontierNodeState,
     });
     return created;

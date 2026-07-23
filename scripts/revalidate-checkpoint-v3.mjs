@@ -17,9 +17,9 @@ export const TERMINAL_STATES = new Set([
   "OUT_OF_SCOPE",
 ]);
 
-/** Soft ceiling for logging/backoff — does NOT promote to TECHNICAL_BLOCKED. */
-export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 8);
-/** Slice-aware backoff: default 90s (was 15m) so incomplete crawls re-enter without client click. */
+/** Hard ceiling — exceeded attempts become admin TECHNICAL_BLOCKED (no hot-loop). */
+export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 5);
+/** Backoff base; sliceContinue still respects backoff (no 5s hot-loop). */
 export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 90_000);
 
 export function emptyCheckpointV3(testedCodeSha) {
@@ -65,23 +65,28 @@ export function classifyResult(row) {
     if (ps && isTerminalState(ps)) return { kind: "terminal", state: ps };
     return { kind: "terminal", state: ps || "PUBLISHED_DATE_UNKNOWN" };
   }
-  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL|RETRY_EXHAUSTED|TECHNICAL_BLOCKED/i.test(String(row.reasonCode || ""))) {
+  // Admin quarantine terminal (not commercial) — stops hot-loops / unreachable hosts.
+  if (ps === "TECHNICAL_BLOCKED" || /RETRY_EXHAUSTED/i.test(String(row.reasonCode || ""))) {
+    return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
+  }
+  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL/i.test(String(row.reasonCode || ""))) {
     return { kind: "retry", state: "RETRY_PENDING" };
   }
-  // Legacy TECHNICAL_BLOCKED rows are not commercial terminals — keep operational.
-  if (ps === "TECHNICAL_BLOCKED") return { kind: "retry", state: "RETRY_PENDING" };
   // unknown incomplete → retry, never terminal certify
   return { kind: "retry", state: "RETRY_PENDING" };
 }
 
 export function nextRetryAt(attempts, opts = {}) {
-  // Slice continuation / strategy change → almost immediate (round-robin friendly).
-  if (opts.immediate || opts.sliceContinue) {
+  if (opts.immediate) {
     return new Date(Date.now() + Number(opts.delayMs || 5_000)).toISOString();
   }
   const n = Math.max(0, Number(attempts) || 0);
-  // Cap exponential at 20 min so auto-retry never stalls the 877 for hours.
+  // Cap exponential at 20 min.
   const delay = Math.min(20 * 60_000, RETRY_BASE_MS * Math.pow(2, Math.min(n, 4)));
+  // Slice continuation still backs off (min 30s) — never 5s hot-loop.
+  if (opts.sliceContinue) {
+    return new Date(Date.now() + Math.max(30_000, Math.min(delay, 5 * 60_000))).toISOString();
+  }
   return new Date(Date.now() + delay).toISOString();
 }
 
@@ -94,16 +99,12 @@ export function nextRetryAt(attempts, opts = {}) {
 export function pickRetryStrategy(attempts, lastError, lastStrategy) {
   const err = String(lastError || "");
   const n = Math.max(0, Number(attempts) || 0);
+  // Identity mismatch may need a clean seed surface — only allowed fresh case.
   if (/IDENTITY/i.test(err)) return "fresh";
-  // After a boost that still CAP'd with no progress, next is fresh.
-  if (n >= 3 && lastStrategy === "resume_boost" && /CRAWL_CAP|FRONTIER_INCOMPLETE|URL_CAP/i.test(err)) {
-    return "fresh";
-  }
+  // STOP-SHIP: never wipe frontier for CAP/incomplete — resume (+boost) only.
   if (n <= 1) return "resume";
-  if (n === 2) return "resume_boost";
-  if (n === 3 && /SITEMAP_UNRESOLVED/i.test(err)) return "fresh";
-  if (n >= 4) return "resume_boost";
-  return "resume";
+  if (n >= 2) return "resume_boost";
+  return lastStrategy === "resume_boost" ? "resume_boost" : "resume";
 }
 
 /**

@@ -36,7 +36,12 @@ delete process.env.SCAN_FAST;
 // (wallMs≈20–40ms, no crawl) and the coordinator demotes to RETRY_PENDING because
 // evidence lacks [STATE:]/[BV:] stamps. sanita-job-runner already sets this; the
 // isolated revalidate worker must too or Published known leads never re-verify.
-process.env.FORCE_RESCAN_PUB = process.env.FORCE_RESCAN_PUB || "1";
+// Finalize-resume: keep existing frontier, do not force homepage rediscovery.
+if (process.env.REVALIDATE_FINALIZE_RESUME === "1") {
+  process.env.FORCE_RESCAN_PUB = process.env.FORCE_RESCAN_PUB || "0";
+} else {
+  process.env.FORCE_RESCAN_PUB = process.env.FORCE_RESCAN_PUB || "1";
+}
 
 const testedCodeSha = (process.env.GIT_HEAD || process.env.RELEASE_SHA || "").trim() || null;
 const runId = process.env.SHADOW_RUN_ID || `reval-${passLabel}-${leadId}-${Date.now()}`;
@@ -229,8 +234,18 @@ process.on("SIGTERM", () => {
 
 openFrontierStore(process.env.FRONTIER_DB_PATH);
 const counters = emptyCounters();
+let currentStage = "init";
+let failingUrl = null;
+let failingNodeId = null;
+let errorClass = null;
+let stackSynth = null;
+
+function isCommercialStamp(ps) {
+  return /^(HOT_VERIFIED|PUBLISHED_|SELF_INSURANCE_VERIFIED|REVIEW_HUMAN|OUT_OF_SCOPE)/.test(String(ps || ""));
+}
 
 try {
+  currentStage = "analyzeLead";
   await Promise.race([
     analyzeLead(
       {
@@ -252,8 +267,41 @@ try {
       setTimeout(() => reject(new Error(`LEAD_WALL_TIMEOUT_${wallMs}ms`)), wallMs)
     ),
   ]);
+  currentStage = "analyzeLead_done";
 } catch (e) {
   error = e instanceof Error ? e.message : String(e);
+  stackSynth = e instanceof Error ? String(e.stack || "").split("\n").slice(0, 6).join(" | ") : null;
+  if (/LEAD_WALL_TIMEOUT/i.test(error)) errorClass = "LEAD_WALL_TIMEOUT";
+  else if (/Executable doesn't exist|browserType\.launch|playwright/i.test(error))
+    errorClass = "PLAYWRIGHT_BROWSER_MISSING";
+  else if (/ENOTFOUND|NXDOMAIN|getaddrinfo|EAI_AGAIN/i.test(error)) errorClass = "DNS_OR_NETWORK";
+  else if (/CERT_|SSL_|TLS|UNABLE_TO_VERIFY/i.test(error)) errorClass = "TLS_FAILURE";
+  else if (/OCR_|pdftoppm|tesseract/i.test(error)) errorClass = "OCR_FAILURE";
+  else errorClass = "ANALYZE_EXCEPTION";
+  currentStage = `catch:${errorClass}`;
+}
+
+const { frontierDiagnosticSummary, listNodes } = await import("../src/lib/sanita/frontier-store.ts");
+let frontierSummary = null;
+let ocrStatus = null;
+try {
+  // FRONTIER_DB_PATH store already open — crawlRunId == SHADOW_RUN_ID typically
+  const nodes = listNodes(runId);
+  const mid = nodes.find((n) => ["FETCHED", "PARSED", "FETCHING", "RETRY_PENDING"].includes(n.state));
+  if (mid) {
+    failingUrl = mid.canonicalUrl;
+    failingNodeId = mid.id;
+  }
+  frontierSummary = frontierDiagnosticSummary(runId);
+  const evOcr = nodes.filter((n) => n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl));
+  ocrStatus = {
+    pdfFound: evOcr.length,
+    pdfCompleted: evOcr.filter((n) => n.state === "COMPLETED").length,
+    pdfRetry: evOcr.filter((n) => n.state === "RETRY_PENDING").length,
+    pdfBlocked: evOcr.filter((n) => n.state === "TECHNICAL_BLOCKED").length,
+  };
+} catch {
+  frontierSummary = { error: "frontier_summary_failed" };
 }
 
 const after = await prisma.lead.findUnique({ where: { id: leadId } });
@@ -267,7 +315,20 @@ const { acceptCanonicalPublishedTerminal } = await import("../src/lib/sanita/can
 let finalState = error ? "RETRY_PENDING" : readProcessingState(evidence) || null;
 
 if (error) {
-  finalState = "RETRY_PENDING";
+  // Playwright missing must not wipe a stamped commercial terminal from the same run.
+  const stamped = readProcessingState(evidence);
+  if (
+    errorClass === "PLAYWRIGHT_BROWSER_MISSING" &&
+    stamped &&
+    stamped !== "RETRY_PENDING" &&
+    isCommercialStamp(stamped)
+  ) {
+    finalState = stamped;
+    error = null; // recoverable infra — stamp wins
+    errorClass = "PLAYWRIGHT_BROWSER_MISSING_RECOVERED";
+  } else {
+    finalState = "RETRY_PENDING";
+  }
 } else {
   const pubAccept = acceptCanonicalPublishedTerminal({
     token,
@@ -282,7 +343,6 @@ if (error) {
   if (pubAccept.ok) {
     finalState = pubAccept.processingState;
   } else if (finalState && String(finalState).startsWith("PUBLISHED")) {
-    // Stamped PUB without full canonical acceptance → fail closed (do not keep false PUB)
     finalState = "RETRY_PENDING";
   } else if (!finalState && token === "HOT" && /\[CRAWL_COMPLETE:true\]/i.test(evidence)) {
     finalState = "HOT_VERIFIED";
@@ -291,8 +351,15 @@ if (error) {
   }
 }
 
-let reasonCode = error ? "ANALYZE_ERROR_OR_TIMEOUT" : finalState;
-if (!error && finalState === "RETRY_PENDING") {
+let reasonCode = finalState;
+if (error) {
+  if (errorClass === "LEAD_WALL_TIMEOUT") reasonCode = "LEAD_WALL_TIMEOUT";
+  else if (errorClass === "PLAYWRIGHT_BROWSER_MISSING") reasonCode = "PLAYWRIGHT_BROWSER_MISSING";
+  else if (errorClass === "DNS_OR_NETWORK") reasonCode = "DNS_OR_NETWORK";
+  else if (errorClass === "TLS_FAILURE") reasonCode = "TLS_FAILURE";
+  else if (errorClass === "OCR_FAILURE") reasonCode = "OCR_FAILURE";
+  else reasonCode = "ANALYZE_EXCEPTION";
+} else if (finalState === "RETRY_PENDING") {
   if (/Contaminazione critica|sito errato|IDENTITY:MISMATCH/i.test(evidence)) {
     finalState = "REVIEW_HUMAN";
     reasonCode = "IDENTITY_MISMATCH";
@@ -300,7 +367,33 @@ if (!error && finalState === "RETRY_PENDING") {
   else if (/cap URL|cap tempo|URL_CAP|RUN_WALL_CLOCK/i.test(evidence)) reasonCode = "CRAWL_CAP";
   else if (/sitemap|ROBOTS_REFERENCED_FAILED|DISCOVERED_FAILED/i.test(evidence)) reasonCode = "SITEMAP_UNRESOLVED";
   else if (/coda HTML non esaurita|link rilevanti non tutti/i.test(evidence)) reasonCode = "FRONTIER_INCOMPLETE";
-  else reasonCode = "RETRY_PENDING";
+  else if (
+    /\[CRAWL_COMPLETE:true\]/i.test(evidence) &&
+    /Assenza polizza certificata/i.test(evidence) &&
+    /IDENTITY:OFFICIAL/i.test(evidence)
+  ) {
+    // Exhausted frontier + absence certified but stamp missing → HOT
+    finalState = "HOT_VERIFIED";
+    reasonCode = "HOT_VERIFIED";
+  } else reasonCode = "RETRY_PENDING";
+}
+
+// Honest terminals (NOT false HOT/PUB/SI): crawl exhausted but commercial HOT impossible.
+if (!error && finalState === "RETRY_PENDING") {
+  const crawlDone = /\[CRAWL_COMPLETE:true\]/i.test(evidence) || /FRONTIER:EXHAUSTED/i.test(evidence);
+  const thinSite = /pagine insufficienti\s*\(\d+\/12\)/i.test(evidence);
+  const absenceOk = /Assenza polizza certificata/i.test(evidence);
+  const crossDomainPolicy = /PDF polizza su dominio diverso/i.test(evidence);
+  if (crawlDone && thinSite && absenceOk) {
+    finalState = "REVIEW_HUMAN";
+    reasonCode = "EXTERNAL_SITE_TOO_THIN";
+  } else if (crawlDone && crossDomainPolicy) {
+    finalState = "REVIEW_HUMAN";
+    reasonCode = "POLICY_CROSS_DOMAIN";
+  } else if (crawlDone && absenceOk && /IDENTITY:OFFICIAL/i.test(evidence) && token === "HOT") {
+    finalState = "HOT_VERIFIED";
+    reasonCode = "HOT_VERIFIED";
+  }
 }
 
 // Never override canonical token/BV — only echo analyzeLead
@@ -387,6 +480,14 @@ const row = {
   finishedAt: new Date().toISOString(),
   error,
   counters,
+  // STOP-SHIP diagnostics — never leave ANALYZE opaque
+  stage: currentStage,
+  errorClass,
+  failingUrl,
+  failingNodeId,
+  stackSynth,
+  ocrStatus,
+  frontierSummary,
 };
 
 writeResultAtomic(outPath, row);
@@ -398,6 +499,9 @@ console.log(
     processingState: finalState,
     wallMs: row.wallMs,
     error: Boolean(error),
+    errorClass,
+    stage: currentStage,
+    reasonCode,
   })
 );
 await prisma.$disconnect().catch(() => {});

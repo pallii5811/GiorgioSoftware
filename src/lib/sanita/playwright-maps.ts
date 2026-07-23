@@ -69,10 +69,10 @@ export async function closeMapsBrowserPool(): Promise<void> {
 }
 
 export async function launchMapsBrowser(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
-  const launch = chromium.launch({
-    headless: true,
-    args: ["--lang=it-IT", "--disable-blink-features=AutomationControlled", "--no-default-browser-check"],
-  });
+  const { playwrightChromiumLaunchOptions } = await import("@/lib/sanita/playwright-launch");
+  const launch = chromium.launch(
+    playwrightChromiumLaunchOptions(["--lang=it-IT", "--no-default-browser-check"])
+  );
   const browser = await Promise.race([
     launch,
     new Promise<never>((_, reject) =>
