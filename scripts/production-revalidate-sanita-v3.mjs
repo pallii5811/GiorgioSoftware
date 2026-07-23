@@ -463,12 +463,9 @@ async function processLeadId(leadId) {
   const attemptsSoFar = cp.attempts[leadId] || 0;
   let strategy = pickRetryStrategy(attemptsSoFar, prevErr, prevRetry?.strategy || null);
   const insp = frontierInspect(prevRetry?.frontierPath);
-  // Empty pending + prior CAP/INCOMPLETE → resume cannot progress; force fresh discovery.
-  if (
-    insp.exists &&
-    (insp.pending === 0 || insp.pending < 0) &&
-    /CRAWL_CAP|FRONTIER_INCOMPLETE|URL_CAP|SITEMAP/i.test(prevErr)
-  ) {
+  // Resume only when pending nodes remain. pending<=0 (or inspect fail) → fresh —
+  // otherwise resume_boost clears caps on an empty FAILED frontier and no-ops forever.
+  if (insp.exists && (insp.pending === 0 || insp.pending < 0)) {
     strategy = "fresh";
     console.log(
       JSON.stringify({
@@ -483,7 +480,7 @@ async function processLeadId(leadId) {
     Boolean(prevRetry?.frontierPath) &&
     Boolean(prevRetry?.lastRunId) &&
     fs.existsSync(prevRetry.frontierPath);
-  const reuse = strategy !== "fresh" && canReuseFile;
+  const reuse = strategy !== "fresh" && canReuseFile && insp.pending > 0;
   const runId = reuse ? prevRetry.lastRunId : `reval-p1-${leadId}-${Date.now()}`;
   const frontierPath = reuse ? prevRetry.frontierPath : path.join(FRONTIER_DIR, `${runId}.sqlite`);
   if (reuse && (strategy === "resume_boost" || insp.urlCap || insp.timeCap || insp.state === "FAILED")) {
