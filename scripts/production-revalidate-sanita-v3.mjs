@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import os from "node:os";
 import {
   emptyCheckpointV3,
@@ -19,6 +19,41 @@ import {
   isTerminalState,
   writeResultAtomic,
 } from "./revalidate-checkpoint-v3.mjs";
+
+function frontierInspect(frontierPath) {
+  if (!frontierPath || !fs.existsSync(frontierPath)) {
+    return { exists: false, pending: 0, urlCap: 0, timeCap: 0, state: null };
+  }
+  try {
+    const helper = path.join(ROOT, "scripts/_frontier_inspect.py");
+    const out = execFileSync("python3", [helper, frontierPath], {
+      encoding: "utf8",
+      timeout: 8000,
+    }).trim();
+    const row = JSON.parse(out || "{}");
+    return {
+      exists: true,
+      pending: Number(row.pending || 0),
+      urlCap: Number(row.urlCap || 0),
+      timeCap: Number(row.timeCap || 0),
+      state: row.state ? String(row.state) : null,
+    };
+  } catch {
+    return { exists: true, pending: -1, urlCap: 0, timeCap: 0, state: null };
+  }
+}
+
+/** Clear sticky caps so a raised CRAWL_HTML_URL_CAP can continue the same frontier. */
+function frontierClearCaps(frontierPath) {
+  if (!frontierPath || !fs.existsSync(frontierPath)) return false;
+  try {
+    const helper = path.join(ROOT, "scripts/_frontier_clear_caps.py");
+    execFileSync("python3", [helper, frontierPath], { encoding: "utf8", timeout: 8000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const ROOT = path.resolve(".");
 // Prefer absolute OUT_DIR so checkpoint/results/locks stay outside the app tree.
@@ -426,7 +461,24 @@ async function processLeadId(leadId) {
   const prevRetry = cp.retryQueue[leadId];
   const prevErr = String(prevRetry?.lastError || prevRetry?.lastReason || "");
   const attemptsSoFar = cp.attempts[leadId] || 0;
-  const strategy = pickRetryStrategy(attemptsSoFar, prevErr, prevRetry?.strategy || null);
+  let strategy = pickRetryStrategy(attemptsSoFar, prevErr, prevRetry?.strategy || null);
+  const insp = frontierInspect(prevRetry?.frontierPath);
+  // Empty pending + prior CAP/INCOMPLETE → resume cannot progress; force fresh discovery.
+  if (
+    insp.exists &&
+    (insp.pending === 0 || insp.pending < 0) &&
+    /CRAWL_CAP|FRONTIER_INCOMPLETE|URL_CAP|SITEMAP/i.test(prevErr)
+  ) {
+    strategy = "fresh";
+    console.log(
+      JSON.stringify({
+        event: "frontier_force_fresh_no_pending",
+        id: leadId,
+        prevErr,
+        insp,
+      })
+    );
+  }
   const canReuseFile =
     Boolean(prevRetry?.frontierPath) &&
     Boolean(prevRetry?.lastRunId) &&
@@ -434,6 +486,10 @@ async function processLeadId(leadId) {
   const reuse = strategy !== "fresh" && canReuseFile;
   const runId = reuse ? prevRetry.lastRunId : `reval-p1-${leadId}-${Date.now()}`;
   const frontierPath = reuse ? prevRetry.frontierPath : path.join(FRONTIER_DIR, `${runId}.sqlite`);
+  if (reuse && (strategy === "resume_boost" || insp.urlCap || insp.timeCap || insp.state === "FAILED")) {
+    const cleared = frontierClearCaps(frontierPath);
+    console.log(JSON.stringify({ event: "frontier_clear_caps", id: leadId, cleared, strategy, insp }));
+  }
   const strategyEnv = {};
   if (strategy === "resume_boost") {
     strategyEnv.CRAWL_HTML_URL_CAP = String(

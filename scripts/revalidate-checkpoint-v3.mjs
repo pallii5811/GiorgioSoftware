@@ -95,12 +95,13 @@ export function pickRetryStrategy(attempts, lastError, lastStrategy) {
   const err = String(lastError || "");
   const n = Math.max(0, Number(attempts) || 0);
   if (/IDENTITY/i.test(err)) return "fresh";
+  // After a boost that still CAP'd with no progress, next is fresh.
+  if (n >= 3 && lastStrategy === "resume_boost" && /CRAWL_CAP|FRONTIER_INCOMPLETE|URL_CAP/i.test(err)) {
+    return "fresh";
+  }
   if (n <= 1) return "resume";
   if (n === 2) return "resume_boost";
   if (n === 3 && /SITEMAP_UNRESOLVED/i.test(err)) return "fresh";
-  if (n >= 5 && lastStrategy === "resume_boost" && /CRAWL_CAP|FRONTIER_INCOMPLETE/i.test(err)) {
-    return "fresh";
-  }
   if (n >= 4) return "resume_boost";
   return "resume";
 }
