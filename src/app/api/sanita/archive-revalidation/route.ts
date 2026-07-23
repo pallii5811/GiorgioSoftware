@@ -55,12 +55,16 @@ function deriveCurrentState(cp: CheckpointFile) {
   let technicalBlockedFinal = 0;
   let hot = 0;
   let published = 0;
+  let selfInsurance = 0;
+  let otherNonCommercialTerminal = 0;
   let outOfScope = 0;
   const terminalIds = {
     hot: [] as string[],
     published: [] as string[],
+    selfInsurance: [] as string[],
     review: [] as string[],
     technical: [] as string[],
+    other: [] as string[],
   };
 
   for (const [lid, raw] of Object.entries(terminal)) {
@@ -77,25 +81,34 @@ function deriveCurrentState(cp: CheckpointFile) {
     } else if (ps === "HOT_VERIFIED") {
       hot++;
       terminalIds.hot.push(lid);
-    } else if (ps.startsWith("PUBLISHED")) {
+    } else if (ps === "SELF_INSURANCE_VERIFIED") {
+      selfInsurance++;
+      terminalIds.selfInsurance.push(lid);
+    } else if (
+      ps === "PUBLISHED_CURRENT" ||
+      ps === "PUBLISHED_EXPIRED" ||
+      ps === "PUBLISHED_DATE_UNKNOWN"
+    ) {
       published++;
       terminalIds.published.push(lid);
-    } else if (ps === "OUT_OF_SCOPE") outOfScope++;
+    } else if (ps === "OUT_OF_SCOPE") {
+      outOfScope++;
+      otherNonCommercialTerminal++;
+      terminalIds.other.push(lid);
+    } else if (ps.startsWith("PUBLISHED") || ps) {
+      // ANALOGOUS / INCOMPLETE / STALE / altri terminali non commerciali
+      otherNonCommercialTerminal++;
+      terminalIds.other.push(lid);
+    }
   }
 
-  // Verifiche concluse = esiti commerciali/semantici. TECHNICAL_BLOCKED non conta.
-  const terminalCompleted = Object.keys(terminal).filter((lid) => {
-    const raw = terminal[lid];
-    const ps =
-      typeof raw === "string"
-        ? raw
-        : String(raw?.processingState || raw?.state || "").toUpperCase();
-    return ps !== "TECHNICAL_BLOCKED";
-  }).length;
+  // Conteggi verificabili: certified + review + other + technical = terminalCompleted
+  const certifiedCurrentRun = published + hot + selfInsurance;
+  const terminalCompleted =
+    certifiedCurrentRun + reviewCurrent + otherNonCommercialTerminal + technicalBlockedFinal;
   const currentlyInProgress = Object.keys(inProgress).length;
   const currentRetryQueue = Object.keys(retryQueue).length;
   const recordsTouched = Number(cp.stats?.processed || 0);
-  const certifiedCurrentRun = published + hot;
 
   return {
     recordsTouched,
@@ -107,6 +120,8 @@ function deriveCurrentState(cp: CheckpointFile) {
     certifiedCurrentRun,
     hot,
     published,
+    selfInsurance,
+    otherNonCommercialTerminal,
     outOfScope,
     terminalIds,
   };
@@ -138,7 +153,9 @@ function emptyPayload(extra: Record<string, unknown> = {}) {
     certifiedCurrentRun: 0,
     hot: 0,
     published: 0,
-    terminalIds: { hot: [], published: [], review: [], technical: [] },
+    selfInsurance: 0,
+    otherNonCommercialTerminal: 0,
+    terminalIds: { hot: [], published: [], selfInsurance: [], review: [], technical: [], other: [] },
     ...extra,
   };
 }
@@ -186,8 +203,17 @@ async function readLocalStatus() {
         certifiedCurrentRun: 0,
         hot: 0,
         published: 0,
+        selfInsurance: 0,
+        otherNonCommercialTerminal: 0,
         outOfScope: 0,
-        terminalIds: { hot: [], published: [], review: [], technical: [] },
+        terminalIds: {
+          hot: [],
+          published: [],
+          selfInsurance: [],
+          review: [],
+          technical: [],
+          other: [],
+        },
       };
 
   const percent =
@@ -213,7 +239,16 @@ async function readLocalStatus() {
     certifiedCurrentRun: cur.certifiedCurrentRun,
     hot: cur.hot,
     published: cur.published,
-    terminalIds: cur.terminalIds ?? { hot: [], published: [], review: [], technical: [] },
+    selfInsurance: cur.selfInsurance,
+    otherNonCommercialTerminal: cur.otherNonCommercialTerminal,
+    terminalIds: cur.terminalIds ?? {
+      hot: [],
+      published: [],
+      selfInsurance: [],
+      review: [],
+      technical: [],
+      other: [],
+    },
     // aliases for existing UI fields during rollout
     processed: cur.recordsTouched,
     terminal: cur.terminalCompleted,

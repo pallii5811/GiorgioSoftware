@@ -114,6 +114,9 @@ type ArchiveRevalidationStatus = {
   certifiedCurrentRun?: number
   hot?: number
   published?: number
+  selfInsurance?: number
+  otherNonCommercialTerminal?: number
+  technicalBlockedFinal?: number
 }
 
 type SanitaApiMeta = {
@@ -197,6 +200,8 @@ type UiRow = {
   completedAt: string | null
   processingState: string | null
   unresolvedRelevantNodes: number | null
+  source: "SHADOW_RUN" | "LEGACY_LIVE"
+  revalStatus?: "not_started" | "in_progress" | "completed" | "review" | "retry"
   live?: Lead
   shadow?: ShadowResult
 }
@@ -253,6 +258,8 @@ function liveToRow(l: Lead): UiRow {
     completedAt: l.lastScannedAt,
     processingState: readProcessingState(l.evidence) || l.semantic?.processingState || null,
     unresolvedRelevantNodes: null,
+    source: "LEGACY_LIVE",
+    revalStatus: "not_started",
     live: l,
   }
 }
@@ -267,6 +274,14 @@ function shadowToRow(s: ShadowResult): UiRow {
         : s.processingState === "REVIEW_HUMAN"
           ? "review"
           : "pending")
+  const revalStatus: UiRow["revalStatus"] =
+    s.processingState === "REVIEW_HUMAN"
+      ? "review"
+      : s.processingState === "RETRY_PENDING"
+        ? "retry"
+        : s.completedAt
+          ? "completed"
+          : "in_progress"
   return {
     id: s.leadId,
     companyName: s.companyName || s.leadId,
@@ -280,6 +295,8 @@ function shadowToRow(s: ShadowResult): UiRow {
     completedAt: s.completedAt,
     processingState: s.processingState,
     unresolvedRelevantNodes: s.unresolvedRelevantNodes,
+    source: "SHADOW_RUN",
+    revalStatus,
     shadow: s,
   }
 }
@@ -437,8 +454,14 @@ export function SanitaLeads() {
   // fetch on-demand quando si entra nelle tab
   useEffect(() => {
     if (filters.tab === "run") fetchRunResults()
-    else if (filters.tab === "review") fetchReviewResults()
-    else fetchLive()
+    else if (filters.tab === "review") {
+      fetchReviewResults()
+      fetchRunResults()
+    } else if (filters.tab === "live" || filters.tab === "archive") {
+      fetchLive()
+      fetchRunResults()
+      if (filters.tab === "archive") fetchReviewResults()
+    }
   }, [filters.tab, fetchRunResults, fetchReviewResults, fetchLive])
 
   const refreshActive = useCallback(() => {
@@ -452,12 +475,39 @@ export function SanitaLeads() {
   const isLeadActionable = (l: Lead) =>
     Boolean(l.semantic?.actionable ?? l._actionable ?? isInActionableSalesQueue(l))
 
+  const isShadowCertified = (r: ShadowResult) => {
+    const o = shadowToRow(r).outcome
+    return (
+      o === "policy_valid" ||
+      o === "policy_expired" ||
+      o === "date_unknown" ||
+      o === "self_insurance" ||
+      o === "hot"
+    )
+  }
+
   const tabRows = useMemo((): UiRow[] => {
     let rows: UiRow[]
-    if (filters.tab === "run") rows = runResults.map(shadowToRow)
-    else if (filters.tab === "review") rows = reviewResults.map(shadowToRow)
-    else if (filters.tab === "live") rows = liveLeads.filter(isLeadActionable).map(liveToRow)
-    else rows = liveLeads.map(liveToRow)
+    if (filters.tab === "run") {
+      rows = runResults.map(shadowToRow)
+    } else if (filters.tab === "review") {
+      rows = reviewResults.map(shadowToRow)
+    } else if (filters.tab === "live") {
+      // Certificati: shadow nuovo run (anche applyLive=0) + legacy live, badge distinti.
+      const shadowCert = runResults.filter(isShadowCertified).map(shadowToRow)
+      const shadowIds = new Set(shadowCert.map((r) => r.id))
+      const legacyLive = liveLeads.filter(isLeadActionable).map(liveToRow).filter((r) => !shadowIds.has(r.id))
+      rows = [...shadowCert, ...legacyLive]
+    } else {
+      const runById = new Map(runResults.map((r) => [r.leadId, r]))
+      const workById = new Map(reviewResults.map((r) => [r.leadId, r]))
+      rows = liveLeads.map((l) => {
+        const row = liveToRow(l)
+        const sh = runById.get(l.id) || workById.get(l.id)
+        if (!sh) return row
+        return { ...row, revalStatus: shadowToRow(sh).revalStatus }
+      })
+    }
 
     return rows.filter((r) => {
       if (filters.region !== "ALL" && r.region !== filters.region) return false
@@ -475,6 +525,47 @@ export function SanitaLeads() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, runResults, reviewResults, liveLeads])
+
+  const runOutcomeCounts = useMemo(() => {
+    const c: Record<OutcomeKey | "pending", number> = {
+      ALL: runResults.length,
+      policy_valid: 0,
+      policy_expired: 0,
+      date_unknown: 0,
+      self_insurance: 0,
+      hot: 0,
+      review: 0,
+      pending: 0,
+    }
+    for (const r of runResults) {
+      const o = shadowToRow(r).outcome
+      if (o in c) c[o as OutcomeKey]++
+    }
+    return c
+  }, [runResults])
+
+  const openCompletedRun = () => {
+    setFilters({ tab: "run", region: "ALL", city: "", outcome: "ALL", query: "" })
+  }
+
+  const applyOutcomeCard = (outcome: OutcomeKey) => {
+    setFilters((prev) => ({
+      ...prev,
+      tab: outcome === "review" ? "review" : "run",
+      outcome,
+      region: "ALL",
+      city: "",
+      query: "",
+    }))
+  }
+
+  const REVAL_STATUS_LABEL: Record<NonNullable<UiRow["revalStatus"]>, string> = {
+    not_started: "Non ancora rivalidata",
+    in_progress: "In corso",
+    completed: "Completata",
+    review: "Da controllare",
+    retry: "Retry",
+  }
 
   const exportCsv = () => {
     const CERTIFIED = new Set(["policy_valid", "policy_expired", "date_unknown", "self_insurance", "hot"])
@@ -518,6 +609,30 @@ export function SanitaLeads() {
   const percent = target > 0 ? Math.min(100, Math.round((terminal / target) * 1000) / 10) : 0
   const engineRunning = Boolean(controlState?.active)
   const retryCount = controlState?.retryQueueCount ?? archiveStatus?.currentRetryQueue ?? 0
+  const certifiedRun = archiveStatus?.certifiedCurrentRun ?? 0
+  const reviewCount = archiveStatus?.reviewCurrent ?? 0
+  const inProgress = archiveStatus?.currentlyInProgress ?? 0
+  const otherTerminal = archiveStatus?.otherNonCommercialTerminal ?? 0
+  const technicalFinal = archiveStatus?.technicalBlockedFinal ?? 0
+  const selfIns = archiveStatus?.selfInsurance ?? 0
+  const legacyCertified = apiMeta?.actionableCount ?? 0
+  const archiveTotal = apiMeta?.dbTotal ?? 919
+  const counterSum = certifiedRun + reviewCount + otherTerminal + technicalFinal
+
+  const kpiCards: { label: string; value: string | number; testid: string; onClick?: () => void }[] = [
+    { label: "Archivio totale", value: archiveTotal, testid: "kpi-archive-total" },
+    {
+      label: "Conclusi nuovo run",
+      value: `${terminal} / ${target}`,
+      testid: "kpi-terminal-completed",
+      onClick: openCompletedRun,
+    },
+    { label: "Certificati nuovo run", value: certifiedRun, testid: "kpi-certified-run" },
+    { label: "Da controllare", value: reviewCount, testid: "kpi-review" },
+    { label: "In lavorazione", value: inProgress, testid: "kpi-in-progress" },
+    { label: "Retry", value: retryCount, testid: "kpi-retry" },
+    { label: "Legacy certificati", value: legacyCertified, testid: "kpi-legacy-certified" },
+  ]
 
   return (
     <div className="space-y-4">
@@ -528,10 +643,35 @@ export function SanitaLeads() {
           Verifica polizze sanitarie
         </h1>
         <p className="mt-1 text-sm text-muted-foreground" data-testid="header-kpi">
-          Archivio: {apiMeta?.dbTotal ?? "…"} · Verifiche concluse: {terminal} / {target} · Lead
-          live: {apiMeta?.actionableCount ?? "…"} · Nuovi risultati del run:{" "}
-          {resultsMeta?.runTotal ?? "…"}
+          Archivio totale {archiveTotal} · Conclusi nuovo run {terminal}/{target} · Certificati
+          nuovo run {certifiedRun} · Legacy certificati {legacyCertified}
+          {counterSum !== terminal ? (
+            <span className="ml-2 text-amber-700">
+              (riconciliazione: {certifiedRun}+{reviewCount}+{otherTerminal}+{technicalFinal}=
+              {counterSum}, terminal={terminal}
+              {selfIns ? `, SI=${selfIns}` : ""})
+            </span>
+          ) : null}
         </p>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7" data-testid="kpi-cards">
+        {kpiCards.map((k) => (
+          <button
+            key={k.testid}
+            type="button"
+            data-testid={k.testid}
+            onClick={k.onClick}
+            disabled={!k.onClick}
+            className={cn(
+              "rounded-md border bg-card px-3 py-2 text-left",
+              k.onClick && "cursor-pointer hover:border-primary hover:bg-muted/40"
+            )}
+          >
+            <div className="text-[11px] text-muted-foreground">{k.label}</div>
+            <div className="text-lg font-semibold tabular-nums">{k.value}</div>
+          </button>
+        ))}
       </div>
 
       {/* UNA SOLA CARD rivalidazione */}
@@ -545,9 +685,14 @@ export function SanitaLeads() {
               {archiveStatus?.updatedAt ? `aggiornato ${fmtDate(archiveStatus.updatedAt)}` : ""}
             </div>
           </div>
-          <div className="text-sm">
-            {terminal} di {target} concluse
-          </div>
+          <button
+            type="button"
+            data-testid="completed-progress-link"
+            onClick={openCompletedRun}
+            className="text-left text-sm font-medium text-primary hover:underline"
+          >
+            {terminal} di {target} concluse — apri Nuovi risultati
+          </button>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all"
@@ -556,14 +701,14 @@ export function SanitaLeads() {
             />
           </div>
           <div className="text-sm" data-testid="run-counters">
-            Run corrente: {archiveStatus?.published ?? 0} Published · {archiveStatus?.hot ?? 0} HOT
-            · {archiveStatus?.reviewCurrent ?? 0} da controllare ·{" "}
-            {(archiveStatus?.currentlyInProgress ?? 0) + (archiveStatus?.currentRetryQueue ?? 0)}{" "}
-            ancora in lavorazione
+            Certificati {certifiedRun} (Published {archiveStatus?.published ?? 0} · HOT{" "}
+            {archiveStatus?.hot ?? 0} · Autoassicurata {selfIns}) · da controllare {reviewCount} ·
+            altri terminali {otherTerminal} · tecnici {technicalFinal} · in lavorazione {inProgress}{" "}
+            · retry {retryCount}
           </div>
           <div className="text-xs text-muted-foreground">
-            prese in carico {archiveStatus?.recordsTouched ?? 0} · in corso{" "}
-            {archiveStatus?.currentlyInProgress ?? 0} · retry {archiveStatus?.currentRetryQueue ?? 0}
+            prese in carico {archiveStatus?.recordsTouched ?? 0} · somma terminali {counterSum}/
+            {terminal}
           </div>
           <div className="flex flex-wrap gap-2 pt-1" data-testid="revalidation-controls">
             <Button
@@ -708,6 +853,51 @@ export function SanitaLeads() {
         </div>
       </div>
 
+      {/* Categoria — pulsanti reali (URL + tabella) */}
+      <div className="flex flex-wrap gap-2" data-testid="outcome-category-buttons">
+        {(
+          [
+            ["policy_valid", "Polizza valida"],
+            ["policy_expired", "Polizza scaduta"],
+            ["date_unknown", "Scadenza sconosciuta"],
+            ["self_insurance", "Autoassicurata"],
+            ["hot", "HOT verificato"],
+            ["review", "Da controllare"],
+          ] as const
+        ).map(([key, label]) => {
+          const count = runOutcomeCounts[key] ?? 0
+          const active = filters.outcome === key
+          return (
+            <button
+              key={key}
+              type="button"
+              data-testid={`outcome-card-${key}`}
+              data-outcome={key}
+              onClick={() => applyOutcomeCard(key)}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-left text-sm transition-colors",
+                active
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "bg-card hover:border-primary/50"
+              )}
+            >
+              <span className="font-medium">{label}</span>
+              <span className="ml-2 tabular-nums text-muted-foreground">{count}</span>
+            </button>
+          )
+        })}
+        {filters.outcome !== "ALL" && (
+          <button
+            type="button"
+            data-testid="outcome-card-clear"
+            className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => applyOutcomeCard("ALL")}
+          >
+            Tutti gli esiti
+          </button>
+        )}
+      </div>
+
       {/* TABELLA */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -721,10 +911,14 @@ export function SanitaLeads() {
                 <th className="px-3 py-2 font-medium">Struttura</th>
                 <th className="px-3 py-2 font-medium">Località</th>
                 <th className="px-3 py-2 font-medium">Esito verifica</th>
+                <th className="px-3 py-2 font-medium">Origine</th>
                 <th className="px-3 py-2 font-medium">Polizza</th>
                 <th className="px-3 py-2 font-medium">Evidence</th>
                 <th className="px-3 py-2 font-medium">Completata il</th>
-                {filters.tab !== "run" && filters.tab !== "review" && (
+                {filters.tab === "archive" && (
+                  <th className="px-3 py-2 font-medium">Stato rivalidazione</th>
+                )}
+                {filters.tab !== "run" && filters.tab !== "review" && filters.tab !== "archive" && (
                   <th className="px-3 py-2 font-medium">Stato CRM</th>
                 )}
               </tr>
@@ -735,10 +929,11 @@ export function SanitaLeads() {
                 const Icon = meta.icon
                 return (
                   <tr
-                    key={`${r.shadow ? "s" : "l"}-${r.id}`}
+                    key={`${r.source}-${r.id}`}
                     data-testid="lead-row"
                     data-region={r.region || ""}
                     data-outcome={r.outcome}
+                    data-source={r.source}
                     className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                     onClick={() => (r.live ? setDetail(r.live) : r.shadow ? setShadowDetail(r.shadow) : null)}
                   >
@@ -746,9 +941,6 @@ export function SanitaLeads() {
                       <div className="truncate font-medium" title={r.companyName}>
                         {r.companyName}
                       </div>
-                      {r.shadow && (
-                        <div className="text-[10px] text-muted-foreground">nuovo run · shadow</div>
-                      )}
                     </td>
                     <td className="px-3 py-2 text-xs" data-testid="row-locality">
                       {r.city || "—"}
@@ -764,6 +956,19 @@ export function SanitaLeads() {
                           {r.unresolvedRelevantNodes} nodi da risolvere
                         </div>
                       )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge
+                        variant="outline"
+                        data-testid="source-badge"
+                        className={
+                          r.source === "SHADOW_RUN"
+                            ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                            : "border-slate-200 bg-slate-50 text-slate-700"
+                        }
+                      >
+                        {r.source === "SHADOW_RUN" ? "Nuova scansione" : "Legacy"}
+                      </Badge>
                     </td>
                     <td className="max-w-[220px] px-3 py-2 text-xs">
                       {r.policyCompany ? (
@@ -802,7 +1007,12 @@ export function SanitaLeads() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(r.completedAt)}</td>
-                    {filters.tab !== "run" && filters.tab !== "review" && r.live && (
+                    {filters.tab === "archive" && (
+                      <td className="px-3 py-2 text-xs" data-testid="reval-status">
+                        {REVAL_STATUS_LABEL[r.revalStatus || "not_started"]}
+                      </td>
+                    )}
+                    {filters.tab === "live" && r.live && (
                       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <StatusSelect
                           id={r.live.id}
@@ -815,13 +1025,13 @@ export function SanitaLeads() {
                         />
                       </td>
                     )}
-                    {filters.tab !== "run" && filters.tab !== "review" && !r.live && <td />}
+                    {filters.tab === "live" && !r.live && <td />}
                   </tr>
                 )
               })}
               {tabRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     Nessun risultato con i filtri correnti.
                   </td>
                 </tr>
