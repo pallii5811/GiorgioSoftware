@@ -1,5 +1,5 @@
 /** Motore scan su Hetzner (Playwright + OCR). Vercel fa solo proxy. */
-export const HETZNER_SCAN_ENGINE = "http://168.119.253.47:3000";
+export const HETZNER_SCAN_ENGINE = "http://167.233.209.13:3000";
 
 /** Istanza Hetzner che esegue Playwright in locale (non proxy). */
 export function isScanEngineHost(): boolean {
