@@ -156,7 +156,14 @@ export async function discoverAndProcessSitemaps(
   });
   if (robots.ok && robots.text) {
     for (const m of robots.text.matchAll(/^\s*Sitemap:\s*(\S+)/gim)) {
-      const u = m[1]!.trim();
+      const raw = m[1]!.trim();
+      // RC-11b: robots may list relative Sitemap paths (WordPress Yoast: "/sitemap_index.xml").
+      let u: string;
+      try {
+        u = new URL(raw, base).toString();
+      } catch {
+        continue;
+      }
       if (!seenSitemap.has(u)) {
         seenSitemap.add(u);
         sitemapQueue.push({ url: u, kind: "sitemap", fromRobots: true });

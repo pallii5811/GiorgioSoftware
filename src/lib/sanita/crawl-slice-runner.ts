@@ -98,6 +98,48 @@ function sameHost(a: string, b: string): boolean {
   }
 }
 
+/** Registrable domain (naive eTLD+1) — .it ≠ .com even with same label. */
+function registrableDomain(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    const parts = host.split(".").filter(Boolean);
+    if (parts.length < 2) return host || null;
+    return parts.slice(-2).join(".");
+  } catch {
+    return null;
+  }
+}
+
+function sameRegistrableSite(a: string, b: string): boolean {
+  const da = registrableDomain(a);
+  const db = registrableDomain(b);
+  return Boolean(da && db && da === db);
+}
+
+/**
+ * RC-11: seed/seed_guess su TLD gemello DNS-morto (alt-TLD pollution) non sono
+ * frontier rilevante — EXCLUDED come host esterno irrilevante.
+ */
+function excludeForeignSeedNodes(crawlRunId: string, website: string): number {
+  let n = 0;
+  for (const node of listNodes(crawlRunId)) {
+    const src = String(node.discoverySource || "");
+    if (src !== "seed" && src !== "seed_guess") continue;
+    if (sameRegistrableSite(node.canonicalUrl, website)) continue;
+    if (node.state === "EXCLUDED" || node.state === "COMPLETED") continue;
+    try {
+      transitionFrontierNode(node.id, "EXCLUDED", {
+        lastError: "EXTERNAL_HOST_IRRELEVANT",
+        exclusionReason: "EXTERNAL_HOST_IRRELEVANT",
+      });
+      n++;
+    } catch {
+      /* FSM edge — leave for circuit/resume */
+    }
+  }
+  return n;
+}
+
 function enqueue(
   crawlRunId: string,
   url: string,
@@ -313,6 +355,8 @@ export async function runCrawlSlice(opts: {
       }
     }
   }
+  // RC-11: drop alt-TLD seed pollution (.com DNS-dead vs official .it) before drain.
+  excludeForeignSeedNodes(crawlRunId, opts.website);
 
   heartbeatCrawlRun(crawlRunId, "slice_start");
 
@@ -422,6 +466,23 @@ export async function runCrawlSlice(opts: {
     }
 
     const nodeHost = hostOf(node.canonicalUrl);
+    // RC-11: seed su host fuori registrable domain del website ufficiale → EXCLUDE, non circuito.
+    if (
+      node.canonicalUrl &&
+      !sameRegistrableSite(node.canonicalUrl, opts.website) &&
+      (String(node.discoverySource || "") === "seed" ||
+        String(node.discoverySource || "") === "seed_guess")
+    ) {
+      try {
+        transitionFrontierNode(node.id, "EXCLUDED", {
+          lastError: "EXTERNAL_HOST_IRRELEVANT",
+          exclusionReason: "EXTERNAL_HOST_IRRELEVANT",
+        });
+      } catch {
+        blockNodeForCircuit(node.id, `external_host@${Date.now()}:${nodeHost || "?"}`);
+      }
+      continue;
+    }
     // Circuito aperto su questo host → niente fetch: blocco immediato diagnostico.
     if (nodeHost && (hostNetFailures.get(nodeHost) || 0) >= circuitThreshold) {
       blockNodeForCircuit(node.id, `host_circuit_open@${Date.now()}:${nodeHost}`);

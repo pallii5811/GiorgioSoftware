@@ -414,7 +414,7 @@ async function processLeadId(leadId) {
   // re-emit CRAWL_CAP in seconds without re-crawling (observed wallMs≈32s on Formosa).
   const prevRetry = cp.retryQueue[leadId];
   const prevReason = String(prevRetry?.lastReason || prevRetry?.lastError || "");
-  const capBlocked = /CRAWL_CAP|URL_CAP|RUN_WALL_CLOCK|LEAD_WALL_TIMEOUT|TIME_CAP/i.test(prevReason);
+  const capBlocked = /CRAWL_CAP|URL_CAP|RUN_WALL_CLOCK|LEAD_WALL_TIMEOUT|TIME_CAP|SITEMAP_UNRESOLVED|host_circuit/i.test(prevReason);
   const reuse =
     !capBlocked &&
     prevRetry?.frontierPath &&

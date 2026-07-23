@@ -36,9 +36,10 @@ const ALLOWED_TRANSITIONS: Record<FrontierNodeState, FrontierNodeState[]> = {
   RENDERED: ["PARSED", "RETRY_PENDING"],
   PARSED: ["COMPLETED", "EXCLUDED", "RETRY_PENDING"],
   EXCLUDED: [],
-  RETRY_PENDING: ["QUEUED", "FETCHING", "TECHNICAL_BLOCKED"],
+  RETRY_PENDING: ["QUEUED", "FETCHING", "TECHNICAL_BLOCKED", "EXCLUDED"],
   // Infra/OCR fix may reopen blocked nodes on frontier resume.
-  TECHNICAL_BLOCKED: ["RETRY_PENDING", "QUEUED"],
+  // EXTERNAL_HOST_IRRELEVANT (alt-TLD pollution) may drop blocked foreign seeds.
+  TECHNICAL_BLOCKED: ["RETRY_PENDING", "QUEUED", "EXCLUDED"],
   COMPLETED: [],
 };
 

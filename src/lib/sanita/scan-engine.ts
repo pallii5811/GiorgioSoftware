@@ -2,20 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { normalizeWebsite, type Region } from "@/lib/sanita/discovery";
 import { alternateBrandTldUrls, isBlockedWebsiteHost } from "@/lib/sanita/website";
 import { companyNameOnSite } from "@/lib/sanita/site-identity";
-import { policyTextFromCrawl } from "@/lib/sanita/policy-verify";
+import { policyTextFromCrawl, analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
 import { resolveOfficialWebsite } from "@/lib/sanita/resolve-website";
 import { probeGuessedOfficialWebsite } from "@/lib/sanita/guess-website";
 import { resolveWebsiteViaMaps } from "@/lib/sanita/maps-discovery";
 import { extractCityFromMapsAddress } from "@/lib/sanita/maps-query";
 import { crawlLeadViaSlices, applyIdentityToCrawlRun } from "@/lib/sanita/lead-crawl-runtime";
 import { deriveCrawlCompleteness } from "@/lib/sanita/frontier-store";
-
-function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
-  const blob = `${crawlError || ""} ${stopReason || ""}`;
-  const m = blob.match(/OCR_RENDERER_MISSING|OCR_TIMEOUT|OCR_EXTRACTION_FAILED/i);
-  return m?.[0]?.toUpperCase() || "";
-}
-import { analyzeCrawlPolicy, reconcilePolicyVerdict } from "@/lib/sanita/policy-verify";
+import { lookup as dnsLookup } from "node:dns/promises";
 import { checkRegionalPolicy, isRegionalCheckAvailable } from "@/lib/sanita/regional-check";
 import { enrichContacts, findOfficialWebsite } from "@/lib/sanita/contact-enrichment";
 import { tavilyFallbackForBlockedSite } from "@/lib/sanita/tavily-crawl-fallback";
@@ -35,6 +29,24 @@ import {
 } from "@/lib/sanita/identity-evidence";
 import { appendVersionMarker, currentMarkers } from "@/lib/sanita/evidence-version";
 import { validateSiteIdentity } from "@/lib/sanita/site-identity";
+
+function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
+  const blob = `${crawlError || ""} ${stopReason || ""}`;
+  const m = blob.match(/OCR_RENDERER_MISSING|OCR_TIMEOUT|OCR_EXTRACTION_FAILED/i);
+  return m?.[0]?.toUpperCase() || "";
+}
+
+/** RC-11c: skip alt-TLD crawl when host has no DNS (avoids Playwright hang on dead .com). */
+async function hostHasDns(url: string): Promise<boolean> {
+  try {
+    const host = new URL(url).hostname;
+    if (!host) return false;
+    await dnsLookup(host);
+    return true;
+  } catch {
+    return false;
+  }
+}
 import type { Verdict } from "@/lib/sanita/verdict";
 import { scoreLead } from "@/lib/sanita/score";
 import {
@@ -501,13 +513,17 @@ export async function analyzeLead(
   }
 
   // Polizza assente su .it/.com Maps — prova il TLD gemello (stesso brand nel nome).
+  // RC-11: mai riusare SHADOW_RUN_ID / FRONTIER_DB_PATH del run primario — altrimenti
+  // seed_guess su .com DNS-morto inquina la frontier .it (Sant'Arsenio: 30 TECHNICAL_BLOCKED).
   if (!analysis.policyFound && (verdict === "HOT" || verdict === "REVIEW")) {
     for (const altUrl of alternateBrandTldUrls(website, lead.companyName)) {
+      if (!(await hostHasDns(altUrl))) continue;
       const altSlice = await crawlLeadViaSlices({
         leadId: lead.id,
         website: altUrl,
         evidence: existing?.evidence,
-        runId: process.env.SHADOW_RUN_ID || `analyze-alt-${lead.id}`,
+        runId: `analyze-alt-${lead.id}`,
+        isolateFrontier: true,
       });
       const altCrawl = altSlice.crawl;
       if (!altCrawl.ok) continue;

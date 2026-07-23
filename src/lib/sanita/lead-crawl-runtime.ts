@@ -114,12 +114,19 @@ export async function crawlLeadViaSlices(opts: {
   enablePlaywright?: PlaywrightMode;
   identityVerified?: boolean;
   scopeVerified?: boolean;
+  /** When true, never reuse the active FRONTIER_DB_PATH (alt-TLD / side crawls). */
+  isolateFrontier?: boolean;
 }): Promise<LeadCrawlRuntimeResult> {
-  const frontierPath = resolveProductFrontierPath();
+  const runId = opts.runId || process.env.SHADOW_RUN_ID || `analyze-${opts.leadId}`;
+  const prevFrontier = process.env.FRONTIER_DB_PATH;
+  const frontierPath =
+    opts.isolateFrontier || (opts.runId && opts.runId !== process.env.SHADOW_RUN_ID)
+      ? defaultFrontierDbPath(runId)
+      : resolveProductFrontierPath();
   openFrontierStore(frontierPath);
   process.env.FRONTIER_DB_PATH = frontierPath;
 
-  const runId = opts.runId || process.env.SHADOW_RUN_ID || `analyze-${opts.leadId}`;
+  try {
   const { crawlRunId } = createCrawlRun({
     leadId: opts.leadId,
     runId,
@@ -166,6 +173,18 @@ export async function crawlLeadViaSlices(opts: {
     sitemapTrace: sitemap.traces,
     playwrightMode: pwMode,
   };
+  } finally {
+    if (prevFrontier != null && prevFrontier !== "") {
+      process.env.FRONTIER_DB_PATH = prevFrontier;
+      try {
+        openFrontierStore(prevFrontier);
+      } catch {
+        /* primary store may already be closed */
+      }
+    } else if (opts.isolateFrontier) {
+      delete process.env.FRONTIER_DB_PATH;
+    }
+  }
 }
 
 export function applyIdentityToCrawlRun(
