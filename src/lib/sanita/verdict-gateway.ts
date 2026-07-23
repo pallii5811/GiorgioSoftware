@@ -70,6 +70,7 @@ export function buildPublishedEmitEvidence(opts: {
   hasCoverageEnd?: boolean;
   incompletePublication?: boolean;
   analogousMeasure?: boolean;
+  selfInsurance?: boolean;
   category?: string | null;
   criticalConflict?: boolean;
   sourceClassOverride?: SourceClass;
@@ -101,6 +102,7 @@ export function buildPublishedEmitEvidence(opts: {
     hasCoverageEnd: opts.hasCoverageEnd,
     incompletePublication: opts.incompletePublication,
     analogousMeasure: opts.analogousMeasure,
+    selfInsurance: opts.selfInsurance,
     category: opts.category,
   };
 }

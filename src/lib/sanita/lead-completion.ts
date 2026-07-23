@@ -4,11 +4,12 @@
  * Regola d'oro: worker, API e UI non reimplementano questa logica —
  * chiamano evaluateLeadCompletion. Esiti commerciali conclusi ammessi:
  *
- *   PUBLISHED_CURRENT | PUBLISHED_EXPIRED | PUBLISHED_DATE_UNKNOWN | HOT_VERIFIED
+ *   PUBLISHED_CURRENT | PUBLISHED_EXPIRED | PUBLISHED_DATE_UNKNOWN |
+ *   SELF_INSURANCE_VERIFIED | HOT_VERIFIED
  *
  * Tutto il resto (RETRY_PENDING, TECHNICAL_BLOCKED, FRONTIER_INCOMPLETE,
- * SITEMAP_UNRESOLVED, OCR failure, timeout, identità incerta, REVIEW_HUMAN)
- * è INCOMPLETO: operativo, mai visibile come risultato commerciale.
+ * SITEMAP_UNRESOLVED, OCR failure, timeout, identità incerta, REVIEW_HUMAN,
+ * PUBLISHED_ANALOGOUS_MEASURE) è INCOMPLETO o non commerciale.
  *
  * Fail-closed: HOT_VERIFIED è impossibile quando
  *   unresolvedRelevantNodes > 0  |  unprocessedRelevantPdfs > 0  |
@@ -36,7 +37,21 @@ export type CommercialOutcome =
   | "PUBLISHED_CURRENT"
   | "PUBLISHED_EXPIRED"
   | "PUBLISHED_DATE_UNKNOWN"
+  | "SELF_INSURANCE_VERIFIED"
   | "HOT_VERIFIED";
+
+/** Stati che contano in completedCommercial (gate / export / KPI). */
+export const COMMERCIAL_COMPLETED_STATES: ReadonlySet<string> = new Set([
+  "PUBLISHED_CURRENT",
+  "PUBLISHED_EXPIRED",
+  "PUBLISHED_DATE_UNKNOWN",
+  "SELF_INSURANCE_VERIFIED",
+  "HOT_VERIFIED",
+]);
+
+export function isCompletedCommercialState(state: string | null | undefined): boolean {
+  return Boolean(state && COMMERCIAL_COMPLETED_STATES.has(state));
+}
 
 export type LeadCompletionInput = {
   identityStatus: IdentityStatus | "UNKNOWN" | null | undefined;
@@ -166,7 +181,26 @@ export function evaluateLeadCompletion(input: LeadCompletionInput): LeadCompleti
     if (pubReasons.length) {
       return incomplete("PUBLISHED_GATE_FAILED", pubReasons, counters);
     }
-    // Sottotipo SOLO dai 3 esiti commerciali ammessi.
+    // Autoassicurazione first-party: terminale commerciale distinto (≠ CURRENT/EXPIRED).
+    if (input.published.selfInsurance || gate.businessVerdict === "SELF_INSURANCE_VERIFIED") {
+      return {
+        complete: true,
+        outcome: "SELF_INSURANCE_VERIFIED",
+        businessVerdict: "SELF_INSURANCE_VERIFIED",
+        counters,
+        reasons: [],
+      };
+    }
+    // ANALOGOUS non è commerciale concluso — fail-closed come incompleto.
+    if (
+      input.published.analogousMeasure ||
+      gate.businessVerdict === "PUBLISHED_ANALOGOUS_MEASURE"
+    ) {
+      return incomplete("PUBLISHED_ANALOGOUS_NOT_COMMERCIAL", [
+        "PUBLISHED_ANALOGOUS_MEASURE escluso da completedCommercial",
+      ], counters);
+    }
+    // Sottotipo SOLO dagli esiti commerciali ammessi su polizza tradizionale.
     const expiry = input.policyExpiry ? Date.parse(input.policyExpiry) : NaN;
     if (Number.isFinite(expiry)) {
       const outcome = expiry >= runAt.getTime() ? "PUBLISHED_CURRENT" : "PUBLISHED_EXPIRED";

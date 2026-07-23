@@ -24,6 +24,7 @@ export const CLIENT_PUBLISHED = {
   PUBLISHED_INCOMPLETE: "Pubblicazione assicurativa incompleta",
   PUBLISHED_ANALOGOUS_MEASURE: "Misura analoga pubblicata",
   PUBLISHED_STALE_DOCUMENT: "Documento pubblicato ma non aggiornato",
+  SELF_INSURANCE_VERIFIED: "Autoassicurazione dichiarata",
 } as const;
 
 export const CLIENT_QUEUE_BADGE = {

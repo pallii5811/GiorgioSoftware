@@ -29,6 +29,7 @@ import {
 } from "@/lib/sanita/identity-evidence";
 import { appendVersionMarker, currentMarkers } from "@/lib/sanita/evidence-version";
 import { validateSiteIdentity } from "@/lib/sanita/site-identity";
+import { detectSelfInsuranceDeclaration, resolveSelfInsuranceSignal } from "@/lib/sanita/self-insurance";
 
 function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
   const blob = `${crawlError || ""} ${stopReason || ""}`;
@@ -865,6 +866,10 @@ export async function analyzeLead(
         website,
         groupSeatVerified: identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
       });
+      const selfInsDet = resolveSelfInsuranceSignal({
+        text: corpus,
+        policyCompany: analysis.company,
+      });
       const publishedEvidence = buildPublishedEmitEvidence({
         identityStatus: identityEv.status,
         pageUrl: policyUrl,
@@ -880,7 +885,10 @@ export async function analyzeLead(
         facilityFingerprint,
         policyObsolete: analysis.policyObsolete,
         hasCoverageEnd: Boolean(analysis.expiry),
-        analogousMeasure: /autoassicuraz|misura analoga|gestione\s+diretta/i.test(corpus),
+        // Autoassicurazione esplicita ≠ misura analoga generica (regressione K3: non
+        // mappare più /autoassicuraz|gestione diretta/ → ANALOGOUS).
+        selfInsurance: selfInsDet.declared,
+        analogousMeasure: !selfInsDet.declared && /misura\s+analoga/i.test(corpus),
         category: lead.category,
       });
       gatewayDecision = prepareSanitaVerdictPersist({
@@ -894,24 +902,38 @@ export async function analyzeLead(
         policyCompany: analysis.company,
         policyNumber: analysis.policyNumber,
         policyMassimale: analysis.massimale,
+        selfInsurance: publishedEvidence.selfInsurance,
+        analogousMeasure: publishedEvidence.analogousMeasure,
         evidenceBody: gatewayDecision.evidenceBody,
       });
       evidenceBody = stampPublishedSubtype(gatewayDecision.evidenceBody, publishedSubtype);
+      if (selfInsDet.declared && selfInsDet.citation) {
+        evidenceBody = `${evidenceBody} [SELF_INSURANCE_CITATION:${selfInsDet.citation.slice(0, 200)}]`.trim();
+      }
       verdict = gatewayDecision.legacyVerdict;
     } else if (verdict === "HOT") {
-      assertAtomicHotPersist(verdict, hotEvidence);
-      assertCompletenessInvariant(
-        finalCompleteness.complete,
-        frontier,
-        finalCompleteness.complete
-      );
-      gatewayDecision = prepareSanitaVerdictPersist({
-        legacyVerdict: "HOT",
-        evidenceBody,
-        hotEvidence,
-      });
-      evidenceBody = gatewayDecision.evidenceBody;
-      verdict = gatewayDecision.legacyVerdict;
+      // "non ha sottoscritto alcuna polizza" + autoassicurazione → NON è HOT.
+      const hotBlockSelf = detectSelfInsuranceDeclaration(corpus);
+      if (hotBlockSelf.blocksHotAbsence && hotBlockSelf.declared) {
+        verdict = "REVIEW";
+        humanConflict = true;
+        evidenceBody =
+          `Autoassicurazione dichiarata — non emettere HOT assenza. ${hotBlockSelf.citation || ""} ${evidenceBody}`.trim();
+      } else {
+        assertAtomicHotPersist(verdict, hotEvidence);
+        assertCompletenessInvariant(
+          finalCompleteness.complete,
+          frontier,
+          finalCompleteness.complete
+        );
+        gatewayDecision = prepareSanitaVerdictPersist({
+          legacyVerdict: "HOT",
+          evidenceBody,
+          hotEvidence,
+        });
+        evidenceBody = gatewayDecision.evidenceBody;
+        verdict = gatewayDecision.legacyVerdict;
+      }
     }
   } catch (e) {
     if (e instanceof PublishedGateError) {
@@ -1368,6 +1390,10 @@ export async function analyzeRegional(
         siteText: evidenceBody,
       });
       const pageUrl = audit.policyPdfUrl || audit.policySourceUrl || website;
+      const selfInsReg = resolveSelfInsuranceSignal({
+        text: evidenceBody,
+        policyCompany: policyCompany,
+      });
       const publishedEvidence = buildPublishedEmitEvidence({
         identityStatus: regionalId.status,
         pageUrl,
@@ -1384,6 +1410,8 @@ export async function analyzeRegional(
         }),
         policyObsolete: crawlPolicyObsolete,
         hasCoverageEnd: Boolean(policyExpiry),
+        selfInsurance: selfInsReg.declared,
+        analogousMeasure: !selfInsReg.declared && /misura\s+analoga/i.test(evidenceBody),
         category: lead.category,
         criticalConflict: regionalId.status === "MISMATCH",
       });
@@ -1410,6 +1438,16 @@ export async function analyzeRegional(
         verdict = "REVIEW";
         evidenceBody = stampProcessingMeta(
           `Identità regionale insufficiente (${regionalId.status}). ${evidenceBody}`,
+          {
+            state: "REVIEW_HUMAN",
+            businessVerdict: "REVIEW_HUMAN",
+            validationStatus: "CONFLICT_FOUND",
+          }
+        );
+      } else if (detectSelfInsuranceDeclaration(evidenceBody).blocksHotAbsence) {
+        verdict = "REVIEW";
+        evidenceBody = stampProcessingMeta(
+          `Autoassicurazione dichiarata — non emettere HOT assenza. ${evidenceBody}`,
           {
             state: "REVIEW_HUMAN",
             businessVerdict: "REVIEW_HUMAN",

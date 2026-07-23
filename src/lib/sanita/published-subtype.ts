@@ -8,7 +8,8 @@ export type PublishedSubtype =
   | "PUBLISHED_DATE_UNKNOWN"
   | "PUBLISHED_INCOMPLETE"
   | "PUBLISHED_ANALOGOUS_MEASURE"
-  | "PUBLISHED_STALE_DOCUMENT";
+  | "PUBLISHED_STALE_DOCUMENT"
+  | "SELF_INSURANCE_VERIFIED";
 
 export const PUBLISHED_SUBTYPE_META: Record<
   PublishedSubtype,
@@ -44,9 +45,14 @@ export const PUBLISHED_SUBTYPE_META: Record<
     urgency: "high",
     actionablePriority: 1,
   },
+  SELF_INSURANCE_VERIFIED: {
+    label: "Autoassicurazione dichiarata",
+    urgency: "none",
+    actionablePriority: 0,
+  },
 };
 
-const TOKEN_RE = /\[PS:(PUBLISHED_[A-Z_]+)\]/i;
+const TOKEN_RE = /\[PS:(PUBLISHED_[A-Z_]+|SELF_INSURANCE_VERIFIED)\]/i;
 
 export function formatPublishedSubtypeToken(subtype: PublishedSubtype): string {
   return `[PS:${subtype}]`;
@@ -72,9 +78,20 @@ export function derivePublishedSubtype(input: {
   policyNumber?: string | null;
   policyMassimale?: string | null;
   analogousMeasure?: boolean | null;
+  selfInsurance?: boolean | null;
   staleDocument?: boolean | null;
   evidenceBody?: string | null;
 }): PublishedSubtype {
+  // Autoassicurazione esplicita ≠ misura analoga generica (Malzoni PARS 2026).
+  if (input.selfInsurance) return "SELF_INSURANCE_VERIFIED";
+  if (
+    input.evidenceBody &&
+    /opera\s+sotto\s+il\s+regime\s+di\s+autoassicurazione|adotta\s+un\s+sistema\s+di\s+autoassicurazione|regime\s+di\s+auto[\s-]?assicurazione/i.test(
+      input.evidenceBody
+    )
+  ) {
+    return "SELF_INSURANCE_VERIFIED";
+  }
   if (input.analogousMeasure) return "PUBLISHED_ANALOGOUS_MEASURE";
   if (input.staleDocument) return "PUBLISHED_STALE_DOCUMENT";
   if (input.policyObsolete) return "PUBLISHED_EXPIRED";
@@ -84,10 +101,7 @@ export function derivePublishedSubtype(input: {
   ) {
     return "PUBLISHED_EXPIRED";
   }
-  if (
-    input.evidenceBody &&
-    /autoassicuraz|gestione\s+diretta|misura\s+analoga/i.test(input.evidenceBody)
-  ) {
+  if (input.evidenceBody && /misura\s+analoga/i.test(input.evidenceBody)) {
     return "PUBLISHED_ANALOGOUS_MEASURE";
   }
   const hasCompany = Boolean(input.policyCompany?.trim());

@@ -11,7 +11,7 @@ export type ShadowResultRow = {
   region: string | null;
   processingState: string | null;
   businessVerdict: string | null;
-  publishedSubtype: "policy_valid" | "policy_expired" | "date_unknown" | null;
+  publishedSubtype: "policy_valid" | "policy_expired" | "date_unknown" | "self_insurance" | null;
   policyCompany: string | null;
   policyNumber: string | null;
   policyExpiry: string | null;
@@ -45,6 +45,8 @@ export function publishedSubtypeOf(
   processingState: string | null | undefined
 ): ShadowResultRow["publishedSubtype"] {
   switch (processingState) {
+    case "SELF_INSURANCE_VERIFIED":
+      return "self_insurance";
     case "PUBLISHED_CURRENT":
     case "PUBLISHED_ANALOGOUS_MEASURE":
       return "policy_valid";
@@ -171,6 +173,7 @@ export function applyFilters(
     const o = f.outcome;
     out = out.filter((r) => {
       if (o === "HOT_VERIFIED") return r.processingState === "HOT_VERIFIED";
+      if (o === "SELF_INSURANCE_VERIFIED") return r.processingState === "SELF_INSURANCE_VERIFIED";
       if (o === "REVIEW_HUMAN") return r.processingState === "REVIEW_HUMAN";
       if (o === "RETRY_PENDING") {
         return !r.completedAt || r.processingState === "RETRY_PENDING";

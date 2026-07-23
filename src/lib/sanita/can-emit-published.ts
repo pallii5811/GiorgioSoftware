@@ -22,6 +22,8 @@ export type PublishedEmitEvidence = {
   hasCoverageEnd?: boolean;
   incompletePublication?: boolean;
   analogousMeasure?: boolean;
+  /** Dichiarazione esplicita autoassicurazione / gestione diretta (≠ misura analoga generica). */
+  selfInsurance?: boolean;
   category?: string | null;
 };
 
@@ -66,7 +68,9 @@ export function canEmitPublished(ev: PublishedEmitEvidence): PublishedDecision {
   }
 
   let businessVerdict: BusinessVerdict = "PUBLISHED_CURRENT";
-  if (ev.analogousMeasure) businessVerdict = "PUBLISHED_ANALOGOUS_MEASURE";
+  // Autoassicurazione first-party esplicita → terminale commerciale distinto (non ANALOGOUS).
+  if (ev.selfInsurance) businessVerdict = "SELF_INSURANCE_VERIFIED";
+  else if (ev.analogousMeasure) businessVerdict = "PUBLISHED_ANALOGOUS_MEASURE";
   else if (ev.incompletePublication) businessVerdict = "PUBLISHED_INCOMPLETE";
   else if (ev.policyObsolete) businessVerdict = "PUBLISHED_EXPIRED";
   else if (!ev.hasCoverageEnd) businessVerdict = "PUBLISHED_DATE_UNKNOWN";

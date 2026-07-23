@@ -17,6 +17,7 @@ export type SanitaProcessingState =
   | "PUBLISHED_DATE_UNKNOWN"
   | "PUBLISHED_INCOMPLETE"
   | "PUBLISHED_ANALOGOUS_MEASURE"
+  | "SELF_INSURANCE_VERIFIED"
   | "HOT_VERIFIED"
   | "OUT_OF_SCOPE";
 
@@ -26,6 +27,7 @@ export type BusinessVerdict =
   | "PUBLISHED_DATE_UNKNOWN"
   | "PUBLISHED_INCOMPLETE"
   | "PUBLISHED_ANALOGOUS_MEASURE"
+  | "SELF_INSURANCE_VERIFIED"
   | "HOT_VERIFIED"
   | "REVIEW_HUMAN"
   | "OUT_OF_SCOPE"
@@ -117,15 +119,19 @@ export function resolveAfterTechnicalFailure(input: {
   validationStatus: ValidationStatus;
 } {
   const prevBv = readBusinessVerdict(input.previousEvidence);
+  const histSelf = prevBv === "SELF_INSURANCE_VERIFIED";
   const histPub =
     /^\[V:PUB\]/i.test(input.previousEvidence || "") ||
-    (prevBv != null && prevBv.startsWith("PUBLISHED"));
+    (prevBv != null && prevBv.startsWith("PUBLISHED")) ||
+    histSelf;
 
   if (histPub) {
     const bv =
-      prevBv && prevBv.startsWith("PUBLISHED")
-        ? prevBv
-        : ("PUBLISHED_DATE_UNKNOWN" as BusinessVerdict);
+      histSelf
+        ? ("SELF_INSURANCE_VERIFIED" as BusinessVerdict)
+        : prevBv && prevBv.startsWith("PUBLISHED")
+          ? prevBv
+          : ("PUBLISHED_DATE_UNKNOWN" as BusinessVerdict);
     if (input.retriesExhausted) {
       return {
         keepLegacyToken: "PUBLISHED",

@@ -139,10 +139,21 @@ export function presentSanitaLead(lead: SanitaLeadLike): SanitaSemanticPresentat
   } else if (processingState === "REVIEW_HUMAN" || businessVerdict === "REVIEW_HUMAN") {
     clientLabel = VERDICT_META.REVIEW.label;
     clientExplanation = "Conflitto o ambiguità che richiede verifica umana.";
+  } else if (
+    businessVerdict === "SELF_INSURANCE_VERIFIED" ||
+    processingState === "SELF_INSURANCE_VERIFIED" ||
+    publishedSubtype === "SELF_INSURANCE_VERIFIED"
+  ) {
+    clientLabel = "Autoassicurazione dichiarata";
+    clientExplanation = "Gestione diretta del rischio — documento ufficiale first-party.";
   } else if (verdictToken === "HOT" || businessVerdict === "HOT_VERIFIED" || processingState === "HOT_VERIFIED") {
     clientLabel = VERDICT_META.HOT.label;
     clientExplanation = "Assenza polizza RC certificata dopo scansione completa del sito.";
-  } else if (verdictToken === "PUBLISHED" || (businessVerdict && businessVerdict.startsWith("PUBLISHED"))) {
+  } else if (
+    verdictToken === "PUBLISHED" ||
+    (businessVerdict && businessVerdict.startsWith("PUBLISHED")) ||
+    (processingState && String(processingState).startsWith("PUBLISHED"))
+  ) {
     const subtype = publishedSubtype ?? businessVerdict;
     clientLabel = uxLabelForPublished(
       subtype as PublishedSubtype,
@@ -152,6 +163,9 @@ export function presentSanitaLead(lead: SanitaLeadLike): SanitaSemanticPresentat
       clientExplanation = "Polizza RC pubblicata sul sito ma scaduta — opportunità commerciale.";
     } else if (publishedSubtype === "PUBLISHED_CURRENT") {
       clientExplanation = "Polizza RC pubblicata e apparentemente valida.";
+    } else if (publishedSubtype === "SELF_INSURANCE_VERIFIED") {
+      clientLabel = "Autoassicurazione dichiarata";
+      clientExplanation = "Gestione diretta del rischio — documento ufficiale first-party.";
     } else {
       clientExplanation = "Documento assicurativo rilevato sul sito istituzionale.";
     }
