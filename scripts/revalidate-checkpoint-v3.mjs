@@ -113,9 +113,12 @@ export function pickRetryStrategy(attempts, lastError, lastStrategy) {
 export function migrateCheckpointV2toV3(cp, resultsDir, testedCodeSha) {
   if (cp?.version >= 3 && cp.terminal && cp.retryQueue) {
     cp.testedCodeSha = cp.testedCodeSha || testedCodeSha;
-    // Incomplete hand-written / reset checkpoints may omit attempts.
+    // Incomplete hand-written / reset checkpoints may omit attempts/stats.
     if (!cp.attempts || typeof cp.attempts !== "object") cp.attempts = {};
     if (!cp.inProgress || typeof cp.inProgress !== "object") cp.inProgress = {};
+    if (!cp.stats || typeof cp.stats !== "object") {
+      cp.stats = emptyCheckpointV3(cp.testedCodeSha || testedCodeSha || null).stats;
+    }
     return { checkpoint: cp, migrated: 0, terminal: Object.keys(cp.terminal).length, retry: Object.keys(cp.retryQueue).length };
   }
   const out = emptyCheckpointV3(testedCodeSha || cp?.testedCodeSha || null);
