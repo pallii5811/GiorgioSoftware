@@ -3,10 +3,42 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { isProcessAlive, killProcessTree } from "@/lib/sanita/job-watchdog";
-import { isVercelUiHost } from "@/lib/sanita/scan-engine-url";
+import {
+  getScanEngineUrl,
+  HETZNER_SCAN_ENGINE,
+  isVercelUiHost,
+} from "@/lib/sanita/scan-engine-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function proxyControl(req: Request, method: "GET" | "POST") {
+  const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
+    (v, i, a) => v && a.indexOf(v) === i
+  );
+  const body = method === "POST" ? await req.text() : undefined;
+  for (const base of bases) {
+    try {
+      const upstream = await fetch(`${base}/api/sanita/archive-revalidation/control`, {
+        method,
+        cache: "no-store",
+        headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+        body,
+      });
+      const text = await upstream.text();
+      return new NextResponse(text, {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch {
+      /* try next */
+    }
+  }
+  return NextResponse.json(
+    { success: false, error: "Motore non raggiungibile" },
+    { status: 503 }
+  );
+}
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -86,7 +118,9 @@ function findExternalEnginePids(): number[] {
 
 function isEngineBusy(job: RevalidationJob | null): boolean {
   if (isJobActive(job)) return true;
-  return findExternalEnginePids().length > 0;
+  if (findExternalEnginePids().length > 0) return true;
+  if (!IS_WINDOWS && systemctlOk(["is-active", "--quiet", "giorgio-revalidate"])) return true;
+  return false;
 }
 
 function readCheckpointMeta() {
@@ -117,6 +151,11 @@ function engineEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
     OCR_ENABLED: "1",
     POLICY_EXHAUSTIVE: "1",
     SCAN_FAST: "0",
+    STAGING_MODE: "true",
+    DISABLE_LIVE_DB: "true",
+    DISABLE_EMAILS: "true",
+    APPLY_LIVE: "0",
+    PER_HOST_CONCURRENCY: "1",
     REVALIDATE_CHECKPOINT: CHECKPOINT_PATH,
     REVALIDATE_OUT_DIR: ENGINE_DATA_ROOT,
     FRONTIER_DB_PATH: path.join(ENGINE_DATA_ROOT, "frontiers", "boot.sqlite"),
@@ -128,6 +167,8 @@ function engineEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   } else {
     base.PDFTOPPM_PATH = "/usr/bin/pdftoppm";
     base.DATABASE_URL = "file:/opt/leadsniper-revalidate/shadow-revalidate.db";
+    base.TESSDATA_PREFIX = "/opt/leadsniper-revalidate/app/.tesseract-cache";
+    base.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/snap/bin/chromium";
   }
   return { ...process.env, ...base, ...extra };
 }
@@ -147,6 +188,38 @@ function spawnEngine(mode: RevalidationJob["mode"], extraEnv: Record<string, str
   child.unref();
   if (!child.pid) throw new Error("spawn motore fallito: nessun pid");
   return child.pid;
+}
+
+function systemctlOk(args: string[]): boolean {
+  if (IS_WINDOWS) return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    execSync(["systemctl", ...args].join(" "), {
+      encoding: "utf8",
+      timeout: 15_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function systemdMainPid(): number | null {
+  if (IS_WINDOWS) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const out = execSync("systemctl show giorgio-revalidate -p MainPID --value", {
+      encoding: "utf8",
+      timeout: 3000,
+    }).trim();
+    const n = Number(out);
+    return Number.isFinite(n) && n > 1 ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 function startLike(mode: "start" | "resume" | "retry-incomplete") {
@@ -178,14 +251,26 @@ function startLike(mode: "start" | "resume" | "retry-incomplete") {
     extraEnv.REVALIDATE_IDS = "";
   }
 
-  let pid: number;
-  try {
-    pid = spawnEngine(mode, extraEnv);
-  } catch (e) {
-    return NextResponse.json(
-      { success: false, error: `Avvio motore fallito: ${String(e)}` },
-      { status: 500 }
-    );
+  let pid: number | null = null;
+  // Produzione Linux: un solo parent via systemd + flock (non spawn parallelo).
+  if (!IS_WINDOWS && mode !== "retry-incomplete") {
+    systemctlOk(["reset-failed", "giorgio-revalidate"]);
+    if (!systemctlOk(["start", "giorgio-revalidate"])) {
+      return NextResponse.json(
+        { success: false, error: "systemctl start giorgio-revalidate fallito" },
+        { status: 500 }
+      );
+    }
+    pid = systemdMainPid();
+  } else {
+    try {
+      pid = spawnEngine(mode, extraEnv);
+    } catch (e) {
+      return NextResponse.json(
+        { success: false, error: `Avvio motore fallito: ${String(e)}` },
+        { status: 500 }
+      );
+    }
   }
 
   const job: RevalidationJob = {
@@ -202,12 +287,7 @@ function startLike(mode: "start" | "resume" | "retry-incomplete") {
 }
 
 export async function POST(req: Request) {
-  if (isVercelUiHost()) {
-    return NextResponse.json(
-      { success: false, error: "Motore non raggiungibile" },
-      { status: 503 }
-    );
-  }
+  if (isVercelUiHost()) return proxyControl(req, "POST");
 
   let action: ControlAction;
   try {
@@ -226,16 +306,24 @@ export async function POST(req: Request) {
   if (action === "start" || action === "resume") return startLike(action);
   if (action === "retry-incomplete") return startLike("retry-incomplete");
 
-  // pause — ferma job UI e/o motore esterno (CLI / micro-canary / systemd oneshot)
+  // pause — preferisci systemd stop (flock parent); fallback kill tree
   const job = readJob();
   const external = findExternalEnginePids();
-  if ((!job || job.status !== "running") && external.length === 0) {
+  const systemdActive = !IS_WINDOWS && systemctlOk(["is-active", "--quiet", "giorgio-revalidate"]);
+  if ((!job || job.status !== "running") && external.length === 0 && !systemdActive) {
     return NextResponse.json(
       { success: false, error: "Nessun job in esecuzione", job },
       { status: 409 }
     );
   }
-  if (job?.pid) killProcessTree(job.pid);
+  if (!IS_WINDOWS) systemctlOk(["stop", "giorgio-revalidate"]);
+  if (job?.pid) {
+    try {
+      killProcessTree(job.pid);
+    } catch {
+      /* ignore */
+    }
+  }
   for (const pid of external) {
     try {
       killProcessTree(pid);
@@ -256,13 +344,8 @@ export async function POST(req: Request) {
   return NextResponse.json({ success: true, job: paused, killedExternalPids: external });
 }
 
-export async function GET() {
-  if (isVercelUiHost()) {
-    return NextResponse.json(
-      { success: false, error: "Motore non raggiungibile" },
-      { status: 503 }
-    );
-  }
+export async function GET(req: Request) {
+  if (isVercelUiHost()) return proxyControl(req, "GET");
   const job = readJob();
   // riconcilia: job marcato running ma processo morto → failed
   if (job && job.status === "running" && (!job.pid || !isProcessAlive(job.pid))) {
@@ -272,12 +355,15 @@ export async function GET() {
     writeJob(job);
   }
   const externalPids = findExternalEnginePids();
+  const systemdActive =
+    !IS_WINDOWS && systemctlOk(["is-active", "--quiet", "giorgio-revalidate"]);
   const cp = readCheckpointMeta();
   return NextResponse.json({
     success: true,
     job,
-    active: isJobActive(job) || externalPids.length > 0,
+    active: isJobActive(job) || externalPids.length > 0 || systemdActive,
     externalPids,
+    systemdActive,
     checkpointExists: cp.exists,
     checkpointUpdatedAt: cp.updatedAt,
     retryQueueCount: cp.retryIds.length,

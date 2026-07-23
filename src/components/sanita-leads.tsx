@@ -150,7 +150,7 @@ type Filters = {
   query: string
 }
 
-const DEFAULT_FILTERS: Filters = { tab: "run", region: "ALL", city: "", outcome: "ALL", query: "" }
+const DEFAULT_FILTERS: Filters = { tab: "archive", region: "ALL", city: "", outcome: "ALL", query: "" }
 
 function readFiltersFromUrl(): Filters {
   if (typeof window === "undefined") return DEFAULT_FILTERS
@@ -159,7 +159,7 @@ function readFiltersFromUrl(): Filters {
   const region = sp.get("region")
   const outcome = sp.get("outcome")
   return {
-    // Default archivio: i lead già scansionati (legacy) devono essere visibili subito.
+    // Sempre esplicito: default archivio legacy (non confondere con Nuovi risultati).
     tab: tab === "live" || tab === "review" || tab === "archive" || tab === "run" ? tab : "archive",
     region: region === "Campania" || region === "Veneto" ? region : "ALL",
     city: sp.get("city") || "",
@@ -174,7 +174,8 @@ function readFiltersFromUrl(): Filters {
 
 function filtersToSearch(f: Filters): string {
   const sp = new URLSearchParams()
-  if (f.tab !== "run") sp.set("tab", f.tab)
+  // Tab sempre in URL → coerenza tab=… / dati / badge.
+  sp.set("tab", f.tab)
   if (f.region !== "ALL") sp.set("region", f.region)
   if (f.city) sp.set("city", f.city)
   if (f.outcome !== "ALL") sp.set("outcome", f.outcome)
@@ -211,16 +212,46 @@ type UiRow = {
 const OUTCOME_META: Record<UiOutcome, { label: string; cls: string; icon: typeof ShieldCheck }> = {
   policy_valid: { label: "Polizza valida", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: ShieldCheck },
   policy_expired: { label: "Polizza scaduta", cls: "bg-red-50 text-red-700 border-red-200", icon: ShieldAlert },
-  date_unknown: { label: "Scadenza sconosciuta", cls: "bg-slate-100 text-slate-700 border-slate-200", icon: HelpCircle },
+  date_unknown: { label: "Scadenza da verificare", cls: "bg-slate-100 text-slate-700 border-slate-200", icon: HelpCircle },
   self_insurance: { label: "Autoassicurazione dichiarata", cls: "bg-teal-50 text-teal-800 border-teal-200", icon: ShieldCheck },
   hot: { label: "HOT verificato", cls: "bg-sky-50 text-sky-800 border-sky-200", icon: ShieldAlert },
   review: { label: "Da controllare", cls: "bg-amber-50 text-amber-800 border-amber-200", icon: ShieldQuestion },
   pending: { label: "In lavorazione", cls: "bg-gray-50 text-gray-600 border-gray-200", icon: Clock },
 }
 
+/** Scadenza ISO/DB verificabile e strettamente futura (UTC day). */
+function expiryIsFuture(raw: string | Date | null | undefined): boolean | null {
+  if (!raw) return null
+  const d = raw instanceof Date ? raw : new Date(raw)
+  if (Number.isNaN(d.getTime())) return null
+  const today = new Date()
+  const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+  const b = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  if (a > b) return true
+  if (a < b) return false
+  return true // stessa giornata → ancora valida
+}
+
+function hasExplicitSelfInsuranceDeclaration(evidence: string | null | undefined): boolean {
+  if (!evidence) return false
+  return (
+    /opera\s+sotto\s+il\s+regime\s+di\s+autoassicurazione/i.test(evidence) ||
+    /adotta\s+un\s+sistema\s+di\s+autoassicurazione/i.test(evidence) ||
+    /dichiar(?:a|azione)\s+di\s+autoassicurazione/i.test(evidence) ||
+    /gestione\s+diretta\s+del\s+rischio/i.test(evidence) ||
+    /autoritenzione/i.test(evidence) ||
+    /fondo\s+interno\s+(?:di\s+)?(?:rischi|autoassicurazione)/i.test(evidence)
+  )
+}
+
+/**
+ * Classificazione LEGACY (snapshot pre-motore K3).
+ * Non spacciare [V:PUB] grezzo come "Polizza valida" K3.
+ */
 function liveOutcome(l: Lead): UiOutcome {
   const ps = readProcessingState(l.evidence) || l.semantic?.processingState
   const bv = readBusinessVerdict(l.evidence) || l.semantic?.businessVerdict
+  // Stati già rivalidati K3 (se presenti sull'evidence live)
   if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") return "policy_valid"
   if (ps === "SELF_INSURANCE_VERIFIED" || bv === "SELF_INSURANCE_VERIFIED") return "self_insurance"
   if (ps === "PUBLISHED_ANALOGOUS_MEASURE" || bv === "PUBLISHED_ANALOGOUS_MEASURE") return "policy_valid"
@@ -228,29 +259,55 @@ function liveOutcome(l: Lead): UiOutcome {
   if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") return "date_unknown"
   if (ps === "HOT_VERIFIED" || bv === "HOT_VERIFIED") return "hot"
   if (ps === "REVIEW_HUMAN" || bv === "REVIEW_HUMAN") return "review"
-  // legacy baseline: "pubblicata ma scaduta" si classifica come scaduta
+
+  if (hasExplicitSelfInsuranceDeclaration(l.evidence)) return "self_insurance"
   if (isHotPublishedExpiredEvidence(l.evidence)) return "policy_expired"
-  const v = deriveVerdict({
-    lastScannedAt: l.lastScannedAt,
-    policyFound: l.policyFound,
-    websiteReachable: l.websiteReachable,
-    website: l.website,
-    evidence: l.evidence,
-  })
-  // Legacy [V:PUB]/[V:HOT] (pre-revalidate): mostrali come esiti cliente, non "pending".
-  if (v === "PUBLISHED") return "policy_valid"
-  if (v === "HOT") return "hot"
-  if (v === "REVIEW") return "review"
+
+  const token =
+    readVerdictToken(l.evidence) ||
+    deriveVerdict({
+      lastScannedAt: l.lastScannedAt,
+      policyFound: l.policyFound,
+      websiteReachable: l.websiteReachable,
+      website: l.website,
+      evidence: l.evidence,
+    })
+
+  if (token === "HOT") return "hot"
+  if (token === "REVIEW") return "review"
+  if (token === "PUBLISHED") {
+    const fut = expiryIsFuture(l.policyExpiry)
+    if (fut === true) return "policy_valid"
+    if (fut === false) return "policy_expired"
+    return "date_unknown"
+  }
   return "pending"
 }
 
-/** HOT/PUB già scansionati (anche evidence legacy senza marker v2) — da mostrare in UI. */
+function isLegacyCommercialRow(l: Lead): boolean {
+  const o = liveOutcome(l)
+  return (
+    o === "policy_valid" ||
+    o === "policy_expired" ||
+    o === "date_unknown" ||
+    o === "self_insurance" ||
+    o === "hot"
+  )
+}
+
+function outcomeLabelForRow(r: UiRow): string {
+  if (r.source === "LEGACY_LIVE" && r.outcome === "hot") return "HOT legacy — da rivalidare"
+  if (r.source === "LEGACY_LIVE" && r.outcome === "date_unknown") return "Scadenza da verificare"
+  return OUTCOME_META[r.outcome].label
+}
+
+function sourceLabelForRow(r: UiRow): string {
+  return r.source === "SHADOW_RUN" ? "Nuovo motore" : "Legacy — snapshot 18 luglio"
+}
+
+/** @deprecated kept name for call sites — HOT/PUB legacy commercial-ish */
 function isLegacyScannedCert(l: Lead): boolean {
-  const v =
-    readVerdictToken(l.evidence) ||
-    (l.semantic?.verdictToken as string | null | undefined) ||
-    null
-  return v === "HOT" || v === "PUBLISHED"
+  return isLegacyCommercialRow(l)
 }
 
 function liveToRow(l: Lead): UiRow {
@@ -328,7 +385,7 @@ const OUTCOME_OPTIONS: { key: OutcomeKey; label: string }[] = [
   { key: "ALL", label: "Tutti gli esiti" },
   { key: "policy_valid", label: "Polizza valida" },
   { key: "policy_expired", label: "Polizza scaduta" },
-  { key: "date_unknown", label: "Scadenza sconosciuta" },
+  { key: "date_unknown", label: "Scadenza da verificare" },
   { key: "self_insurance", label: "Autoassicurata" },
   { key: "hot", label: "HOT verificato" },
   { key: "review", label: "Da controllare" },
@@ -501,31 +558,22 @@ export function SanitaLeads() {
   const tabRows = useMemo((): UiRow[] => {
     let rows: UiRow[]
     if (filters.tab === "run") {
-      // Nuovo run vuoto → non lasciare il cliente su tabella vuota: mostra archivio live.
-      rows =
-        runResults.length > 0
-          ? runResults.map(shadowToRow)
-          : liveLeads.map(liveToRow)
+      // SOLO nuovo motore (shadow run). Mai fallback legacy.
+      rows = runResults.map(shadowToRow)
     } else if (filters.tab === "review") {
       rows = reviewResults.map(shadowToRow)
     } else if (filters.tab === "live") {
-      // Certificati: shadow nuovo run + HOT/PUB legacy (anche senza marker evidence v2).
+      // Certificati: nuovo motore + legacy commerciali, badge distinti.
       const shadowCert = runResults.filter(isShadowCertified).map(shadowToRow)
       const shadowIds = new Set(shadowCert.map((r) => r.id))
       const legacyLive = liveLeads
-        .filter((l) => isLeadActionable(l) || isLegacyScannedCert(l))
+        .filter((l) => isLeadActionable(l) || isLegacyCommercialRow(l))
         .map(liveToRow)
         .filter((r) => !shadowIds.has(r.id))
       rows = [...shadowCert, ...legacyLive]
     } else {
-      const runById = new Map(runResults.map((r) => [r.leadId, r]))
-      const workById = new Map(reviewResults.map((r) => [r.leadId, r]))
-      rows = liveLeads.map((l) => {
-        const row = liveToRow(l)
-        const sh = runById.get(l.id) || workById.get(l.id)
-        if (!sh) return row
-        return { ...row, revalStatus: shadowToRow(sh).revalStatus }
-      })
+      // Archivio completo = tutti i 877 legacy.
+      rows = liveLeads.map((l) => liveToRow(l))
     }
 
     return rows.filter((r) => {
@@ -594,11 +642,11 @@ export function SanitaLeads() {
         Struttura: r.companyName,
         Città: r.city || "",
         Regione: r.region || "",
-        Esito: OUTCOME_META[r.outcome].label,
+        Esito: outcomeLabelForRow(r),
         Compagnia: r.policyCompany || "",
         Numero: r.policyNumber || "",
         Scadenza: r.policyExpiry || "",
-        Fonte: r.shadow ? "nuovo run (shadow)" : "live",
+        Fonte: r.source === "SHADOW_RUN" ? "nuovo motore" : "legacy snapshot 18 luglio",
         CompletataIl: r.completedAt || "",
         EvidenceURL: r.evidenceUrls.join(" "),
       }))
@@ -633,27 +681,52 @@ export function SanitaLeads() {
   const otherTerminal = archiveStatus?.otherNonCommercialTerminal ?? 0
   const technicalFinal = archiveStatus?.technicalBlockedFinal ?? 0
   const selfIns = archiveStatus?.selfInsurance ?? 0
-  // Conta HOT/PUB già in DB (incluso evidence legacy luglio), non solo coda commerciale v2.
-  const legacyCertified = useMemo(
-    () => liveLeads.filter(isLegacyScannedCert).length,
-    [liveLeads]
-  )
-  const archiveTotal = apiMeta?.dbTotal ?? liveLeads.length ?? 919
+  const legacyBreakdown = useMemo(() => {
+    const c = {
+      publishedValid: 0,
+      publishedExpired: 0,
+      dateUnknown: 0,
+      hot: 0,
+      selfInsurance: 0,
+      commercial: 0,
+    }
+    for (const l of liveLeads) {
+      const o = liveOutcome(l)
+      if (o === "policy_valid") c.publishedValid++
+      else if (o === "policy_expired") c.publishedExpired++
+      else if (o === "date_unknown") c.dateUnknown++
+      else if (o === "hot") c.hot++
+      else if (o === "self_insurance") c.selfInsurance++
+      if (isLegacyCommercialRow(l)) c.commercial++
+    }
+    return c
+  }, [liveLeads])
+  const archiveTotal = apiMeta?.dbTotal ?? liveLeads.length ?? 0
   const counterSum = certifiedRun + reviewCount + otherTerminal + technicalFinal
 
   const kpiCards: { label: string; value: string | number; testid: string; onClick?: () => void }[] = [
-    { label: "Archivio totale", value: archiveTotal, testid: "kpi-archive-total" },
+    {
+      label: "Archivio legacy",
+      value: archiveTotal,
+      testid: "kpi-archive-total",
+      onClick: () => setFilters({ tab: "archive", region: "ALL", city: "", outcome: "ALL", query: "" }),
+    },
     {
       label: "Conclusi nuovo run",
       value: `${terminal} / ${target}`,
       testid: "kpi-terminal-completed",
       onClick: openCompletedRun,
     },
-    { label: "Certificati nuovo run", value: certifiedRun, testid: "kpi-certified-run" },
+    { label: "Certificati nuovo motore", value: certifiedRun, testid: "kpi-certified-run" },
     { label: "Da controllare", value: reviewCount, testid: "kpi-review" },
     { label: "In lavorazione", value: inProgress, testid: "kpi-in-progress" },
     { label: "Retry", value: retryCount, testid: "kpi-retry" },
-    { label: "Legacy certificati", value: legacyCertified, testid: "kpi-legacy-certified" },
+    {
+      label: "Legacy commerciali",
+      value: legacyBreakdown.commercial,
+      testid: "kpi-legacy-certified",
+      onClick: () => setFilters({ tab: "live", region: "ALL", city: "", outcome: "ALL", query: "" }),
+    },
   ]
 
   return (
@@ -665,11 +738,15 @@ export function SanitaLeads() {
           Verifica polizze sanitarie
         </h1>
         <p className="mt-1 text-sm text-muted-foreground" data-testid="header-kpi">
-          Archivio totale {archiveTotal} · Conclusi nuovo run {terminal}/{target} · Certificati
-          nuovo run {certifiedRun} · Legacy certificati {legacyCertified}
+          Archivio legacy {archiveTotal} · Conclusi nuovo run {terminal}/{target} · Certificati
+          nuovo motore {certifiedRun} · Legacy commerciali {legacyBreakdown.commercial}
+          {" · "}Published legacy {legacyBreakdown.publishedValid}
+          {" · "}HOT legacy {legacyBreakdown.hot}
+          {" · "}scaduti legacy {legacyBreakdown.publishedExpired}
+          {" · "}data ignota legacy {legacyBreakdown.dateUnknown}
           {counterSum !== terminal ? (
             <span className="ml-2 text-amber-700">
-              (riconciliazione: {certifiedRun}+{reviewCount}+{otherTerminal}+{technicalFinal}=
+              (riconciliazione run: {certifiedRun}+{reviewCount}+{otherTerminal}+{technicalFinal}=
               {counterSum}, terminal={terminal}
               {selfIns ? `, SI=${selfIns}` : ""})
             </span>
@@ -971,7 +1048,7 @@ export function SanitaLeads() {
                     <td className="px-3 py-2">
                       <Badge variant="outline" className={cn("gap-1", meta.cls)} data-testid="outcome-badge">
                         <Icon className="h-3 w-3" />
-                        {meta.label}
+                        {outcomeLabelForRow(r)}
                       </Badge>
                       {r.unresolvedRelevantNodes != null && r.unresolvedRelevantNodes > 0 && (
                         <div className="mt-0.5 text-[10px] text-muted-foreground">
@@ -989,7 +1066,7 @@ export function SanitaLeads() {
                             : "border-slate-200 bg-slate-50 text-slate-700"
                         }
                       >
-                        {r.source === "SHADOW_RUN" ? "Nuova scansione" : "Legacy"}
+                        {sourceLabelForRow(r)}
                       </Badge>
                     </td>
                     <td className="max-w-[220px] px-3 py-2 text-xs">
