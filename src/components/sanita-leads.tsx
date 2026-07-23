@@ -90,6 +90,15 @@ type ShadowResult = {
   appliedLive: false
   frontierComplete: boolean | null
   unresolvedRelevantNodes: number | null
+  website?: string | null
+  phone?: string | null
+  email?: string | null
+  pec?: string | null
+  piva?: string | null
+  category?: string | null
+  crmStatus?: string | null
+  notes?: string | null
+  sourcePdfUrl?: string | null
 }
 
 type ResultsMeta = {
@@ -207,6 +216,17 @@ type UiRow = {
   revalStatus?: "not_started" | "in_progress" | "completed" | "review" | "retry"
   live?: Lead
   shadow?: ShadowResult
+  website?: string | null
+  phone?: string | null
+  email?: string | null
+  pec?: string | null
+  piva?: string | null
+  category?: string | null
+  crmStatus?: string | null
+  notes?: string | null
+  pdfHash?: string | null
+  sourcePdfUrl?: string | null
+  legacyEvidence?: string | null
 }
 
 const OUTCOME_META: Record<UiOutcome, { label: string; cls: string; icon: typeof ShieldCheck }> = {
@@ -330,10 +350,29 @@ function liveToRow(l: Lead): UiRow {
     source: "LEGACY_LIVE",
     revalStatus: "not_started",
     live: l,
+    website: l.website,
+    phone: l.phone,
+    email: l.email,
+    pec: l.pec,
+    piva: l.piva,
+    category: l.category,
+    crmStatus: l.status,
+    notes: l.notes,
+    legacyEvidence: l.evidence,
   }
 }
 
-function shadowToRow(s: ShadowResult): UiRow {
+function pickContact(shadowVal: string | null | undefined, liveVal: string | null | undefined) {
+  const clean = (v: string | null | undefined) => {
+    if (!v) return null
+    let s = v.trim()
+    if (s.startsWith("//")) s = s.slice(2)
+    return s || null
+  }
+  return clean(shadowVal) || clean(liveVal) || null
+}
+
+function shadowToRow(s: ShadowResult, live?: Lead | null): UiRow {
   const outcome: UiOutcome =
     s.publishedSubtype ??
     (s.processingState === "SELF_INSURANCE_VERIFIED"
@@ -351,15 +390,20 @@ function shadowToRow(s: ShadowResult): UiRow {
         : s.completedAt
           ? "completed"
           : "in_progress"
+  const website = pickContact(s.website, live?.website)
+  const phone = pickContact(s.phone, live?.phone)
+  const email = pickContact(s.email, live?.email)
+  const pec = pickContact(s.pec, live?.pec)
+  const piva = pickContact(s.piva, live?.piva)
   return {
     id: s.leadId,
-    companyName: s.companyName || s.leadId,
-    city: s.city,
-    region: s.region,
+    companyName: s.companyName || live?.companyName || s.leadId,
+    city: s.city || live?.city || null,
+    region: s.region || live?.region || null,
     outcome,
-    policyCompany: s.policyCompany,
-    policyNumber: s.policyNumber,
-    policyExpiry: s.policyExpiry,
+    policyCompany: s.policyCompany ?? live?.policyCompany ?? null,
+    policyNumber: s.policyNumber ?? live?.policyNumber ?? null,
+    policyExpiry: s.policyExpiry ?? live?.policyExpiry ?? null,
     evidenceUrls: s.evidenceUrls || [],
     completedAt: s.completedAt,
     processingState: s.processingState,
@@ -367,6 +411,58 @@ function shadowToRow(s: ShadowResult): UiRow {
     source: "SHADOW_RUN",
     revalStatus,
     shadow: s,
+    live: live || undefined,
+    website,
+    phone,
+    email,
+    pec,
+    piva,
+    category: s.category || live?.category || null,
+    crmStatus: s.crmStatus || live?.status || null,
+    notes: s.notes || live?.notes || null,
+    pdfHash: s.pdfHash,
+    sourcePdfUrl: s.sourcePdfUrl || s.evidenceUrls?.[0] || null,
+    legacyEvidence: live?.evidence || null,
+  }
+}
+
+/** Dettaglio commerciale completo (LeadDetail) da join live + esito shadow. */
+function rowToDetailLead(r: UiRow): Lead {
+  const live = r.live
+  const shadowEv = r.shadow?.evidence || ""
+  const legacyEv = r.legacyEvidence || live?.evidence || ""
+  const combinedEvidence = [
+    shadowEv ? `[NUOVO MOTORE]\n${shadowEv}` : "",
+    legacyEv ? `[LEGACY]\n${legacyEv}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+  return {
+    id: r.id,
+    osmId: live?.osmId ?? null,
+    companyName: r.companyName,
+    region: r.region || live?.region || "",
+    category: r.category ?? live?.category ?? null,
+    website: r.website ?? null,
+    city: r.city ?? null,
+    phone: r.phone ?? null,
+    email: r.email ?? null,
+    policyFound: r.shadow?.policyFound ?? live?.policyFound ?? null,
+    policyCompany: r.policyCompany,
+    policyMassimale: live?.policyMassimale ?? null,
+    policyNumber: r.policyNumber,
+    policyExpiry: r.policyExpiry,
+    confidence: live?.confidence ?? null,
+    websiteReachable: live?.websiteReachable ?? null,
+    lastScannedAt: r.completedAt ?? live?.lastScannedAt ?? null,
+    status: r.crmStatus || live?.status || "NEW",
+    evidence: combinedEvidence || live?.evidence || null,
+    pec: r.pec ?? null,
+    piva: r.piva ?? null,
+    leadScore: live?.leadScore ?? null,
+    notes: r.notes ?? live?.notes ?? null,
+    reminderAt: live?.reminderAt ?? null,
+    semantic: live?.semantic,
   }
 }
 
@@ -555,16 +651,24 @@ export function SanitaLeads() {
     )
   }
 
+  const liveById = useMemo(() => {
+    const m = new Map<string, Lead>()
+    for (const l of liveLeads) m.set(l.id, l)
+    return m
+  }, [liveLeads])
+
   const tabRows = useMemo((): UiRow[] => {
     let rows: UiRow[]
     if (filters.tab === "run") {
-      // SOLO nuovo motore (shadow run). Mai fallback legacy.
-      rows = runResults.map(shadowToRow)
+      // SOLO nuovo motore (shadow run). Mai fallback legacy. Join contatti live read-only.
+      rows = runResults.map((s) => shadowToRow(s, liveById.get(s.leadId)))
     } else if (filters.tab === "review") {
-      rows = reviewResults.map(shadowToRow)
+      rows = reviewResults.map((s) => shadowToRow(s, liveById.get(s.leadId)))
     } else if (filters.tab === "live") {
       // Certificati: nuovo motore + legacy commerciali, badge distinti.
-      const shadowCert = runResults.filter(isShadowCertified).map(shadowToRow)
+      const shadowCert = runResults
+        .filter(isShadowCertified)
+        .map((s) => shadowToRow(s, liveById.get(s.leadId)))
       const shadowIds = new Set(shadowCert.map((r) => r.id))
       const legacyLive = liveLeads
         .filter((l) => isLeadActionable(l) || isLegacyCommercialRow(l))
@@ -591,7 +695,7 @@ export function SanitaLeads() {
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, runResults, reviewResults, liveLeads])
+  }, [filters, runResults, reviewResults, liveLeads, liveById])
 
   const runOutcomeCounts = useMemo(() => {
     const c: Record<OutcomeKey | "pending", number> = {
@@ -646,9 +750,16 @@ export function SanitaLeads() {
         Compagnia: r.policyCompany || "",
         Numero: r.policyNumber || "",
         Scadenza: r.policyExpiry || "",
+        Sito: r.website || "",
+        Telefono: r.phone || "",
+        Email: r.email || "",
+        PEC: r.pec || "",
+        PIVA: r.piva || "",
+        Categoria: r.category || "",
         Fonte: r.source === "SHADOW_RUN" ? "nuovo motore" : "legacy snapshot 18 luglio",
         CompletataIl: r.completedAt || "",
         EvidenceURL: r.evidenceUrls.join(" "),
+        PdfHash: r.pdfHash || "",
       }))
     )
   }
@@ -1011,6 +1122,7 @@ export function SanitaLeads() {
                 <th className="px-3 py-2 font-medium">Località</th>
                 <th className="px-3 py-2 font-medium">Esito verifica</th>
                 <th className="px-3 py-2 font-medium">Origine</th>
+                <th className="px-3 py-2 font-medium">Contatti</th>
                 <th className="px-3 py-2 font-medium">Polizza</th>
                 <th className="px-3 py-2 font-medium">Evidence</th>
                 <th className="px-3 py-2 font-medium">Completata il</th>
@@ -1034,7 +1146,7 @@ export function SanitaLeads() {
                     data-outcome={r.outcome}
                     data-source={r.source}
                     className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
-                    onClick={() => (r.live ? setDetail(r.live) : r.shadow ? setShadowDetail(r.shadow) : null)}
+                    onClick={() => setDetail(rowToDetailLead(r))}
                   >
                     <td className="max-w-[260px] px-3 py-2">
                       <div className="truncate font-medium" title={r.companyName}>
@@ -1069,6 +1181,44 @@ export function SanitaLeads() {
                         {sourceLabelForRow(r)}
                       </Badge>
                     </td>
+                    <td
+                      className="max-w-[220px] px-3 py-2 text-[11px] leading-snug"
+                      data-testid="row-contacts"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {r.website ? (
+                        <a
+                          href={r.website.startsWith("http") ? r.website : `https://${r.website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block truncate text-primary hover:underline"
+                          title={r.website}
+                        >
+                          {r.website.replace(/^https?:\/\//, "")}
+                        </a>
+                      ) : null}
+                      {r.phone ? (
+                        <a href={`tel:${r.phone}`} className="block truncate hover:text-primary">
+                          {r.phone}
+                        </a>
+                      ) : null}
+                      {r.email ? (
+                        <a href={`mailto:${r.email}`} className="block truncate hover:text-primary">
+                          {r.email}
+                        </a>
+                      ) : null}
+                      {r.pec ? (
+                        <div className="truncate text-violet-700" title={r.pec}>
+                          PEC {r.pec}
+                        </div>
+                      ) : null}
+                      {(r.piva || r.category || r.notes) && (
+                        <div className="text-[10px] text-muted-foreground">altri dati</div>
+                      )}
+                      {!r.website && !r.phone && !r.email && !r.pec && (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="max-w-[220px] px-3 py-2 text-xs">
                       {r.policyCompany ? (
                         <div className="truncate font-medium" title={r.policyCompany}>
@@ -1083,16 +1233,15 @@ export function SanitaLeads() {
                       {r.policyExpiry && <div className="text-[10px]">Scad. {r.policyExpiry}</div>}
                     </td>
                     <td className="max-w-[180px] px-3 py-2">
-                      {r.evidenceUrls.length ? (
-                        <div className="space-y-0.5">
+                      {r.evidenceUrls.length || r.pdfHash ? (
+                        <div className="space-y-0.5" onClick={(e) => e.stopPropagation()}>
                           {r.evidenceUrls.slice(0, 2).map((u) => (
                             <a
                               key={u}
                               href={u}
                               target="_blank"
                               rel="noreferrer"
-                              title={u}
-                              onClick={(e) => e.stopPropagation()}
+                              title={`URL originale: ${u}`}
                               className="flex items-center gap-1 text-[10px] font-medium text-primary hover:underline"
                             >
                               <FileSearch className="h-3 w-3 shrink-0" />
@@ -1100,6 +1249,18 @@ export function SanitaLeads() {
                               <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
                             </a>
                           ))}
+                          {r.pdfHash && (
+                            <a
+                              href={`/api/sanita/archive-revalidation/evidence-file?sha=${r.pdfHash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Copia locale SHA256 ${r.pdfHash}`}
+                              className="flex items-center gap-1 text-[10px] text-emerald-700 hover:underline"
+                            >
+                              <FileSearch className="h-3 w-3 shrink-0" />
+                              cache {r.pdfHash.slice(0, 10)}…
+                            </a>
+                          )}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -1130,7 +1291,7 @@ export function SanitaLeads() {
               })}
               {tabRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={10} className="px-3 py-10 text-center text-sm text-muted-foreground">
                     Nessun risultato con i filtri correnti.
                   </td>
                 </tr>
