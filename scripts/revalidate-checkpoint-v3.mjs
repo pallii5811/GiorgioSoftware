@@ -12,13 +12,15 @@ export const TERMINAL_STATES = new Set([
   "PUBLISHED_CURRENT",
   "PUBLISHED_EXPIRED",
   "PUBLISHED_DATE_UNKNOWN",
+  "SELF_INSURANCE_VERIFIED",
   "REVIEW_HUMAN",
   "OUT_OF_SCOPE",
 ]);
 
 /** Soft ceiling for logging/backoff — does NOT promote to TECHNICAL_BLOCKED. */
-export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 5);
-export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 15 * 60_000);
+export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 8);
+/** Slice-aware backoff: default 90s (was 15m) so incomplete crawls re-enter without client click. */
+export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 90_000);
 
 export function emptyCheckpointV3(testedCodeSha) {
   return {
@@ -72,10 +74,35 @@ export function classifyResult(row) {
   return { kind: "retry", state: "RETRY_PENDING" };
 }
 
-export function nextRetryAt(attempts) {
+export function nextRetryAt(attempts, opts = {}) {
+  // Slice continuation / strategy change → almost immediate (round-robin friendly).
+  if (opts.immediate || opts.sliceContinue) {
+    return new Date(Date.now() + Number(opts.delayMs || 5_000)).toISOString();
+  }
   const n = Math.max(0, Number(attempts) || 0);
-  const delay = Math.min(6 * 60 * 60_000, RETRY_BASE_MS * Math.pow(2, n));
+  // Cap exponential at 20 min so auto-retry never stalls the 877 for hours.
+  const delay = Math.min(20 * 60_000, RETRY_BASE_MS * Math.pow(2, Math.min(n, 4)));
   return new Date(Date.now() + delay).toISOString();
+}
+
+/**
+ * Retry strategy rotation — never identical infinite loops.
+ * resume: same frontier (default for CAP/INCOMPLETE/PDF/WALL/SIGTERM)
+ * resume_boost: same frontier + higher HTML/PDF budget
+ * fresh: new frontier only after repeated identical external blocks
+ */
+export function pickRetryStrategy(attempts, lastError, lastStrategy) {
+  const err = String(lastError || "");
+  const n = Math.max(0, Number(attempts) || 0);
+  if (/IDENTITY/i.test(err)) return "fresh";
+  if (n <= 1) return "resume";
+  if (n === 2) return "resume_boost";
+  if (n === 3 && /SITEMAP_UNRESOLVED/i.test(err)) return "fresh";
+  if (n >= 5 && lastStrategy === "resume_boost" && /CRAWL_CAP|FRONTIER_INCOMPLETE/i.test(err)) {
+    return "fresh";
+  }
+  if (n >= 4) return "resume_boost";
+  return "resume";
 }
 
 /**
@@ -147,6 +174,7 @@ export function migrateCheckpointV2toV3(cp, resultsDir, testedCodeSha) {
 function bumpStats(cp, state) {
   cp.stats.terminal++;
   if (state === "HOT_VERIFIED") cp.stats.hot++;
+  else if (state === "SELF_INSURANCE_VERIFIED") cp.stats.pub++;
   else if (String(state).startsWith("PUBLISHED")) cp.stats.pub++;
   else if (state === "REVIEW_HUMAN") cp.stats.review++;
   else if (state === "TECHNICAL_BLOCKED") cp.stats.tech++;
