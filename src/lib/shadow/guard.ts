@@ -11,6 +11,7 @@ const LIVE_SQLITE_MARKERS = [
 
 const LIVE_HOST_MARKERS = [
   "168.119.253.47",
+  "167.233.209.13",
 ];
 
 export type ShadowGuardResult =

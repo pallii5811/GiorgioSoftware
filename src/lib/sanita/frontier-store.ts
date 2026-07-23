@@ -63,7 +63,11 @@ function gstore(): FrontierGlobal {
 function assertSafePath(dbPath: string): string {
   const abs = resolve(dbPath);
   const norm = abs.replace(/\\/g, "/").toLowerCase();
-  if (norm.includes("/opt/leadsniper/") || norm.includes("168.119.253.47")) {
+  if (
+    norm.includes("/opt/leadsniper/") ||
+    norm.includes("168.119.253.47") ||
+    norm.includes("167.233.209.13")
+  ) {
     throw new Error("frontier store refuses live production paths");
   }
   return abs;
