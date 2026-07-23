@@ -79,11 +79,13 @@ function readLocalResults(req: NextRequest) {
   const ids = new Set<string>(
     scope === "working"
       ? [...Object.keys(cp.retryQueue || {}), ...Object.keys(cp.inProgress || {})]
-      : [
-          ...Object.keys(cp.terminal || {}),
-          ...Object.keys(cp.retryQueue || {}),
-          ...Object.keys(cp.inProgress || {}),
-        ]
+      : scope === "run"
+        ? Object.keys(cp.terminal || {})
+        : [
+            ...Object.keys(cp.terminal || {}),
+            ...Object.keys(cp.retryQueue || {}),
+            ...Object.keys(cp.inProgress || {}),
+          ]
   );
 
   const rows: ShadowResultRow[] = [];
@@ -96,13 +98,13 @@ function readLocalResults(req: NextRequest) {
     }
   }
 
-  const runTotal = rows.filter((r) => inRunScope(r.completedAt, runStartedAt)).length;
+  const runTotal = Object.keys(cp.terminal || {}).length;
   let out =
     scope === "run"
-      ? rows.filter((r) => inRunScope(r.completedAt, runStartedAt))
+      ? rows // terminal del run corrente: non mischiare retry/inProgress
       : scope === "working"
         ? rows
-        : rows;
+        : rows.filter((r) => inRunScope(r.completedAt, runStartedAt));
   out = applyFilters(out, filter);
   out = sortResults(out).slice(0, limit);
 

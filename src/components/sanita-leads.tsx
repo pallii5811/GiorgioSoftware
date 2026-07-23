@@ -549,14 +549,13 @@ export function SanitaLeads() {
   }
 
   const applyOutcomeCard = (outcome: OutcomeKey) => {
-    setFilters((prev) => ({
-      ...prev,
-      tab: outcome === "review" ? "review" : "run",
+    setFilters({
+      tab: "run",
       outcome,
       region: "ALL",
       city: "",
       query: "",
-    }))
+    })
   }
 
   const REVAL_STATUS_LABEL: Record<NonNullable<UiRow["revalStatus"]>, string> = {
