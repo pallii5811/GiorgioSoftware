@@ -23,6 +23,17 @@ export type ShadowResultRow = {
   appliedLive: false;
   frontierComplete: boolean | null;
   unresolvedRelevantNodes: number | null;
+  /** Contatti commerciali (dal result row o join live). */
+  website: string | null;
+  phone: string | null;
+  email: string | null;
+  pec: string | null;
+  piva: string | null;
+  category: string | null;
+  crmStatus: string | null;
+  notes: string | null;
+  /** URL PDF originale (anche se remoto 404). */
+  sourcePdfUrl: string | null;
 };
 
 export type CheckpointTerminal = {
@@ -90,12 +101,21 @@ export function evidenceUrlsFromText(evidence: string | null | undefined): strin
 
 /** Mappa un result-row v3 (file results/<id>.json) nella riga UI. */
 export function mapResultRow(row: Record<string, unknown>): ShadowResultRow {
-  const evidence = typeof row.fullEvidence === "string" ? row.fullEvidence : "";
+  const evidence =
+    (typeof row.fullEvidence === "string" && row.fullEvidence) ||
+    (typeof row.evidence === "string" && row.evidence) ||
+    "";
   const processingState =
     typeof row.processingState === "string" ? row.processingState : null;
   const contentHash = typeof row.contentHash === "string" ? row.contentHash : null;
+  const sourcePdfUrl =
+    (typeof row.sourcePdfUrl === "string" && row.sourcePdfUrl) ||
+    evidenceUrlsFromText(evidence)[0] ||
+    null;
+  const urls = evidenceUrlsFromText(evidence);
+  if (sourcePdfUrl && !urls.includes(sourcePdfUrl)) urls.unshift(sourcePdfUrl);
   return {
-    leadId: String(row.id || ""),
+    leadId: String(row.id || row.leadId || ""),
     companyName: (row.companyName as string) ?? null,
     city: (row.city as string) ?? null,
     region: (row.region as string) ?? null,
@@ -107,12 +127,21 @@ export function mapResultRow(row: Record<string, unknown>): ShadowResultRow {
     policyExpiry: (row.policyExpiry as string) ?? null,
     policyFound: typeof row.policyFound === "boolean" ? row.policyFound : null,
     evidence,
-    evidenceUrls: evidenceUrlsFromText(evidence),
+    evidenceUrls: urls.slice(0, 6),
     pdfHash: contentHash && /^[0-9a-f]{64}$/i.test(contentHash) ? contentHash : null,
-    completedAt: (row.finishedAt as string) ?? null,
+    completedAt: (row.finishedAt as string) ?? (row.completedAt as string) ?? null,
     appliedLive: false,
     frontierComplete: typeof row.crawlComplete === "boolean" ? row.crawlComplete : null,
     unresolvedRelevantNodes: unresolvedFromEvidence(evidence),
+    website: (row.website as string) ?? null,
+    phone: (row.phone as string) ?? null,
+    email: (row.email as string) ?? null,
+    pec: (row.pec as string) ?? null,
+    piva: (row.piva as string) ?? null,
+    category: (row.category as string) ?? null,
+    crmStatus: (row.crmStatus as string) ?? (row.status as string) ?? null,
+    notes: (row.notes as string) ?? null,
+    sourcePdfUrl,
   };
 }
 
@@ -141,6 +170,15 @@ export function mapCheckpointOnly(
     appliedLive: false,
     frontierComplete: null,
     unresolvedRelevantNodes: null,
+    website: null,
+    phone: null,
+    email: null,
+    pec: null,
+    piva: null,
+    category: null,
+    crmStatus: null,
+    notes: null,
+    sourcePdfUrl: null,
   };
 }
 

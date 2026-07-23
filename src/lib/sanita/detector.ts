@@ -9,6 +9,11 @@
  * sul linguaggio normativo/assicurativo italiano.
  */
 
+import {
+  extractSchedaPolizzaFields,
+  stripQuietanzaDates,
+} from "./policy-scheda-extract";
+
 export interface PolicyAnalysis {
   policyFound: boolean;
   confidence: number; // 0..1
@@ -294,6 +299,15 @@ function policyFocusText(text: string): string {
 }
 
 function findExpiry(text: string): Date | null {
+  // Preferenza esplicita: "Scade alle ore 24 del …" (mai quietanza).
+  const scade24 = text.match(
+    /scade\s+alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/i
+  );
+  if (scade24?.[1]) {
+    const d = parseItalianDate(scade24[1]);
+    if (d) return d;
+  }
+
   const appendixRenewal = text.match(
     /appendice\s+di\s+rinnovo[\s\S]{0,220}?fino\s+alle\s+ore\s+24\s+del\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4})/i
   );
@@ -380,6 +394,7 @@ function findPolicyNumber(text: string): string | null {
     /numero\s+(?:della\s+)?pratica\s+(?:[éeè]\s*:?\s*)?(\d{6,12})/i,
     /codice\s+polizza\s+(\d{6,12})/i,
     /N\.?\s*Polizza\s+RCT\/O\s+([A-Z0-9_]+)/i,
+    /\b(RCI[0-9]{8,})\b/i,
     /\b(\d{4}RCG\d+)\b/i,
     /\b(RCH\d{9,})\b/i,
     /polizza\s+n[°º.]?\s*([A-Z0-9][A-Z0-9_./-]{4,})/i,
@@ -578,8 +593,17 @@ export function analyzePolicy(text: string, url?: string): PolicyAnalysis {
 
   const insurer = findInsurer(focus) ?? findInsurer(clean);
   const massimale = findMassimale(focus) ?? findMassimale(clean);
-  const expiry = findExpiry(focus) ?? findExpiry(clean);
-  const policyNumber = sanitizePolicyNumber(findPolicyNumber(focus) ?? findPolicyNumber(clean));
+  // Scheda di polizza (tabelle PDF): Scade-alle-ore-24 / Periodo assicurazione prima della quietanza.
+  const scheda = extractSchedaPolizzaFields(text);
+  const expiry =
+    scheda.expiry ??
+    findExpiry(stripQuietanzaDates(focus)) ??
+    findExpiry(stripQuietanzaDates(clean)) ??
+    findExpiry(focus) ??
+    findExpiry(clean);
+  const policyNumber = sanitizePolicyNumber(
+    scheda.policyNumber ?? findPolicyNumber(focus) ?? findPolicyNumber(clean)
+  );
   const selfInsured =
     countMatches(clean, SELF_INSURANCE) > 0 && !isAccountingOrBalanceSheetText(clean);
 
