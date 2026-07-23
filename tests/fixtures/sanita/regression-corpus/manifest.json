@@ -1,0 +1,135 @@
+{
+  "name": "sanita-regression-corpus-v1",
+  "gate": {
+    "positiveMustClassify100pct": true,
+    "falseHot": 0,
+    "falsePublished": 0,
+    "falseSelfInsurance": 0,
+    "hotWithIncompleteFrontier": 0
+  },
+  "cases": [
+    {
+      "id": "policy-valid",
+      "file": "01-policy-valid.txt",
+      "expect": "PUBLISHED_CURRENT",
+      "facilityWebsite": "https://www.fixture-valid.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "policy-expired",
+      "file": "02-policy-expired.txt",
+      "expect": "PUBLISHED_EXPIRED",
+      "facilityWebsite": "https://www.fixture-expired.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "date-unknown",
+      "file": "03-date-unknown.txt",
+      "expect": "PUBLISHED_DATE_UNKNOWN",
+      "facilityWebsite": "https://www.fixture-dateunk.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "self-insurance-explicit",
+      "file": "04-self-insurance-explicit.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.malzoni.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "gestione-diretta",
+      "file": "05-gestione-diretta.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.fixture-gdiretta.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "autoritenzione",
+      "file": "06-autoritenzione.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.fixture-ritenzione.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "fondo-rischi",
+      "file": "07-fondo-rischi.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.fixture-fondo.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "parm-no-posizione",
+      "file": "08-parm-no-posizione.txt",
+      "expect": "NOT_SELF_INSURANCE",
+      "facilityWebsite": "https://www.fixture-parmonly.it",
+      "entityAttributed": true,
+      "firstParty": true,
+      "allowAnalogousOrIncomplete": true
+    },
+    {
+      "id": "pdf-digital",
+      "file": "09-pdf-digital.txt",
+      "expect": "PUBLISHED_CURRENT",
+      "facilityWebsite": "https://www.fixture-digital.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "pdf-ocr-noisy",
+      "file": "10-pdf-ocr-noisy.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.malzoni.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "group-first-party",
+      "file": "11-group-first-party.txt",
+      "expect": "SELF_INSURANCE_VERIFIED",
+      "facilityWebsite": "https://www.malzonicenter.com",
+      "entityAttributed": true,
+      "firstParty": true,
+      "sourceClass": "FIRST_PARTY_GROUP",
+      "groupSeatVerified": true
+    },
+    {
+      "id": "other-facility-doc",
+      "file": "12-other-facility-doc.txt",
+      "expect": "REJECT_ATTRIBUTION",
+      "facilityWebsite": "https://www.struttura-a.it",
+      "entityAttributed": false,
+      "firstParty": true
+    },
+    {
+      "id": "ocr-noisy-generic",
+      "file": "13-ocr-noisy-generic.txt",
+      "expect": "NOT_SELF_INSURANCE",
+      "facilityWebsite": "https://www.fixture-noise.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "hot-frontier-complete",
+      "file": "14-hot-ready.txt",
+      "expect": "HOT_ELIGIBLE_SIGNAL",
+      "facilityWebsite": "https://www.fixture-hotok.it",
+      "entityAttributed": true,
+      "firstParty": true
+    },
+    {
+      "id": "hot-unresolved-node",
+      "file": "15-hot-blocked-frontier.txt",
+      "expect": "HOT_BLOCKED_FRONTIER",
+      "facilityWebsite": "https://www.fixture-hotblock.it",
+      "entityAttributed": true,
+      "firstParty": true
+    }
+  ]
+}

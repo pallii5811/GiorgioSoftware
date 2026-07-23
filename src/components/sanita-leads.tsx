@@ -77,7 +77,7 @@ type ShadowResult = {
   region: string | null
   processingState: string | null
   businessVerdict: string | null
-  publishedSubtype: "policy_valid" | "policy_expired" | "date_unknown" | null
+  publishedSubtype: "policy_valid" | "policy_expired" | "date_unknown" | "self_insurance" | null
   policyCompany: string | null
   policyNumber: string | null
   policyExpiry: string | null
@@ -135,7 +135,7 @@ type RevalidationControlState = {
 // ---------------------------------------------------------------------------
 
 type TabKey = "run" | "live" | "review" | "archive"
-type OutcomeKey = "ALL" | "policy_valid" | "policy_expired" | "date_unknown" | "hot" | "review"
+type OutcomeKey = "ALL" | "policy_valid" | "policy_expired" | "date_unknown" | "self_insurance" | "hot" | "review"
 type RegionKey = "ALL" | "Campania" | "Veneto"
 
 type Filters = {
@@ -160,7 +160,7 @@ function readFiltersFromUrl(): Filters {
     city: sp.get("city") || "",
     outcome:
       outcome === "policy_valid" || outcome === "policy_expired" || outcome === "date_unknown" ||
-      outcome === "hot" || outcome === "review"
+      outcome === "self_insurance" || outcome === "hot" || outcome === "review"
         ? outcome
         : "ALL",
     query: sp.get("q") || "",
@@ -205,6 +205,7 @@ const OUTCOME_META: Record<UiOutcome, { label: string; cls: string; icon: typeof
   policy_valid: { label: "Polizza valida", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: ShieldCheck },
   policy_expired: { label: "Polizza scaduta", cls: "bg-red-50 text-red-700 border-red-200", icon: ShieldAlert },
   date_unknown: { label: "Scadenza sconosciuta", cls: "bg-slate-100 text-slate-700 border-slate-200", icon: HelpCircle },
+  self_insurance: { label: "Autoassicurazione dichiarata", cls: "bg-teal-50 text-teal-800 border-teal-200", icon: ShieldCheck },
   hot: { label: "HOT verificato", cls: "bg-sky-50 text-sky-800 border-sky-200", icon: ShieldAlert },
   review: { label: "Da controllare", cls: "bg-amber-50 text-amber-800 border-amber-200", icon: ShieldQuestion },
   pending: { label: "In lavorazione", cls: "bg-gray-50 text-gray-600 border-gray-200", icon: Clock },
@@ -214,6 +215,7 @@ function liveOutcome(l: Lead): UiOutcome {
   const ps = readProcessingState(l.evidence) || l.semantic?.processingState
   const bv = readBusinessVerdict(l.evidence) || l.semantic?.businessVerdict
   if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") return "policy_valid"
+  if (ps === "SELF_INSURANCE_VERIFIED" || bv === "SELF_INSURANCE_VERIFIED") return "self_insurance"
   if (ps === "PUBLISHED_ANALOGOUS_MEASURE" || bv === "PUBLISHED_ANALOGOUS_MEASURE") return "policy_valid"
   if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") return "policy_expired"
   if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") return "date_unknown"
@@ -258,11 +260,13 @@ function liveToRow(l: Lead): UiRow {
 function shadowToRow(s: ShadowResult): UiRow {
   const outcome: UiOutcome =
     s.publishedSubtype ??
-    (s.processingState === "HOT_VERIFIED"
-      ? "hot"
-      : s.processingState === "REVIEW_HUMAN"
-        ? "review"
-        : "pending")
+    (s.processingState === "SELF_INSURANCE_VERIFIED"
+      ? "self_insurance"
+      : s.processingState === "HOT_VERIFIED"
+        ? "hot"
+        : s.processingState === "REVIEW_HUMAN"
+          ? "review"
+          : "pending")
   return {
     id: s.leadId,
     companyName: s.companyName || s.leadId,
@@ -296,6 +300,7 @@ const OUTCOME_OPTIONS: { key: OutcomeKey; label: string }[] = [
   { key: "policy_valid", label: "Polizza valida" },
   { key: "policy_expired", label: "Polizza scaduta" },
   { key: "date_unknown", label: "Scadenza sconosciuta" },
+  { key: "self_insurance", label: "Autoassicurata" },
   { key: "hot", label: "HOT verificato" },
   { key: "review", label: "Da controllare" },
 ]
@@ -472,7 +477,7 @@ export function SanitaLeads() {
   }, [filters, runResults, reviewResults, liveLeads])
 
   const exportCsv = () => {
-    const CERTIFIED = new Set(["policy_valid", "policy_expired", "date_unknown", "hot"])
+    const CERTIFIED = new Set(["policy_valid", "policy_expired", "date_unknown", "self_insurance", "hot"])
     const rows = tabRows.filter((r) => CERTIFIED.has(r.outcome))
     downloadCsv(
       `sanita-${filters.tab}-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -851,6 +856,11 @@ export function SanitaLeads() {
                 <Badge variant="outline" className={cn("gap-1", OUTCOME_META[shadowToRow(shadowDetail).outcome].cls)}>
                   {OUTCOME_META[shadowToRow(shadowDetail).outcome].label}
                 </Badge>
+                {shadowDetail.processingState === "SELF_INSURANCE_VERIFIED" && (
+                  <span className="text-xs text-muted-foreground">
+                    Gestione diretta del rischio — documento ufficiale
+                  </span>
+                )}
                 <Badge variant="outline">{shadowDetail.processingState || "—"}</Badge>
                 {shadowDetail.pdfHash && (
                   <Badge variant="outline" title={shadowDetail.pdfHash}>

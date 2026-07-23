@@ -5,8 +5,8 @@ from pathlib import Path
 cp = json.load(open("/opt/leadsniper-revalidate/data/revalidation/checkpoint.json"))
 ids = "cmqkld5rk009b108ekvol7g87,cmql4qrif000yc9w74e0tmpqt,cmql4d399000uc9w7yzw2dgac,cmqktyimz000i111hygme29nh,cmqklex5q00bh108eq9blm01k,cmql4d38u000kc9w7ng9zvakw,cmqkld5rt009m108ejllpw8nz,cmqmaor4t00389g5c2iuoauuw,cmqp7cqya00011q5bkqf3ox8q,cmqoe7vww004aaa3v67rkgl4e".split(",")
 rd = Path("/opt/leadsniper-revalidate/data/revalidation/results")
-strict = {"PUBLISHED_CURRENT", "PUBLISHED_EXPIRED", "PUBLISHED_DATE_UNKNOWN", "HOT_VERIFIED"}
-comm = strict | {"PUBLISHED_ANALOGOUS_MEASURE"}
+strict = {"PUBLISHED_CURRENT", "PUBLISHED_EXPIRED", "PUBLISHED_DATE_UNKNOWN", "SELF_INSURANCE_VERIFIED", "HOT_VERIFIED"}
+comm = strict  # ANALOGOUS escluso dal numeratore commerciale
 
 print("id\tstate\treason\tpolicy\twall\tcompany")
 for i in ids:

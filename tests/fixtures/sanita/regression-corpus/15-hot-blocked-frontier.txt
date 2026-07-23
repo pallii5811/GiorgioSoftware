@@ -1,0 +1,5 @@
+Candidato HOT bloccato — nodo rilevante irrisolto.
+URL: https://www.fixture-hotblock.it/trasparenza/
+PDF in coda non letto: /docs/polizza-sospetta.pdf
+frontier: OPEN unresolvedRelevantNodes=1
+Nessuna dichiarazione Art.10 di copertura diretta.

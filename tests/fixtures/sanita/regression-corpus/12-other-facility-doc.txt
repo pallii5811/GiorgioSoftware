@@ -1,0 +1,5 @@
+Documento attribuito a Clinica Altra Struttura S.p.A. (non alla sede target)
+URL: https://www.altra-struttura.it/trasparenza/pars.pdf
+3. Descrizione della posizione assicurativa
+Opera sotto il regime di autoassicurazione.
+Target facility: Struttura A S.r.l. — entityAttributed=false

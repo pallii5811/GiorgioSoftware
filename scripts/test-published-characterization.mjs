@@ -7,6 +7,7 @@ import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { canEmitPublished, detectInsuranceSignals } from "../src/lib/sanita/can-emit-published.ts";
 import { classifyFetchedAgainstFacility } from "../src/lib/sanita/source-class.ts";
 import { derivePublishedSubtype } from "../src/lib/sanita/published-subtype.ts";
+import { detectSelfInsuranceDeclaration } from "../src/lib/sanita/self-insurance.ts";
 
 const start = Date.now();
 let pass = 0;
@@ -53,7 +54,9 @@ for (const f of manifest.fixtures) {
     hasMediumInsuranceSignals: sig.mediumCount,
     policyObsolete: a.policyObsolete,
     hasCoverageEnd: Boolean(a.expiry) || /scadenza/i.test(text),
-    analogousMeasure: /autoassicuraz|misura analoga|gestione diretta/i.test(text),
+    analogousMeasure:
+      /misura\s+analoga/i.test(text) && !detectSelfInsuranceDeclaration(text).declared,
+    selfInsurance: detectSelfInsuranceDeclaration(text).declared,
     category: "Casa di cura",
   });
   ok(decision.ok, `${f.id} canEmitPublished (${decision.reasons.join("; ")})`);
@@ -61,14 +64,18 @@ for (const f of manifest.fixtures) {
     const mapped =
       decision.businessVerdict === "PUBLISHED_ANALOGOUS_MEASURE"
         ? "PUBLISHED_ANALOGOUS_MEASURE"
-        : derivePublishedSubtype({
-            policyObsolete: a.policyObsolete,
-            policyExpiry: a.expiry,
-            policyCompany: a.company,
-            policyNumber: a.policyNumber,
-            analogousMeasure: /autoassicuraz|misura analoga/i.test(text),
-            evidenceBody: text,
-          });
+        : decision.businessVerdict === "SELF_INSURANCE_VERIFIED"
+          ? "SELF_INSURANCE_VERIFIED"
+          : derivePublishedSubtype({
+              policyObsolete: a.policyObsolete,
+              policyExpiry: a.expiry,
+              policyCompany: a.company,
+              policyNumber: a.policyNumber,
+              analogousMeasure:
+                /misura\s+analoga/i.test(text) && !detectSelfInsuranceDeclaration(text).declared,
+              selfInsurance: detectSelfInsuranceDeclaration(text).declared,
+              evidenceBody: text,
+            });
     ok(
       decision.businessVerdict === f.expectSubtype || mapped === f.expectSubtype,
       `${f.id} subtype expect ${f.expectSubtype} got bv=${decision.businessVerdict} mapped=${mapped}`

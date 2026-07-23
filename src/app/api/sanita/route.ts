@@ -37,6 +37,7 @@ function buildSanitaAuditKpis(
     PUBLISHED_DATE_UNKNOWN: 0,
     PUBLISHED_INCOMPLETE: 0,
     PUBLISHED_ANALOGOUS_MEASURE: 0,
+    SELF_INSURANCE_VERIFIED: 0,
     RETRY_PENDING: 0,
     REVIEW_HUMAN: 0,
     TECHNICAL_BLOCKED: 0,
@@ -48,6 +49,7 @@ function buildSanitaAuditKpis(
       policyValid: 0,
       policyExpired: 0,
       dateUnknown: 0,
+      selfInsurance: 0,
       absenceCertified: 0,
     },
   };
@@ -57,7 +59,9 @@ function buildSanitaAuditKpis(
     const ps = readProcessingState(l.evidence);
     const bv = readBusinessVerdict(l.evidence);
     if (ps === "HOT_VERIFIED") k.HOT_VERIFIED++;
-    else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.PUBLISHED_CURRENT++;
+    else if (ps === "SELF_INSURANCE_VERIFIED" || bv === "SELF_INSURANCE_VERIFIED") {
+      k.SELF_INSURANCE_VERIFIED++;
+    } else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.PUBLISHED_CURRENT++;
     else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") k.PUBLISHED_EXPIRED++;
     else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") k.PUBLISHED_DATE_UNKNOWN++;
     else if (ps === "PUBLISHED_INCOMPLETE" || bv === "PUBLISHED_INCOMPLETE") k.PUBLISHED_INCOMPLETE++;
@@ -80,10 +84,12 @@ function buildSanitaAuditKpis(
       k.inRevalidation++;
     }
 
-    // Solo lead certificati/vendibili — le 4 voci devono sommare ad actionable
+    // Solo lead certificati/vendibili — voci commerciali (include autoassicurazione)
     if (actionable) {
       if (ps === "HOT_VERIFIED") k.commercial.absenceCertified++;
-      else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.commercial.policyValid++;
+      else if (ps === "SELF_INSURANCE_VERIFIED" || bv === "SELF_INSURANCE_VERIFIED") {
+        k.commercial.selfInsurance++;
+      } else if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") k.commercial.policyValid++;
       else if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") k.commercial.policyExpired++;
       else if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") k.commercial.dateUnknown++;
       else if (

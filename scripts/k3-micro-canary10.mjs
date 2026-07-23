@@ -283,7 +283,16 @@ const techTerminal = Object.values(final.terminal).filter((t) => t.processingSta
 const auditViolations = Object.values(state.audits).reduce((acc, a) => acc + a.violations.length, 0);
 
 // Gate demo: 8/10 completati (terminali), 0 falsi, 0 tech terminali
-const completedCommercial = Object.keys(final.terminal).filter((id) => { const st = final.terminal[id].processingState; return st.startsWith("PUBLISHED") || st === "HOT_VERIFIED"; }).length;
+const completedCommercial = Object.keys(final.terminal).filter((id) => {
+  const st = final.terminal[id].processingState;
+  return (
+    st === "PUBLISHED_CURRENT" ||
+    st === "PUBLISHED_EXPIRED" ||
+    st === "PUBLISHED_DATE_UNKNOWN" ||
+    st === "SELF_INSURANCE_VERIFIED" ||
+    st === "HOT_VERIFIED"
+  );
+}).length;
 final.gate = {
   handled10: handled === 10,
   completedCommercial,
