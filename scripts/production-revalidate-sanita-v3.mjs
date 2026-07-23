@@ -410,16 +410,23 @@ async function processLeadId(leadId) {
     return;
   }
   // Resume prior frontier when retrying PDF/crawl incompleteness — createCrawlRun resumes by runId.
+  // RC-09 — never reuse a frontier that already hit URL/time/CRAWL_CAP: resume would
+  // re-emit CRAWL_CAP in seconds without re-crawling (observed wallMs≈32s on Formosa).
   const prevRetry = cp.retryQueue[leadId];
+  const prevReason = String(prevRetry?.lastReason || prevRetry?.lastError || "");
+  const capBlocked = /CRAWL_CAP|URL_CAP|RUN_WALL_CLOCK|LEAD_WALL_TIMEOUT|TIME_CAP/i.test(prevReason);
   const reuse =
+    !capBlocked &&
     prevRetry?.frontierPath &&
     prevRetry?.lastRunId &&
     fs.existsSync(prevRetry.frontierPath) &&
-    !String(prevRetry.lastReason || "").includes("IDENTITY");
+    !prevReason.includes("IDENTITY");
   const runId = reuse ? prevRetry.lastRunId : `reval-p1-${leadId}-${Date.now()}`;
   const frontierPath = reuse ? prevRetry.frontierPath : path.join(FRONTIER_DIR, `${runId}.sqlite`);
   if (reuse) {
     console.log(JSON.stringify({ event: "frontier_resume", id: leadId, runId, frontierPath }));
+  } else if (capBlocked) {
+    console.log(JSON.stringify({ event: "frontier_fresh_after_cap", id: leadId, prevReason }));
   }
   const outPath = path.join(RESULTS_DIR, `${leadId}.json`);
   const tmpOut = path.join(RESULTS_DIR, `${leadId}.p1.json`);

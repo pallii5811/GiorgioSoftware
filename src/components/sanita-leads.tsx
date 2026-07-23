@@ -214,6 +214,7 @@ function liveOutcome(l: Lead): UiOutcome {
   const ps = readProcessingState(l.evidence) || l.semantic?.processingState
   const bv = readBusinessVerdict(l.evidence) || l.semantic?.businessVerdict
   if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") return "policy_valid"
+  if (ps === "PUBLISHED_ANALOGOUS_MEASURE" || bv === "PUBLISHED_ANALOGOUS_MEASURE") return "policy_valid"
   if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") return "policy_expired"
   if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") return "date_unknown"
   if (ps === "HOT_VERIFIED" || bv === "HOT_VERIFIED") return "hot"
@@ -284,9 +285,9 @@ function shadowToRow(s: ShadowResult): UiRow {
 // ---------------------------------------------------------------------------
 
 const TABS: { key: TabKey; label: string; testid: string }[] = [
-  { key: "run", label: "Nuovi risultati del run", testid: "tab-run-results" },
-  { key: "live", label: "Coda commerciale live", testid: "tab-live-queue" },
-  { key: "review", label: "Da controllare", testid: "tab-review" },
+  { key: "run", label: "Nuovi risultati", testid: "tab-run-results" },
+  { key: "live", label: "Tutti i certificati", testid: "tab-live-queue" },
+  { key: "review", label: "In lavorazione", testid: "tab-review" },
   { key: "archive", label: "Archivio completo", testid: "tab-archive" },
 ]
 
@@ -396,7 +397,7 @@ export function SanitaLeads() {
   const fetchReviewResults = useCallback(async () => {
     try {
       const res = await fetch(
-        "/api/sanita/archive-revalidation/results?scope=all&outcome=REVIEW_HUMAN",
+        "/api/sanita/archive-revalidation/results?scope=working&limit=500",
         { cache: "no-store" }
       )
       const json = await res.json()
@@ -471,9 +472,11 @@ export function SanitaLeads() {
   }, [filters, runResults, reviewResults, liveLeads])
 
   const exportCsv = () => {
+    const CERTIFIED = new Set(["policy_valid", "policy_expired", "date_unknown", "hot"])
+    const rows = tabRows.filter((r) => CERTIFIED.has(r.outcome))
     downloadCsv(
       `sanita-${filters.tab}-${new Date().toISOString().slice(0, 10)}.csv`,
-      tabRows.map((r) => ({
+      rows.map((r) => ({
         Struttura: r.companyName,
         Città: r.city || "",
         Regione: r.region || "",

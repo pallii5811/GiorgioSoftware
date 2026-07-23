@@ -46,6 +46,7 @@ export function publishedSubtypeOf(
 ): ShadowResultRow["publishedSubtype"] {
   switch (processingState) {
     case "PUBLISHED_CURRENT":
+    case "PUBLISHED_ANALOGOUS_MEASURE":
       return "policy_valid";
     case "PUBLISHED_EXPIRED":
       return "policy_expired";

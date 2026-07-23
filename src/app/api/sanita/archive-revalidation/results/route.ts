@@ -65,7 +65,9 @@ function readLocalResults(req: NextRequest) {
   const runLabel = currentRun?.label || null;
 
   const sp = req.nextUrl.searchParams;
-  const scope = sp.get("scope") === "all" ? "all" : "run";
+  const scopeRaw = sp.get("scope");
+  const scope =
+    scopeRaw === "all" || scopeRaw === "working" ? scopeRaw : "run";
   const limit = Math.min(2000, Math.max(1, Number(sp.get("limit")) || 500));
   const filter = {
     region: sp.get("region"),
@@ -74,11 +76,15 @@ function readLocalResults(req: NextRequest) {
     q: sp.get("q"),
   };
 
-  const ids = new Set<string>([
-    ...Object.keys(cp.terminal || {}),
-    ...Object.keys(cp.retryQueue || {}),
-    ...Object.keys(cp.inProgress || {}),
-  ]);
+  const ids = new Set<string>(
+    scope === "working"
+      ? [...Object.keys(cp.retryQueue || {}), ...Object.keys(cp.inProgress || {})]
+      : [
+          ...Object.keys(cp.terminal || {}),
+          ...Object.keys(cp.retryQueue || {}),
+          ...Object.keys(cp.inProgress || {}),
+        ]
+  );
 
   const rows: ShadowResultRow[] = [];
   for (const id of ids) {
@@ -91,7 +97,12 @@ function readLocalResults(req: NextRequest) {
   }
 
   const runTotal = rows.filter((r) => inRunScope(r.completedAt, runStartedAt)).length;
-  let out = scope === "run" ? rows.filter((r) => inRunScope(r.completedAt, runStartedAt)) : rows;
+  let out =
+    scope === "run"
+      ? rows.filter((r) => inRunScope(r.completedAt, runStartedAt))
+      : scope === "working"
+        ? rows
+        : rows;
   out = applyFilters(out, filter);
   out = sortResults(out).slice(0, limit);
 
