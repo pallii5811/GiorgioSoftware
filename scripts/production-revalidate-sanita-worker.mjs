@@ -366,8 +366,23 @@ if (error) {
   } else if (/PDF non processati/i.test(evidence)) reasonCode = "PDF_UNPROCESSED";
   else if (/cap URL|cap tempo|URL_CAP|RUN_WALL_CLOCK/i.test(evidence)) reasonCode = "CRAWL_CAP";
   else if (/sitemap|ROBOTS_REFERENCED_FAILED|DISCOVERED_FAILED/i.test(evidence)) reasonCode = "SITEMAP_UNRESOLVED";
-  else if (/coda HTML non esaurita|link rilevanti non tutti/i.test(evidence)) reasonCode = "FRONTIER_INCOMPLETE";
-  else if (
+  else if (/coda HTML non esaurita|link rilevanti non tutti/i.test(evidence)) {
+    // p=0 + failed relevant only: honest REVIEW — not infinite FRONTIER_INCOMPLETE retry.
+    const open = evidence.match(/\[FRONTIER:OPEN,p=(\d+),f=(\d+)/i);
+    const p = open ? Number(open[1]) : -1;
+    const f = open ? Number(open[2]) : -1;
+    if (
+      p === 0 &&
+      f >= 1 &&
+      /Assenza polizza certificata/i.test(evidence) &&
+      /IDENTITY:OFFICIAL/i.test(evidence)
+    ) {
+      finalState = "REVIEW_HUMAN";
+      reasonCode = "RELEVANT_URL_FAILED_EXHAUSTED";
+    } else {
+      reasonCode = "FRONTIER_INCOMPLETE";
+    }
+  } else if (
     /\[CRAWL_COMPLETE:true\]/i.test(evidence) &&
     /Assenza polizza certificata/i.test(evidence) &&
     /IDENTITY:OFFICIAL/i.test(evidence)
