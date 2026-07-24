@@ -29,7 +29,12 @@ import {
 } from "@/lib/sanita/identity-evidence";
 import { appendVersionMarker, currentMarkers } from "@/lib/sanita/evidence-version";
 import { validateSiteIdentity } from "@/lib/sanita/site-identity";
-import { detectSelfInsuranceDeclaration, resolveSelfInsuranceSignal } from "@/lib/sanita/self-insurance";
+import {
+  detectSelfInsuranceDeclaration,
+  resolveSelfInsuranceSignal,
+  shouldPromoteSelfInsuranceVerified,
+  isSelfInsuranceFirstPartyDocument,
+} from "@/lib/sanita/self-insurance";
 
 function ocrTechReason(crawlError: string | null | undefined, stopReason: string | null | undefined): string {
   const blob = `${crawlError || ""} ${stopReason || ""}`;
@@ -68,7 +73,9 @@ import {
 import {
   extractDocumentEntityFingerprint,
   buildFacilityFingerprint,
+  canAttributeEntity,
 } from "@/lib/sanita/entity-fingerprint";
+import { classifyFetchedAgainstFacility } from "@/lib/sanita/source-class";
 import {
   buildFrontierFromCrawl,
   stampFrontierSummary,
@@ -912,27 +919,94 @@ export async function analyzeLead(
       }
       verdict = gatewayDecision.legacyVerdict;
     } else if (verdict === "HOT") {
-      // "non ha sottoscritto alcuna polizza" + autoassicurazione → NON è HOT.
-      const hotBlockSelf = detectSelfInsuranceDeclaration(corpus);
-      if (hotBlockSelf.blocksHotAbsence && hotBlockSelf.declared) {
-        verdict = "REVIEW";
-        humanConflict = true;
-        evidenceBody =
-          `Autoassicurazione dichiarata — non emettere HOT assenza. ${hotBlockSelf.citation || ""} ${evidenceBody}`.trim();
-      } else {
-        assertAtomicHotPersist(verdict, hotEvidence);
-        assertCompletenessInvariant(
-          finalCompleteness.complete,
-          frontier,
-          finalCompleteness.complete
-        );
-        gatewayDecision = prepareSanitaVerdictPersist({
-          legacyVerdict: "HOT",
-          evidenceBody,
-          hotEvidence,
+      // Autoassicurazione esplicita first-party → SELF_INSURANCE_VERIFIED (mai HOT, mai REVIEW se gate ok).
+      const docUrlSi =
+        crawl.pagesVisited.find(
+          (u) =>
+            /\.pdf(?:$|\?|#)/i.test(u) &&
+            /pars|parm|autoassic|assicuraz|polizz/i.test(u)
+        ) || policyUrl;
+      const docFpSi = extractDocumentEntityFingerprint(corpus, { title: docUrlSi }, docUrlSi);
+      const facFpSi = buildFacilityFingerprint({
+        companyName: lead.companyName,
+        city: lead.city,
+        phone,
+        piva: piva || lead.piva,
+        website,
+        groupSeatVerified: identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
+      });
+      const attrSi = canAttributeEntity(docFpSi, facFpSi);
+      const srcSi = classifyFetchedAgainstFacility({
+        pageUrl: docUrlSi || "",
+        facilityWebsite: website,
+      });
+      const firstPartySi =
+        srcSi === "FIRST_PARTY_FACILITY" ||
+        srcSi === "FIRST_PARTY_GROUP" ||
+        isSelfInsuranceFirstPartyDocument({
+          exactUrl: docUrlSi || "",
+          facilityWebsite: website,
+          facilityName: lead.companyName,
+          documentText: corpus,
         });
-        evidenceBody = gatewayDecision.evidenceBody;
+      const siPromo = shouldPromoteSelfInsuranceVerified({
+        text: corpus,
+        entityAttributed: attrSi.ok || firstPartySi,
+        firstPartyUrl: firstPartySi,
+        exactUrl: docUrlSi,
+        policyCompany: analysis.company,
+        identityConfirmed:
+          identityEv.status === "OFFICIAL_CONFIRMED" ||
+          identityEv.status === "GROUP_OFFICIAL_CONFIRMED",
+      });
+      if (siPromo.promote) {
+        const publishedEvidence = buildPublishedEmitEvidence({
+          identityStatus: identityEv.status,
+          pageUrl: docUrlSi,
+          facilityWebsite: website,
+          contentFetched: crawl.ok,
+          contentExcerpt: (siPromo.detection.citation || corpus).slice(0, 4000),
+          docFingerprint: docFpSi,
+          facilityFingerprint: facFpSi,
+          selfInsurance: true,
+          analogousMeasure: false,
+          category: lead.category,
+          sourceClassOverride: "FIRST_PARTY_FACILITY",
+        });
+        gatewayDecision = prepareSanitaVerdictPersist({
+          legacyVerdict: "PUBLISHED",
+          evidenceBody: `${evidenceBody} [SELF_INSURANCE_CITATION:${(siPromo.detection.citation || "").slice(0, 200)}]`.trim(),
+          publishedEvidence,
+        });
+        publishedSubtype = derivePublishedSubtype({
+          selfInsurance: true,
+          evidenceBody: gatewayDecision.evidenceBody,
+        });
+        evidenceBody = stampPublishedSubtype(gatewayDecision.evidenceBody, publishedSubtype);
         verdict = gatewayDecision.legacyVerdict;
+      } else {
+        const hotBlockSelf = detectSelfInsuranceDeclaration(corpus);
+        if (hotBlockSelf.blocksHotAbsence && hotBlockSelf.declared) {
+          // Dichiarazione presente ma gate SI incompleto → REVIEW (mai HOT).
+          verdict = "REVIEW";
+          humanConflict = true;
+          evidenceBody =
+            `Autoassicurazione non verificabile (gate: ${siPromo.reasons.join("; ") || "incomplete"}). ${hotBlockSelf.citation || ""} ${evidenceBody}`.trim();
+        } else {
+          assertAtomicHotPersist(verdict, hotEvidence);
+          assertCompletenessInvariant(
+            finalCompleteness.complete,
+            frontier,
+            finalCompleteness.complete
+          );
+          gatewayDecision = prepareSanitaVerdictPersist({
+            legacyVerdict: "HOT",
+            evidenceBody,
+            hotEvidence,
+          });
+          evidenceBody = gatewayDecision.evidenceBody;
+          verdict = gatewayDecision.legacyVerdict;
+        }
       }
     }
   } catch (e) {
@@ -955,7 +1029,12 @@ export async function analyzeLead(
     legacyVerdict: verdict,
     gatewayDecision,
     finProcessingHint: fin.processingHint,
-    ocrTechReason: ocrTech,
+    // SI verificata prevale su OCR_TIMEOUT residuo (documento già estratto).
+    ocrTechReason:
+      gatewayDecision?.businessVerdict === "SELF_INSURANCE_VERIFIED" ||
+      publishedSubtype === "SELF_INSURANCE_VERIFIED"
+        ? ""
+        : ocrTech,
     identityStatus: identityEv.status,
     finalComplete: finalCompleteness.complete,
     crawlOk: crawl.ok,
@@ -1444,16 +1523,66 @@ export async function analyzeRegional(
             validationStatus: "CONFLICT_FOUND",
           }
         );
-      } else if (detectSelfInsuranceDeclaration(evidenceBody).blocksHotAbsence) {
-        verdict = "REVIEW";
-        evidenceBody = stampProcessingMeta(
-          `Autoassicurazione dichiarata — non emettere HOT assenza. ${evidenceBody}`,
-          {
-            state: "REVIEW_HUMAN",
-            businessVerdict: "REVIEW_HUMAN",
-            validationStatus: "CONFLICT_FOUND",
-          }
-        );
+      } else if (detectSelfInsuranceDeclaration(evidenceBody).declared) {
+        const pageUrlSi = audit.policyPdfUrl || audit.policySourceUrl || website;
+        const selfInsReg = resolveSelfInsuranceSignal({
+          text: evidenceBody,
+          policyCompany: policyCompany,
+        });
+        const docFp = extractDocumentEntityFingerprint(evidenceBody, { title: pageUrlSi }, pageUrlSi);
+        const facFp = buildFacilityFingerprint({
+          companyName: lead.companyName,
+          city: lead.city,
+          phone,
+          piva,
+          website,
+        });
+        const attr = canAttributeEntity(docFp, facFp);
+        const firstParty = isSelfInsuranceFirstPartyDocument({
+          exactUrl: pageUrlSi || "",
+          facilityWebsite: website,
+          facilityName: lead.companyName,
+          documentText: evidenceBody,
+        });
+        const promo = shouldPromoteSelfInsuranceVerified({
+          text: evidenceBody,
+          entityAttributed: attr.ok || firstParty,
+          firstPartyUrl: firstParty,
+          exactUrl: pageUrlSi,
+          policyCompany,
+          identityConfirmed: regionalId.verified,
+        });
+        if (promo.promote) {
+          const publishedEvidence = buildPublishedEmitEvidence({
+            identityStatus: regionalId.status,
+            pageUrl: pageUrlSi,
+            facilityWebsite: website,
+            contentFetched: websiteReachable === true,
+            contentExcerpt: (promo.detection.citation || evidenceBody).slice(0, 4000),
+            docFingerprint: docFp,
+            facilityFingerprint: facFp,
+            selfInsurance: true,
+            category: lead.category,
+            sourceClassOverride: "FIRST_PARTY_FACILITY",
+          });
+          const prepared = prepareSanitaVerdictPersist({
+            legacyVerdict: "PUBLISHED",
+            evidenceBody: `${evidenceBody} [SELF_INSURANCE_CITATION:${(promo.detection.citation || "").slice(0, 200)}]`.trim(),
+            publishedEvidence,
+          });
+          evidenceBody = prepared.evidenceBody;
+          verdict = prepared.legacyVerdict;
+        } else {
+          verdict = "REVIEW";
+          evidenceBody = stampProcessingMeta(
+            `Autoassicurazione non verificabile (gate: ${promo.reasons.join("; ")}). ${evidenceBody}`,
+            {
+              state: "REVIEW_HUMAN",
+              businessVerdict: "REVIEW_HUMAN",
+              validationStatus: "CONFLICT_FOUND",
+            }
+          );
+        }
       } else {
       const hotEvidence = {
         website,

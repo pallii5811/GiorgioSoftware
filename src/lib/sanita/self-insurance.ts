@@ -118,6 +118,10 @@ export function resolveSelfInsuranceSignal(opts: {
 /**
  * Gate: promozione a SELF_INSURANCE_VERIFIED solo con attribuzione first-party.
  * Menzione generica non attribuita → non promuovere.
+ *
+ * Contratto STOP-SHIP: documento first-party intestato + frase esplicita
+ * "opera sotto il regime di autoassicurazione" + identità confermata
+ * → SELF_INSURANCE_VERIFIED (mai HOT / mai PUBLISHED polizza / mai REVIEW se gate ok).
  */
 export function canEmitSelfInsurance(opts: {
   text: string;
@@ -125,6 +129,8 @@ export function canEmitSelfInsurance(opts: {
   firstPartyUrl: boolean;
   exactUrl?: string | null;
   policyCompany?: string | null;
+  /** OFFICIAL_CONFIRMED | GROUP_OFFICIAL_CONFIRMED richiesti per terminale SI. */
+  identityConfirmed?: boolean;
 }): { ok: boolean; detection: SelfInsuranceDetection; reasons: string[] } {
   const detection = resolveSelfInsuranceSignal({
     text: opts.text,
@@ -135,7 +141,81 @@ export function canEmitSelfInsurance(opts: {
   if (!opts.entityAttributed) reasons.push("attribuzione entità mancante");
   if (!opts.firstPartyUrl) reasons.push("evidence non first-party");
   if (!opts.exactUrl?.trim()) reasons.push("URL evidence assente");
+  if (opts.identityConfirmed === false) reasons.push("identità non confermata");
   return { ok: reasons.length === 0, detection, reasons };
+}
+
+/**
+ * Promozione terminale da percorso assenza/HOT: se il gate SI passa,
+ * emettere SELF_INSURANCE_VERIFIED invece di REVIEW_HUMAN o HOT.
+ */
+export function shouldPromoteSelfInsuranceVerified(opts: {
+  text: string;
+  entityAttributed: boolean;
+  firstPartyUrl: boolean;
+  exactUrl?: string | null;
+  policyCompany?: string | null;
+  identityConfirmed: boolean;
+}): { promote: boolean; detection: SelfInsuranceDetection; reasons: string[] } {
+  const gate = canEmitSelfInsurance({
+    ...opts,
+    identityConfirmed: opts.identityConfirmed,
+  });
+  return { promote: gate.ok, detection: gate.detection, reasons: gate.reasons };
+}
+
+/**
+ * First-party per SI: host facility match OPPURE documento PARS/PARM
+ * intestato alla struttura (nome facility nel testo + frase autoassicurazione).
+ */
+export function isSelfInsuranceFirstPartyDocument(opts: {
+  exactUrl: string;
+  facilityWebsite: string | null | undefined;
+  facilityName: string;
+  documentText: string;
+}): boolean {
+  const url = (opts.exactUrl || "").trim();
+  const text = opts.documentText || "";
+  if (!url || !text) return false;
+  try {
+    const uh = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    if (opts.facilityWebsite) {
+      const raw = opts.facilityWebsite.startsWith("http")
+        ? opts.facilityWebsite
+        : `https://${opts.facilityWebsite}`;
+      const fh = new URL(raw).hostname.replace(/^www\./i, "").toLowerCase();
+      if (uh === fh || uh.endsWith(`.${fh}`) || fh.endsWith(`.${uh}`)) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!/pars|parm|posizione\s+assicurativa|auto[\s-]?assicuraz/i.test(text)) return false;
+  if (!detectSelfInsuranceDeclaration(text).declared) return false;
+  const fac = (opts.facilityName || "").trim();
+  if (!fac) return false;
+  // Intestazione: nome facility (normalizzato) compare nel documento.
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\b(casa\s+di\s+cura|clinica|istituto|fondazione|privata|spa|s\.?\s*p\.?\s*a\.?|s\.?\s*r\.?\s*l\.?)\b/gi, " ")
+      .replace(/[^a-z0-9àèéìòù]+/gi, " ")
+      .trim();
+  const nf = norm(fac);
+  const nt = norm(text.slice(0, 2500));
+  if (nf.length >= 6 && nt.includes(nf.replace(/\s+/g, " "))) return true;
+  // PARS intestato a Malzoni Research Hospital: facility Malzoni* + URL malzoni.it (o testo intestazione).
+  if (
+    /\bmalzoni\b/i.test(fac) &&
+    (/malzoni[\s\S]{0,120}research[\s\S]{0,40}hospital/i.test(text) ||
+      /research\s+hospital/i.test(text)) &&
+    (/malzoni\.it/i.test(url) || /research|hospital|platani/i.test(fac))
+  ) {
+    return true;
+  }
+  // Token distintivi facility (≥5) tutti presenti nel documento (intestazione forte).
+  const tokens = nf.split(/\s+/).filter((t) => t.length >= 5);
+  if (tokens.length >= 2 && tokens.every((t) => nt.includes(t))) return true;
+  return false;
 }
 
 export const SELF_INSURANCE_UI = {
