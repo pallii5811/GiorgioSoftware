@@ -395,15 +395,23 @@ function shadowToRow(s: ShadowResult, live?: Lead | null): UiRow {
   const email = pickContact(s.email, live?.email)
   const pec = pickContact(s.pec, live?.pec)
   const piva = pickContact(s.piva, live?.piva)
+  // Non mescolare compagnia/numero LIVE su HOT/REVIEW shadow: altrimenti
+  // Aias Nola HOT mostra "Autoassicurazione" legacy a fianco del badge HOT.
+  const blendLivePolicy =
+    outcome === "policy_valid" ||
+    outcome === "policy_expired" ||
+    outcome === "date_unknown" ||
+    outcome === "self_insurance" ||
+    outcome === "pending"
   return {
     id: s.leadId,
     companyName: s.companyName || live?.companyName || s.leadId,
     city: s.city || live?.city || null,
     region: s.region || live?.region || null,
     outcome,
-    policyCompany: s.policyCompany ?? live?.policyCompany ?? null,
-    policyNumber: s.policyNumber ?? live?.policyNumber ?? null,
-    policyExpiry: s.policyExpiry ?? live?.policyExpiry ?? null,
+    policyCompany: s.policyCompany ?? (blendLivePolicy ? live?.policyCompany ?? null : null),
+    policyNumber: s.policyNumber ?? (blendLivePolicy ? live?.policyNumber ?? null : null),
+    policyExpiry: s.policyExpiry ?? (blendLivePolicy ? live?.policyExpiry ?? null : null),
     evidenceUrls: s.evidenceUrls || [],
     completedAt: s.completedAt,
     processingState: s.processingState,
