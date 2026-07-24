@@ -364,6 +364,32 @@ export async function runCrawlSlice(opts: {
   if (demoted > 0) {
     heartbeatCrawlRun(crawlRunId, `relevance_demoted:${demoted}`);
   }
+  // Hard 404/410 already retried once → EXCLUDE (do not starve behind large QUEUED).
+  let excluded404 = 0;
+  for (const n of listNodes(crawlRunId)) {
+    if (n.state !== "RETRY_PENDING") continue;
+    const err = String(n.lastError || "");
+    if (!/^HTTP_404$|^HTTP_410$/i.test(err) && n.httpStatus !== 404 && n.httpStatus !== 410) continue;
+    if ((n.retryCount || 0) < 1) continue;
+    const decision = classifyTerminalMissingUrl({
+      status: (n.httpStatus === 410 ? 410 : 404) as 404 | 410,
+      discoverySource: n.discoverySource || "html-link",
+      retryCount: Math.max(n.retryCount || 0, 1),
+    });
+    try {
+      transitionFrontierNode(n.id, decision.state === "EXCLUDED" ? "EXCLUDED" : "TECHNICAL_BLOCKED", {
+        exclusionReason: decision.reasonCode,
+        lastError: decision.reasonCode,
+        httpStatus: n.httpStatus || 404,
+      });
+      excluded404++;
+    } catch {
+      /* */
+    }
+  }
+  if (excluded404 > 0) {
+    heartbeatCrawlRun(crawlRunId, `http404_excluded:${excluded404}`);
+  }
 
   heartbeatCrawlRun(crawlRunId, "slice_start");
 
