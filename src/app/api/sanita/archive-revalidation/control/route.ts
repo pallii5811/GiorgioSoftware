@@ -168,7 +168,9 @@ function engineEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
     base.PDFTOPPM_PATH = "/usr/bin/pdftoppm";
     base.DATABASE_URL = "file:/opt/leadsniper-revalidate/shadow-revalidate.db";
     base.TESSDATA_PREFIX = "/opt/leadsniper-revalidate/app/.tesseract-cache";
-    base.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/snap/bin/chromium";
+    base.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH =
+      "/snap/chromium/current/usr/lib/chromium-browser/chrome";
+    base.CHROMIUM_PATH = "/snap/chromium/current/usr/lib/chromium-browser/chrome";
   }
   return { ...process.env, ...base, ...extra };
 }

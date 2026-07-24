@@ -433,13 +433,14 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId, strategy
       PER_HOST_CONCURRENCY: process.env.PER_HOST_CONCURRENCY || "1",
       REVALIDATE_LEAD_WALL_MS: sliceWall,
       PDFTOPPM_PATH: process.env.PDFTOPPM_PATH || "/usr/bin/pdftoppm",
-      PATH:
-        process.env.PATH ||
-        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       TESSDATA_PREFIX:
         process.env.TESSDATA_PREFIX ||
         path.join(ROOT, ".tesseract-cache"),
       ...strategyEnv,
+      // Force real chrome binary AFTER strategyEnv — systemd often sets /snap/bin/chromium (snap launcher).
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:
+        "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+      CHROMIUM_PATH: "/snap/chromium/current/usr/lib/chromium-browser/chrome",
     };
     const child = spawn("npx", ["tsx", WORKER], {
       env,
@@ -786,8 +787,8 @@ async function processLeadId(leadId) {
     delete cp.inProgress[leadId];
     delete cp.retryQueue[leadId];
     const cls = classifyResult(finalRow);
-    recordOutcome(cls.kind === "terminal" ? "terminal" : "retry");
     if (cls.kind === "terminal") {
+      recordOutcome("terminal");
       cp.terminal[leadId] = {
         finishedAt: finalRow.finishedAt || new Date().toISOString(),
         processingState: cls.state,
@@ -804,43 +805,37 @@ async function processLeadId(leadId) {
     } else {
       const attempts = cp.attempts[leadId] || 1;
       const errCode = finalRow.reasonCode || finalRow.error || "RETRY_PENDING";
-      const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|LEAD_WALL|WORKER_SIGTERM|SITEMAP/i.test(
+      const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(
         String(errCode)
       );
-      // Ceiling: park with far backoff — NEVER auto TECHNICAL_BLOCKED.
-      // TB requires documented external proof (DNS/TLS/WAF/5xx/corrupt PDF/…).
-      // dueRetryIds() already excludes attempts >= MAX_RETRY_ATTEMPTS (no hot-loop).
-      if (attempts >= MAX_RETRY_ATTEMPTS) {
+      // Ceiling or non-slice leftovers → REVIEW_HUMAN (never park forever in retryQueue).
+      if (attempts >= MAX_RETRY_ATTEMPTS || !sliceContinue) {
         console.warn(
           JSON.stringify({
-            event: "retry_ceiling_parked_engine",
+            event: "retry_ceiling_review_human",
             id: leadId,
             attempts,
             maxRetry: MAX_RETRY_ATTEMPTS,
             lastReason: errCode,
-            note: "engine error parked — not TECHNICAL_BLOCKED without external proof",
+            note: "engine/incomplete ceiling → REVIEW_HUMAN (no retry park)",
           })
         );
-        cp.retryQueue[leadId] = {
-          attempts,
-          lastReason: errCode,
-          lastError: errCode,
-          nextRetryAt: new Date(Date.now() + 365 * 24 * 3600_000).toISOString(),
-          lastRunId: runId,
-          frontierPath,
-          strategy,
-          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
-          lastAttemptAt: new Date().toISOString(),
-          operational: true,
-          parkedEngineCeiling: true,
+        recordOutcome("terminal");
+        cp.terminal[leadId] = {
+          finishedAt: new Date().toISOString(),
+          processingState: "REVIEW_HUMAN",
+          newVerdict: "REVIEW",
+          reasonCode: String(errCode).slice(0, 200),
         };
-        cp.stats.retry++;
+        cp.stats.terminal++;
+        cp.stats.review++;
       } else {
+        recordOutcome("retry");
         cp.retryQueue[leadId] = {
           attempts,
           lastReason: errCode,
           lastError: errCode,
-          nextRetryAt: nextRetryAt(attempts, { sliceContinue }),
+          nextRetryAt: nextRetryAt(attempts, { sliceContinue: true, immediate: true, delayMs: 5_000 }),
           lastRunId: runId,
           frontierPath,
           strategy,
@@ -867,41 +862,24 @@ async function processLeadId(leadId) {
   } catch (e) {
     delete cp.inProgress[leadId];
     const attempts = cp.attempts[leadId] || 1;
-    if (attempts >= MAX_RETRY_ATTEMPTS) {
-      console.warn(
-        JSON.stringify({
-          event: "retry_ceiling_parked_engine",
-          id: leadId,
-          attempts,
-          lastReason: "PARENT_CATCH",
-        })
-      );
-      cp.retryQueue[leadId] = {
+    console.warn(
+      JSON.stringify({
+        event: "parent_catch_review_human",
+        id: leadId,
         attempts,
         lastReason: "PARENT_CATCH",
-        lastError: String(e),
-        nextRetryAt: new Date(Date.now() + 365 * 24 * 3600_000).toISOString(),
-        lastRunId: runId,
-        frontierPath,
-        firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
-        lastAttemptAt: new Date().toISOString(),
-        operational: true,
-        parkedEngineCeiling: true,
-      };
-      cp.stats.retry++;
-    } else {
-      cp.retryQueue[leadId] = {
-        attempts,
-        lastReason: "PARENT_CATCH",
-        lastError: String(e),
-        nextRetryAt: nextRetryAt(attempts),
-        lastRunId: runId,
-        frontierPath,
-        firstSeenAt: new Date().toISOString(),
-        lastAttemptAt: new Date().toISOString(),
-      };
-      cp.stats.errors++;
-    }
+      })
+    );
+    delete cp.retryQueue[leadId];
+    cp.terminal[leadId] = {
+      finishedAt: new Date().toISOString(),
+      processingState: "REVIEW_HUMAN",
+      newVerdict: "REVIEW",
+      reasonCode: `PARENT_CATCH:${String(e).slice(0, 160)}`,
+    };
+    cp.stats.terminal++;
+    cp.stats.review++;
+    cp.stats.errors++;
     saveCheckpointAtomic(CHECKPOINT, cp);
     console.error(JSON.stringify({ event: "lead_error", id: leadId, error: String(e) }));
   } finally {

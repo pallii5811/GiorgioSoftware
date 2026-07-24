@@ -11,10 +11,12 @@ import {
 const cases = [
   [{ processingState: "TECHNICAL_BLOCKED", reasonCode: "DNS_NXDOMAIN" }, "terminal"],
   [{ processingState: "RETRY_PENDING", reasonCode: "RETRY_EXHAUSTED_5:CRAWL_CAP" }, "retry"],
-  [{ processingState: "RETRY_PENDING", error: "LEAD_WALL_TIMEOUT_1800000ms" }, "retry"],
+  [{ processingState: "RETRY_PENDING", error: "LEAD_WALL_TIMEOUT_1800000ms" }, "terminal"],
   [{ processingState: "HOT_VERIFIED", newVerdict: "HOT", crawlComplete: true }, "terminal"],
   [{ processingState: "PUBLISHED_CURRENT", newVerdict: "PUBLISHED" }, "terminal"],
   [{ processingState: "REVIEW_HUMAN" }, "terminal"],
+  [{ processingState: "RETRY_PENDING", reasonCode: "ANALYZE_ERROR_OR_TIMEOUT" }, "terminal"],
+  [{ error: "browserType.launch: Executable doesn't exist" }, "terminal"],
 ];
 
 let fail = 0;
