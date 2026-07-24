@@ -247,7 +247,8 @@ function dueRetryIds() {
   const ids = Object.entries(cp.retryQueue)
     .filter(([, meta]) => {
       const attempts = Number(meta?.attempts || 0);
-      if (attempts >= MAX_RETRY_ATTEMPTS) return false;
+      // forceDue: explicit resume of parked engine-ceiling leads (preserve attempts history).
+      if (attempts >= MAX_RETRY_ATTEMPTS && !meta?.forceDue) return false;
       const t = new Date(meta.nextRetryAt || 0).getTime();
       return Number.isFinite(t) && t <= now;
     })

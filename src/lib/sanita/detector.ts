@@ -12,7 +12,7 @@
 import {
   extractSchedaPolizzaFields,
   stripQuietanzaDates,
-} from "./policy-scheda-extract";
+} from "./policy-scheda-extract.ts";
 
 export interface PolicyAnalysis {
   policyFound: boolean;
