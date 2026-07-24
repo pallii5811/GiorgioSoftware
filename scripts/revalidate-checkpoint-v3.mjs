@@ -52,11 +52,12 @@ export function isTerminalState(processingState) {
 
 export function classifyResult(row) {
   const ps = row.processingState || row.reasonCode || null;
+  const errBlob = `${row.error || ""} ${row.reasonCode || ""} ${ps || ""}`;
+
+  // Dual HOT disagreement is the rare certified conflict — not a crawl-incomplete dump.
   if (row.dualDisagreement) return { kind: "terminal", state: "REVIEW_HUMAN" };
-  // Client delivery: never park in retryQueue. Incomplete / engine / infra → REVIEW_HUMAN.
-  // Certified terminals still win below when processingState is already terminal.
+
   if (isTerminalState(ps)) return { kind: "terminal", state: ps };
-  // map token fallbacks
   if (row.newVerdict === "HOT" && row.crawlComplete && ps === "HOT_VERIFIED") {
     return { kind: "terminal", state: "HOT_VERIFIED" };
   }
@@ -64,12 +65,22 @@ export function classifyResult(row) {
     if (ps && isTerminalState(ps)) return { kind: "terminal", state: ps };
     return { kind: "terminal", state: ps || "PUBLISHED_DATE_UNKNOWN" };
   }
-  // TECHNICAL_BLOCKED only when worker/admin stamped it with external proof — never RETRY_EXHAUSTED shortcut.
   if (ps === "TECHNICAL_BLOCKED") {
     return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
   }
-  // Everything else (ANALYZE, LEAD_WALL, CRAWL_CAP, FRONTIER_INCOMPLETE, RETRY_PENDING, …) → REVIEW.
-  return { kind: "terminal", state: "REVIEW_HUMAN" };
+
+  // Truly unreachable site → technical terminal (NOT "Da controllare" dump).
+  if (
+    /DNS_NXDOMAIN|ENOTFOUND|ECONNREFUSED|CERT_|SSL_|TLS_|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|SITE_UNREACHABLE|HOST_UNREACHABLE/i.test(
+      errBlob
+    )
+  ) {
+    return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
+  }
+
+  // Incomplete crawl / slice / transient engine → CONTINUE (resume frontier), never REVIEW.
+  // HOT/PUBLISHED only after crawlComplete + evidence rules in the scan engine.
+  return { kind: "retry", state: "RETRY_PENDING" };
 }
 
 export function nextRetryAt(attempts, opts = {}) {

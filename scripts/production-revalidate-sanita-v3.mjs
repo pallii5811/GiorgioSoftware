@@ -803,26 +803,31 @@ async function processLeadId(leadId) {
       else if (cls.state === "TECHNICAL_BLOCKED") cp.stats.tech++;
       else cp.stats.review++;
     } else {
-      // Client zero-retry: never enqueue — incomplete/engine always REVIEW_HUMAN.
+      // Incomplete / transient → resume same frontier immediately (continue crawl to HOT/PUB).
+      // Do NOT dump to REVIEW_HUMAN. "Zero incomplete" = finish the scan, not hide it as review.
+      const attempts = cp.attempts[leadId] || 1;
       const errCode = finalRow.reasonCode || finalRow.error || "RETRY_PENDING";
-      console.warn(
-        JSON.stringify({
-          event: "non_terminal_to_review_human",
-          id: leadId,
-          attempts: cp.attempts[leadId] || 1,
-          lastReason: errCode,
-          note: "zero-retry policy — no retryQueue",
-        })
+      const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP|LEAD_WALL|ANALYZE_ERROR|WORKER_SIGTERM|OCR_/i.test(
+        String(errCode)
       );
-      recordOutcome("terminal");
-      cp.terminal[leadId] = {
-        finishedAt: new Date().toISOString(),
-        processingState: "REVIEW_HUMAN",
-        newVerdict: "REVIEW",
-        reasonCode: String(errCode).slice(0, 200),
+      recordOutcome("retry");
+      cp.retryQueue[leadId] = {
+        attempts,
+        lastReason: errCode,
+        lastError: errCode,
+        nextRetryAt: nextRetryAt(attempts, {
+          sliceContinue: true,
+          immediate: true,
+          delayMs: sliceContinue ? 3_000 : 8_000,
+        }),
+        lastRunId: runId,
+        frontierPath,
+        strategy: pickRetryStrategy(attempts, errCode, strategy),
+        firstSeenAt: new Date().toISOString(),
+        lastAttemptAt: new Date().toISOString(),
+        operational: true,
       };
-      cp.stats.terminal++;
-      cp.stats.review++;
+      cp.stats.retry++;
     }
     cp.stats.processed++;
     saveCheckpointAtomic(CHECKPOINT, cp);
@@ -842,21 +847,24 @@ async function processLeadId(leadId) {
     const attempts = cp.attempts[leadId] || 1;
     console.warn(
       JSON.stringify({
-        event: "parent_catch_review_human",
+        event: "parent_catch_resume",
         id: leadId,
         attempts,
         lastReason: "PARENT_CATCH",
       })
     );
-    delete cp.retryQueue[leadId];
-    cp.terminal[leadId] = {
-      finishedAt: new Date().toISOString(),
-      processingState: "REVIEW_HUMAN",
-      newVerdict: "REVIEW",
-      reasonCode: `PARENT_CATCH:${String(e).slice(0, 160)}`,
+    cp.retryQueue[leadId] = {
+      attempts,
+      lastReason: "PARENT_CATCH",
+      lastError: String(e).slice(0, 300),
+      nextRetryAt: nextRetryAt(attempts, { immediate: true, delayMs: 5_000 }),
+      lastRunId: runId,
+      frontierPath,
+      firstSeenAt: new Date().toISOString(),
+      lastAttemptAt: new Date().toISOString(),
+      operational: true,
     };
-    cp.stats.terminal++;
-    cp.stats.review++;
+    cp.stats.retry++;
     cp.stats.errors++;
     saveCheckpointAtomic(CHECKPOINT, cp);
     console.error(JSON.stringify({ event: "lead_error", id: leadId, error: String(e) }));
