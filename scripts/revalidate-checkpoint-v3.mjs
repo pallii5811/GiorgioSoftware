@@ -53,26 +53,8 @@ export function isTerminalState(processingState) {
 export function classifyResult(row) {
   const ps = row.processingState || row.reasonCode || null;
   if (row.dualDisagreement) return { kind: "terminal", state: "REVIEW_HUMAN" };
-  // Engine/infra failures → REVIEW_HUMAN BEFORE RETRY_PENDING short-circuit.
-  const errBlob = `${row.error || ""} ${row.reasonCode || ""} ${ps || ""}`;
-  if (
-    /ANALYZE_ERROR|LEAD_WALL|PLAYWRIGHT|PLAYWRIGHT_NO_CHROMIUM|Executable doesn't exist|WORKER_SIGTERM|PARENT_CATCH|OCR_/i.test(
-      errBlob
-    )
-  ) {
-    return { kind: "terminal", state: "REVIEW_HUMAN" };
-  }
-  if (ps === "RETRY_PENDING" || row.newVerdict == null && /RETRY/i.test(String(ps || ""))) {
-    // Slice-continue only when reason is explicitly crawl/frontier/pdf/sitemap.
-    if (/CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(errBlob)) {
-      return { kind: "retry", state: "RETRY_PENDING" };
-    }
-    // Bare RETRY_PENDING / unknown → REVIEW (no endless queue).
-    if (!/CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(errBlob)) {
-      return { kind: "terminal", state: "REVIEW_HUMAN" };
-    }
-    return { kind: "retry", state: "RETRY_PENDING" };
-  }
+  // Client delivery: never park in retryQueue. Incomplete / engine / infra → REVIEW_HUMAN.
+  // Certified terminals still win below when processingState is already terminal.
   if (isTerminalState(ps)) return { kind: "terminal", state: ps };
   // map token fallbacks
   if (row.newVerdict === "HOT" && row.crawlComplete && ps === "HOT_VERIFIED") {
@@ -86,13 +68,7 @@ export function classifyResult(row) {
   if (ps === "TECHNICAL_BLOCKED") {
     return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
   }
-  if (row.error && !/CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(errBlob)) {
-    return { kind: "terminal", state: "REVIEW_HUMAN" };
-  }
-  // unknown incomplete → retry only for explicit slice reasons
-  if (/CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(errBlob)) {
-    return { kind: "retry", state: "RETRY_PENDING" };
-  }
+  // Everything else (ANALYZE, LEAD_WALL, CRAWL_CAP, FRONTIER_INCOMPLETE, RETRY_PENDING, …) → REVIEW.
   return { kind: "terminal", state: "REVIEW_HUMAN" };
 }
 

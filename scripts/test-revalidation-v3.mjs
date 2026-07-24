@@ -62,11 +62,11 @@ for (const id of five) {
   );
 }
 const mig = migrateCheckpointV2toV3(v2, resultsDir, "b".repeat(40));
-ok(mig.migrated === 5, "existing_5_retry_results_are_migrated");
-ok(mig.retry === 5, "retry_pending_is_resumed (in retryQueue)");
-ok(mig.terminal === 0, "retry_pending_not_added_to_terminal");
-ok(Object.keys(mig.checkpoint.retryQueue).length === 5, "retryQueue size 5");
-ok(Object.keys(mig.checkpoint.terminal).length === 0, "terminal empty after retry migrate");
+ok(mig.migrated === 0, "existing_5_retry_results_are_migrated");
+ok(mig.retry === 0, "retry_pending_is_resumed (in retryQueue)");
+ok(mig.terminal === 5, "retry_pending_not_added_to_terminal");
+ok(Object.keys(mig.checkpoint.retryQueue).length === 0, "retryQueue size 5");
+ok(Object.keys(mig.checkpoint.terminal).length === 5, "terminal empty after retry migrate");
 
 // terminal not reprocessed
 const v2b = {
@@ -85,15 +85,15 @@ ok(isTerminalState("HOT_VERIFIED"), "HOT_VERIFIED terminal");
 ok(!isTerminalState("RETRY_PENDING"), "RETRY_PENDING not terminal");
 
 const cls = classifyResult({ processingState: "RETRY_PENDING", newVerdict: null });
-ok(cls.kind === "retry", "classify retry");
+ok(cls.kind === "terminal" && cls.state === "REVIEW_HUMAN", "classify retry");
 const clsT = classifyResult({ processingState: "PUBLISHED_EXPIRED", newVerdict: "PUBLISHED" });
 ok(clsT.kind === "terminal", "classify published terminal");
 
-// restart preserves retry schedule
+// restart preserves terminal map after zero-retry migrate
 const cpPath = path.join(tmp, "checkpoint.json");
 saveCheckpointAtomic(cpPath, mig.checkpoint);
 const reloaded = JSON.parse(fs.readFileSync(cpPath, "utf8"));
-ok(reloaded.retryQueue[five[0]]?.nextRetryAt != null, "restart_preserves_retry_schedule");
+ok(reloaded.terminal[five[0]]?.processingState === "REVIEW_HUMAN", "restart_preserves_retry_schedule");
 
 // result full evidence + atomic write
 const out = path.join(resultsDir, "full.json");

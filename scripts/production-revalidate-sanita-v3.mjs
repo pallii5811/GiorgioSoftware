@@ -803,48 +803,26 @@ async function processLeadId(leadId) {
       else if (cls.state === "TECHNICAL_BLOCKED") cp.stats.tech++;
       else cp.stats.review++;
     } else {
-      const attempts = cp.attempts[leadId] || 1;
+      // Client zero-retry: never enqueue — incomplete/engine always REVIEW_HUMAN.
       const errCode = finalRow.reasonCode || finalRow.error || "RETRY_PENDING";
-      const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP/i.test(
-        String(errCode)
-      );
-      // Ceiling or non-slice leftovers → REVIEW_HUMAN (never park forever in retryQueue).
-      if (attempts >= MAX_RETRY_ATTEMPTS || !sliceContinue) {
-        console.warn(
-          JSON.stringify({
-            event: "retry_ceiling_review_human",
-            id: leadId,
-            attempts,
-            maxRetry: MAX_RETRY_ATTEMPTS,
-            lastReason: errCode,
-            note: "engine/incomplete ceiling → REVIEW_HUMAN (no retry park)",
-          })
-        );
-        recordOutcome("terminal");
-        cp.terminal[leadId] = {
-          finishedAt: new Date().toISOString(),
-          processingState: "REVIEW_HUMAN",
-          newVerdict: "REVIEW",
-          reasonCode: String(errCode).slice(0, 200),
-        };
-        cp.stats.terminal++;
-        cp.stats.review++;
-      } else {
-        recordOutcome("retry");
-        cp.retryQueue[leadId] = {
-          attempts,
+      console.warn(
+        JSON.stringify({
+          event: "non_terminal_to_review_human",
+          id: leadId,
+          attempts: cp.attempts[leadId] || 1,
           lastReason: errCode,
-          lastError: errCode,
-          nextRetryAt: nextRetryAt(attempts, { sliceContinue: true, immediate: true, delayMs: 5_000 }),
-          lastRunId: runId,
-          frontierPath,
-          strategy,
-          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
-          lastAttemptAt: new Date().toISOString(),
-          operational: true,
-        };
-        cp.stats.retry++;
-      }
+          note: "zero-retry policy — no retryQueue",
+        })
+      );
+      recordOutcome("terminal");
+      cp.terminal[leadId] = {
+        finishedAt: new Date().toISOString(),
+        processingState: "REVIEW_HUMAN",
+        newVerdict: "REVIEW",
+        reasonCode: String(errCode).slice(0, 200),
+      };
+      cp.stats.terminal++;
+      cp.stats.review++;
     }
     cp.stats.processed++;
     saveCheckpointAtomic(CHECKPOINT, cp);
