@@ -17,7 +17,7 @@ export const TERMINAL_STATES = new Set([
   "OUT_OF_SCOPE",
 ]);
 
-/** Hard ceiling — exceeded attempts become admin TECHNICAL_BLOCKED (no hot-loop). */
+/** Hard ceiling — exceeded attempts are parked (far nextRetryAt), never auto TECHNICAL_BLOCKED. */
 export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 5);
 /** Backoff base; sliceContinue still respects backoff (no 5s hot-loop). */
 export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 90_000);
@@ -65,8 +65,8 @@ export function classifyResult(row) {
     if (ps && isTerminalState(ps)) return { kind: "terminal", state: ps };
     return { kind: "terminal", state: ps || "PUBLISHED_DATE_UNKNOWN" };
   }
-  // Admin quarantine terminal (not commercial) — stops hot-loops / unreachable hosts.
-  if (ps === "TECHNICAL_BLOCKED" || /RETRY_EXHAUSTED/i.test(String(row.reasonCode || ""))) {
+  // TECHNICAL_BLOCKED only when worker/admin stamped it with external proof — never RETRY_EXHAUSTED shortcut.
+  if (ps === "TECHNICAL_BLOCKED") {
     return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
   }
   if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL/i.test(String(row.reasonCode || ""))) {

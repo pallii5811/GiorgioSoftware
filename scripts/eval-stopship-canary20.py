@@ -107,7 +107,8 @@ def main() -> None:
     report = {
         "finished": bool(gates["all_ids_have_result"] and gates["no_in_progress"]),
         "gates": gates,
-        "PASS": all(gates.values()) and reachable_done >= 15,
+        # Strict: terminal==N, retry==0, inProgress==0 — no reachable_done>=15 shortcut.
+        "PASS": all(gates.values()) and terminal_n == len(ids) and retry_n == 0,
         "CANARY_TERMINAL": terminal_n,
         "CANARY_RETRY": retry_n,
         "REACHABLE_COMPLETED": reachable_done,

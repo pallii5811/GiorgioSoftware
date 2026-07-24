@@ -809,24 +809,34 @@ async function processLeadId(leadId) {
       const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|LEAD_WALL|WORKER_SIGTERM|SITEMAP/i.test(
         String(errCode)
       );
+      // Ceiling: park with far backoff — NEVER auto TECHNICAL_BLOCKED.
+      // TB requires documented external proof (DNS/TLS/WAF/5xx/corrupt PDF/…).
+      // dueRetryIds() already excludes attempts >= MAX_RETRY_ATTEMPTS (no hot-loop).
       if (attempts >= MAX_RETRY_ATTEMPTS) {
         console.warn(
           JSON.stringify({
-            event: "retry_ceiling_technical_blocked",
+            event: "retry_ceiling_parked_engine",
             id: leadId,
             attempts,
             maxRetry: MAX_RETRY_ATTEMPTS,
             lastReason: errCode,
+            note: "engine error parked — not TECHNICAL_BLOCKED without external proof",
           })
         );
-        cp.terminal[leadId] = {
-          finishedAt: finalRow.finishedAt || new Date().toISOString(),
-          processingState: "TECHNICAL_BLOCKED",
-          newVerdict: null,
-          reasonCode: `RETRY_EXHAUSTED_${attempts}:${errCode}`,
+        cp.retryQueue[leadId] = {
+          attempts,
+          lastReason: errCode,
+          lastError: errCode,
+          nextRetryAt: new Date(Date.now() + 365 * 24 * 3600_000).toISOString(),
+          lastRunId: runId,
+          frontierPath,
+          strategy,
+          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
+          lastAttemptAt: new Date().toISOString(),
+          operational: true,
+          parkedEngineCeiling: true,
         };
-        cp.stats.terminal++;
-        cp.stats.tech++;
+        cp.stats.retry++;
       } else {
         cp.retryQueue[leadId] = {
           attempts,
@@ -860,14 +870,27 @@ async function processLeadId(leadId) {
     delete cp.inProgress[leadId];
     const attempts = cp.attempts[leadId] || 1;
     if (attempts >= MAX_RETRY_ATTEMPTS) {
-      cp.terminal[leadId] = {
-        finishedAt: new Date().toISOString(),
-        processingState: "TECHNICAL_BLOCKED",
-        newVerdict: null,
-        reasonCode: `RETRY_EXHAUSTED_${attempts}:PARENT_CATCH`,
+      console.warn(
+        JSON.stringify({
+          event: "retry_ceiling_parked_engine",
+          id: leadId,
+          attempts,
+          lastReason: "PARENT_CATCH",
+        })
+      );
+      cp.retryQueue[leadId] = {
+        attempts,
+        lastReason: "PARENT_CATCH",
+        lastError: String(e),
+        nextRetryAt: new Date(Date.now() + 365 * 24 * 3600_000).toISOString(),
+        lastRunId: runId,
+        frontierPath,
+        firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
+        lastAttemptAt: new Date().toISOString(),
+        operational: true,
+        parkedEngineCeiling: true,
       };
-      cp.stats.terminal++;
-      cp.stats.tech++;
+      cp.stats.retry++;
     } else {
       cp.retryQueue[leadId] = {
         attempts,

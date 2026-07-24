@@ -1,6 +1,7 @@
 /**
- * STOP-SHIP: TECHNICAL_BLOCKED is admin terminal in checkpoint (stops hot-loops),
- * but never a commercial client terminal (isTerminalState stays false).
+ * STOP-SHIP: TECHNICAL_BLOCKED is admin terminal only when explicitly stamped
+ * (with external proof). RETRY_EXHAUSTED alone must NOT auto-terminal.
+ * Never a commercial client terminal (isTerminalState stays false).
  */
 import {
   classifyResult,
@@ -8,7 +9,8 @@ import {
 } from "./revalidate-checkpoint-v3.mjs";
 
 const cases = [
-  [{ processingState: "TECHNICAL_BLOCKED", reasonCode: "RETRY_EXHAUSTED_5" }, "terminal"],
+  [{ processingState: "TECHNICAL_BLOCKED", reasonCode: "DNS_NXDOMAIN" }, "terminal"],
+  [{ processingState: "RETRY_PENDING", reasonCode: "RETRY_EXHAUSTED_5:CRAWL_CAP" }, "retry"],
   [{ processingState: "RETRY_PENDING", error: "LEAD_WALL_TIMEOUT_1800000ms" }, "retry"],
   [{ processingState: "HOT_VERIFIED", newVerdict: "HOT", crawlComplete: true }, "terminal"],
   [{ processingState: "PUBLISHED_CURRENT", newVerdict: "PUBLISHED" }, "terminal"],
