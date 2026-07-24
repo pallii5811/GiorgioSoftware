@@ -615,13 +615,10 @@ async function processLeadId(leadId) {
     3_300_000,
     Number(process.env.REVALIDATE_OVERALL_LEAD_WALL_MS || process.env.REVALIDATE_LEAD_WALL_MS || 3_300_000)
   );
+  // Always use full lead wall. Never shrink to 10m on empty/missing frontier
+  // (that caused LEAD_WALL_TIMEOUT_600000ms storms on new leads).
   let stretch = sliceHardCap;
-  // Finalize-only short wall ONLY when resuming an existing empty frontier —
-  // never for brand-new leads (missing frontier reports pending=0 and was
-  // incorrectly capped at 10m → LEAD_WALL_TIMEOUT_600000ms storm).
-  if (canReuseFile && insp.pending === 0 && insp.blocked === 0 && insp.pdfPending === 0) {
-    stretch = Math.min(sliceHardCap, 10 * 60_000);
-  } else if (/PDF_UNPROCESSED|ANALYZE_ERROR|LEAD_WALL|PLAYWRIGHT/i.test(prevErr) || insp.pdfPending > 3) {
+  if (/PDF_UNPROCESSED|ANALYZE_ERROR|LEAD_WALL|PLAYWRIGHT|OCR_/i.test(prevErr) || insp.pdfPending > 3) {
     stretch = sliceHardCap;
   }
   void overallMax;

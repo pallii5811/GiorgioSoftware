@@ -6,13 +6,13 @@
 export type CrawlRelevance = "critical" | "relevant" | "low";
 
 const CRITICAL_RE =
-  /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|rco\b|parm|pars|massimale|copertura|note-legali|scheda[-_]?di[-_]?polizza|rc\s*sanitar/i;
+  /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|rco\b|parm|pars|massimale|copertura|note-legali|scheda[-_]?di[-_]?polizza|rc\s*sanitar|autoassicura|gestione[-_ ]?diretta|fondo[-_ ]?rischi|quietanz|scadenz|decorrenza|documenti[-_ ]?assicur/i;
 
 const RELEVANT_RE =
-  /(^|\/)(chi[-_]?siamo|la[-_]?struttura|struttura|contatti|contatto|privacy|cookie(?:-?policy)?|note[-_]?legali|home|index|chi[-_]?e|about)(\/|$|\.|-)/i;
+  /(^|\/)(chi[-_]?siamo|la[-_]?struttura|struttura|contatti|contatto|privacy|cookie(?:-?policy)?|note[-_]?legali|home|index|chi[-_]?e|about|societa[-_]?trasparente)(\/|$|\.|-)/i;
 
 const LOW_RE =
-  /news|blog|comunicat|notizi|medico|dott\.|prestazion|servizi|reparto|specialist|gallery|media|evento|pagina|page[=/_\-]\d|wp-content|attachment|categoria|tag\/|feed|rss|video|foto|immagine|prenota|agenda/i;
+  /news|blog|comunicat|notizi|medico|dott\.|prestazion|servizi|reparto|specialist|gallery|media|evento|pagina|page[=/_\-]\d|wp-content|attachment|categoria|tag\/|archiv|feed|rss|video|foto|immagine|prenota|agenda|infertil|microbiota|quantiferon|patologia|terapia|isac[-_]?test|plac[-_]?test|medicina[-_]?(del[-_]?lavoro|veterinar)|permeabilit/i;
 
 function pathOf(url: string): string {
   try {

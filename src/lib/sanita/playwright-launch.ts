@@ -4,11 +4,7 @@
  */
 import fs from "node:fs";
 
-export function playwrightChromiumLaunchOptions(extraArgs: string[] = []): {
-  headless: boolean;
-  executablePath?: string;
-  args: string[];
-} {
+export function resolveChromiumExecutablePath(): string | undefined {
   const candidates = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
     process.env.CHROMIUM_PATH,
@@ -20,18 +16,24 @@ export function playwrightChromiumLaunchOptions(extraArgs: string[] = []): {
     "/usr/bin/google-chrome",
   ].filter(Boolean) as string[];
 
-  let executablePath: string | undefined;
   for (const p of candidates) {
     try {
-      if (p && fs.existsSync(p)) {
-        executablePath = p;
-        break;
-      }
+      if (!p || !fs.existsSync(p)) continue;
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
     } catch {
-      /* */
+      /* try next */
     }
   }
+  return undefined;
+}
 
+export function playwrightChromiumLaunchOptions(extraArgs: string[] = []): {
+  headless: boolean;
+  executablePath?: string;
+  args: string[];
+} {
+  const executablePath = resolveChromiumExecutablePath();
   return {
     headless: true,
     ...(executablePath ? { executablePath } : {}),

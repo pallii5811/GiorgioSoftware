@@ -844,8 +844,10 @@ export function repairOrphanRetryPending(crawlRunId: string): number {
 }
 
 /**
- * Demote html-link/sitemap nodes wrongly stored as critical/relevant under the
- * old "every HTML is relevant" classifier — prevents fake CRAWL_CAP / incomplete.
+ * Demote html-link/sitemap/playwright (and legacy unmarked) nodes wrongly stored
+ * as critical/relevant under the old "every HTML is relevant" classifier —
+ * prevents fake CRAWL_CAP / FRONTIER_INCOMPLETE storms.
+ * Seeds (seed|seed_guess|extra) keep their relevance.
  */
 export function reclassifySpuriousRelevance(
   crawlRunId: string,
@@ -855,11 +857,11 @@ export function reclassifySpuriousRelevance(
   let n = 0;
   for (const node of listNodes(crawlRunId)) {
     const src = String(node.discoverySource || "");
-    if (src !== "html-link" && src !== "sitemap" && !src.startsWith("sitemap") && src !== "playwright") {
-      continue;
-    }
+    if (src === "seed" || src === "seed_guess" || src === "extra") continue;
     if (node.relevance !== "critical" && node.relevance !== "relevant") continue;
-    const next = classify(node.canonicalUrl, { discoverySource: src });
+    // Prefer stored discoverySource; unknown/legacy → treat as html-link for classify.
+    const classifySrc = src || "html-link";
+    const next = classify(node.canonicalUrl, { discoverySource: classifySrc });
     if (next === node.relevance) continue;
     if (next !== "low") continue;
     d.prepare(`UPDATE CrawlFrontierNode SET relevance = ?, updatedAt = ? WHERE id = ?`).run(
