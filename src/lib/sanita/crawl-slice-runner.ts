@@ -908,7 +908,19 @@ export async function runCrawlSlice(opts: {
     policyFound,
     linksDiscovered: linksDiscoveredTotal,
   });
-  if (pwDecision.activate && !policyFound && Date.now() < deadline) {
+  const skipPw =
+    process.env.SKIP_PLAYWRIGHT === "1" ||
+    process.env.REVALIDATE_FINALIZE_RESUME === "1" ||
+    listNodes(crawlRunId).filter(
+      (n) =>
+        (n.relevance === "critical" || n.relevance === "relevant") &&
+        ["DISCOVERED", "QUEUED", "FETCHING", "FETCHED", "RENDERED", "PARSED", "RETRY_PENDING"].includes(
+          n.state
+        )
+    ).length === 0;
+  if (skipPw) {
+    heartbeatCrawlRun(crawlRunId, "playwright_skipped:finalize_or_exhausted");
+  } else if (pwDecision.activate && !policyFound && Date.now() < deadline) {
     const pwBudgetMs = Math.min(
       budget.browserNavigationTimeoutMs,
       Math.max(1000, deadline - Date.now()),
