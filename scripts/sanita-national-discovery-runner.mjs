@@ -42,7 +42,7 @@ process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE = "1";
 process.env.CRAWL_RENDER_EVERY_HTML = "1";
 process.env.CRAWL_HTML_URL_CAP = "0";
 process.env.SCAN_STREAM_CONCURRENCY =
-  process.env.TERRITORY_SCAN_CONCURRENCY || process.env.SCAN_STREAM_CONCURRENCY || "1";
+  process.env.TERRITORY_SCAN_CONCURRENCY || process.env.SCAN_STREAM_CONCURRENCY || "2";
 process.env.SCAN_LEAD_STALL_MS =
   process.env.TERRITORY_LEAD_STALL_MS || process.env.SCAN_LEAD_STALL_MS || "1200000";
 process.env.SITEMAP_URL_CAP = process.env.SITEMAP_URL_CAP || "50000";
