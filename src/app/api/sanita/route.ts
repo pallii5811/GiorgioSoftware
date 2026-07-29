@@ -246,8 +246,9 @@ export async function GET(req: Request) {
     }
     const includePending = url.searchParams.get("includePending") === "1";
     const region = url.searchParams.get("region");
-    const regionFilter =
-      region && ["Veneto", "Campania"].includes(region) ? { region } : {};
+    // k3 2026-07-29: filtro regione valido per TUTTE le regioni italiane,
+    // non solo Veneto/Campania (Umbria/Calabria prima venivano ignorate).
+    const regionFilter = region && region !== "ALL" ? { region } : {};
     const leads = await prisma.lead.findMany({
       where: {
         type: "HEALTHCARE",

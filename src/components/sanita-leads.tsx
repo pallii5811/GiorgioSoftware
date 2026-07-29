@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Stethoscope, Search, Loader2, ShieldAlert, ShieldCheck, ShieldQuestion,
   RefreshCw, Download, FileSearch, ExternalLink, Clock, HelpCircle,
-  Play, Pause, RotateCcw, Repeat,
+  Play, Pause, RotateCcw, Repeat, MapPinned, X,
 } from "lucide-react"
 import {
   Dialog,
@@ -29,6 +29,11 @@ import { LeadDetail } from "@/components/lead-detail"
 import { cn } from "@/lib/utils"
 import { readProcessingState, readBusinessVerdict } from "@/lib/sanita/processing-state"
 import { isInActionableSalesQueue } from "@/lib/sanita/actionable-queue"
+import {
+  ITALIAN_REGIONS,
+  isItalianRegion,
+  type ItalianRegion,
+} from "@/lib/sanita/italy-regions"
 
 // ---------------------------------------------------------------------------
 // Tipi
@@ -124,6 +129,9 @@ type ArchiveRevalidationStatus = {
   certifiedCurrentRun?: number
   hot?: number
   published?: number
+  publishedValid?: number
+  publishedExpired?: number
+  publishedDateUnknown?: number
   selfInsurance?: number
   otherNonCommercialTerminal?: number
   technicalBlockedFinal?: number
@@ -141,6 +149,41 @@ type RevalidationControlState = {
   job?: { status?: string; mode?: string; startedAt?: string | null } | null
 }
 
+type NationalDiscoveryJob = {
+  jobId: string
+  region: ItalianRegion
+  municipality: string | null
+  status:
+    | "queued"
+    | "waiting_for_archive"
+    | "running"
+    | "completed"
+    | "incomplete"
+    | "cancelled"
+    | "failed"
+  errorMessage: string | null
+  progress: {
+    municipalitiesCompleted: number
+    municipalitiesTotal: number
+    candidatesFound: number
+    newStructuresAdded: number
+    structuresFound?: number
+    structuresScanned?: number
+    certifiedResults?: number
+    unresolvedResults?: number
+    frontierState?: string
+    frontierCheckpoint?: string
+    frontierCompleted?: number
+    frontierTotal?: number
+    frontierPending?: number
+    frontierFailed?: number
+    frontierLastProgressAt?: string | null
+    frontierStalled?: boolean
+    currentMunicipality: string | null
+    message: string
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Stato filtri — UNICA sorgente di verità, persistita in URL.
 // Nessun polling/hydrate/API può modificare questi valori (bug storico:
@@ -149,7 +192,7 @@ type RevalidationControlState = {
 
 type TabKey = "run" | "live" | "review" | "archive"
 type OutcomeKey = "ALL" | "policy_valid" | "policy_expired" | "date_unknown" | "self_insurance" | "hot" | "review"
-type RegionKey = "ALL" | "Campania" | "Veneto"
+type RegionKey = "ALL" | ItalianRegion
 
 type Filters = {
   tab: TabKey
@@ -170,7 +213,7 @@ function readFiltersFromUrl(): Filters {
   return {
     // Sempre esplicito: default archivio legacy (non confondere con Nuovi risultati).
     tab: tab === "live" || tab === "review" || tab === "archive" || tab === "run" ? tab : "archive",
-    region: region === "Campania" || region === "Veneto" ? region : "ALL",
+    region: isItalianRegion(region) ? region : "ALL",
     city: sp.get("city") || "",
     outcome:
       outcome === "policy_valid" || outcome === "policy_expired" || outcome === "date_unknown" ||
@@ -212,7 +255,7 @@ type UiRow = {
   completedAt: string | null
   processingState: string | null
   unresolvedRelevantNodes: number | null
-  source: "SHADOW_RUN" | "LEGACY_LIVE"
+  source: "SHADOW_RUN" | "LEGACY_LIVE" | "TERRITORY_RUN"
   revalStatus?: "not_started" | "in_progress" | "completed" | "review" | "retry"
   live?: Lead
   shadow?: ShadowResult
@@ -322,7 +365,9 @@ function outcomeLabelForRow(r: UiRow): string {
 }
 
 function sourceLabelForRow(r: UiRow): string {
-  return r.source === "SHADOW_RUN" ? "Nuovo motore" : "Legacy — snapshot 18 luglio"
+  if (r.source === "SHADOW_RUN") return "Nuovo motore"
+  if (r.source === "TERRITORY_RUN") return "Scansione territorio"
+  return "Legacy — snapshot 18 luglio"
 }
 
 /** @deprecated kept name for call sites — HOT/PUB legacy commercial-ish */
@@ -359,6 +404,20 @@ function liveToRow(l: Lead): UiRow {
     crmStatus: l.status,
     notes: l.notes,
     legacyEvidence: l.evidence,
+  }
+}
+
+function territoryToRow(l: Lead): UiRow {
+  const row = liveToRow(l)
+  return {
+    ...row,
+    source: "TERRITORY_RUN",
+    revalStatus:
+      row.outcome === "pending"
+        ? "in_progress"
+        : row.outcome === "review"
+          ? "review"
+          : "completed",
   }
 }
 
@@ -441,7 +500,9 @@ function rowToDetailLead(r: UiRow): Lead {
   const legacyEv = r.legacyEvidence || live?.evidence || ""
   const combinedEvidence = [
     shadowEv ? `[NUOVO MOTORE]\n${shadowEv}` : "",
-    legacyEv ? `[LEGACY]\n${legacyEv}` : "",
+    legacyEv
+      ? `${r.source === "TERRITORY_RUN" ? "[SCANSIONE TERRITORIO]" : "[LEGACY]"}\n${legacyEv}`
+      : "",
   ]
     .filter(Boolean)
     .join("\n\n")
@@ -508,7 +569,17 @@ export function SanitaLeads() {
   const [isLoading, setIsLoading] = useState(true)
   const [detail, setDetail] = useState<Lead | null>(null)
   const [shadowDetail, setShadowDetail] = useState<ShadowResult | null>(null)
+  const [discoveryRegion, setDiscoveryRegion] = useState<ItalianRegion>("Campania")
+  const [discoveryWholeRegion, setDiscoveryWholeRegion] = useState(true)
+  const [discoveryMunicipality, setDiscoveryMunicipality] = useState("")
+  const [discoveryMunicipalities, setDiscoveryMunicipalities] = useState<string[]>([])
+  const [discoveryLoadedRegion, setDiscoveryLoadedRegion] = useState<ItalianRegion | null>(null)
+  const [discoveryJob, setDiscoveryJob] = useState<NationalDiscoveryJob | null>(null)
+  const [discoveryBusy, setDiscoveryBusy] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const filtersRef = useRef(filters)
+  const discoveryRequestSequenceRef = useRef(0)
+  const discoveryRequestInFlightRef = useRef<{ id: number; region: ItalianRegion } | null>(null)
   filtersRef.current = filters
 
   // ---- persistenza filtri in URL (replaceState, nessuna navigazione) ----
@@ -555,6 +626,80 @@ export function SanitaLeads() {
       /* conserva */
     }
   }, [])
+
+  const fetchNationalDiscovery = useCallback(async (region: ItalianRegion) => {
+    if (discoveryRequestInFlightRef.current?.region === region) return
+    const requestId = ++discoveryRequestSequenceRef.current
+    discoveryRequestInFlightRef.current = { id: requestId, region }
+    try {
+      const res = await fetch(
+        `/api/sanita/national-discovery?region=${encodeURIComponent(region)}`,
+        { cache: "no-store" }
+      )
+      const json = await res.json()
+      if (
+        !json?.success ||
+        discoveryRequestInFlightRef.current?.id !== requestId
+      )
+        return
+      setDiscoveryMunicipalities(json.municipalities || [])
+      setDiscoveryLoadedRegion(region)
+      const jobs = (json.jobs || []) as NationalDiscoveryJob[]
+      const active = jobs.find((job) =>
+          ["queued", "waiting_for_archive", "running"].includes(job.status)
+        )
+      const latestForRegion = jobs.find((job) => job.region === region) || null
+      setDiscoveryJob(active || latestForRegion)
+    } catch {
+      /* conserva lo stato esistente */
+    } finally {
+      if (discoveryRequestInFlightRef.current?.id === requestId) {
+        discoveryRequestInFlightRef.current = null
+      }
+    }
+  }, [])
+
+  const startNationalDiscovery = useCallback(async () => {
+    setDiscoveryBusy(true)
+    setDiscoveryError(null)
+    try {
+      const res = await fetch("/api/sanita/national-discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          region: discoveryRegion,
+          municipality: discoveryWholeRegion ? null : discoveryMunicipality,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json?.success) {
+        setDiscoveryError(json?.error || "Impossibile avviare la discovery.")
+        if (json?.job) setDiscoveryJob(json.job)
+        return
+      }
+      setDiscoveryJob(json.job)
+    } catch {
+      setDiscoveryError("Motore discovery non raggiungibile.")
+    } finally {
+      setDiscoveryBusy(false)
+    }
+  }, [discoveryMunicipality, discoveryRegion, discoveryWholeRegion])
+
+  const cancelNationalDiscovery = useCallback(async () => {
+    if (!discoveryJob) return
+    setDiscoveryBusy(true)
+    try {
+      const res = await fetch("/api/sanita/national-discovery", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: discoveryJob.jobId }),
+      })
+      const json = await res.json()
+      if (json?.job) setDiscoveryJob(json.job)
+    } finally {
+      setDiscoveryBusy(false)
+    }
+  }, [discoveryJob])
 
   const runControlAction = useCallback(
     async (action: "start" | "pause" | "resume" | "retry-incomplete") => {
@@ -624,6 +769,18 @@ export function SanitaLeads() {
     return () => clearInterval(t)
   }, [fetchArchiveStatus, fetchControlState, fetchRunResults])
 
+  useEffect(() => {
+    fetchNationalDiscovery(discoveryRegion)
+  }, [discoveryRegion, fetchNationalDiscovery])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchNationalDiscovery(discoveryRegion)
+      fetchLive()
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [discoveryRegion, fetchNationalDiscovery, fetchLive])
+
   // fetch on-demand quando si entra nelle tab
   useEffect(() => {
     if (filters.tab === "run") fetchRunResults()
@@ -669,7 +826,30 @@ export function SanitaLeads() {
     let rows: UiRow[]
     if (filters.tab === "run") {
       // SOLO nuovo motore (shadow run). Mai fallback legacy. Join contatti live read-only.
-      rows = runResults.map((s) => shadowToRow(s, liveById.get(s.leadId)))
+      const shadowRows = runResults.map((s) => shadowToRow(s, liveById.get(s.leadId)))
+      const shadowIds = new Set(shadowRows.map((row) => row.id))
+      const territoryJobActive =
+        discoveryJob &&
+        ["queued", "waiting_for_archive", "running"].includes(discoveryJob.status)
+      const territoryRows = discoveryJob
+        ? liveLeads
+            .filter(
+              (lead) =>
+                lead.region === discoveryJob.region &&
+                (!discoveryJob.municipality || lead.city === discoveryJob.municipality) &&
+                Boolean(lead.lastScannedAt)
+            )
+            .map(territoryToRow)
+            .filter(
+              (row) =>
+                // k3 2026-07-29: i lead territorio già scansionati ma non ancora
+                // certificati (RETRY_PENDING → "In lavorazione") devono restare
+                // visibili come avanzamento, mai spacciati per esiti commerciali.
+                (!territoryJobActive || row.outcome !== "review") &&
+                !shadowIds.has(row.id)
+            )
+        : []
+      rows = [...territoryRows, ...shadowRows]
     } else if (filters.tab === "review") {
       rows = reviewResults.map((s) => shadowToRow(s, liveById.get(s.leadId)))
     } else if (filters.tab === "live") {
@@ -703,11 +883,11 @@ export function SanitaLeads() {
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, runResults, reviewResults, liveLeads, liveById])
+  }, [filters, runResults, reviewResults, liveLeads, liveById, discoveryJob])
 
   const runOutcomeCounts = useMemo(() => {
     const c: Record<OutcomeKey | "pending", number> = {
-      ALL: runResults.length,
+      ALL: tabRows.length,
       policy_valid: 0,
       policy_expired: 0,
       date_unknown: 0,
@@ -716,25 +896,23 @@ export function SanitaLeads() {
       review: 0,
       pending: 0,
     }
-    for (const r of runResults) {
-      const o = shadowToRow(r).outcome
+    for (const r of tabRows) {
+      const o = r.outcome
       if (o in c) c[o as OutcomeKey]++
     }
     return c
-  }, [runResults])
+  }, [tabRows])
 
   const openCompletedRun = () => {
     setFilters({ tab: "run", region: "ALL", city: "", outcome: "ALL", query: "" })
   }
 
   const applyOutcomeCard = (outcome: OutcomeKey) => {
-    setFilters({
+    setFilters((previous) => ({
+      ...previous,
       tab: "run",
       outcome,
-      region: "ALL",
-      city: "",
-      query: "",
-    })
+    }))
   }
 
   const REVAL_STATUS_LABEL: Record<NonNullable<UiRow["revalStatus"]>, string> = {
@@ -742,7 +920,7 @@ export function SanitaLeads() {
     in_progress: "In corso",
     completed: "Completata",
     review: "Da controllare",
-    retry: "Retry",
+    retry: "Da completare",
   }
 
   const exportCsv = () => {
@@ -764,7 +942,12 @@ export function SanitaLeads() {
         PEC: r.pec || "",
         PIVA: r.piva || "",
         Categoria: r.category || "",
-        Fonte: r.source === "SHADOW_RUN" ? "nuovo motore" : "legacy snapshot 18 luglio",
+        Fonte:
+          r.source === "SHADOW_RUN"
+            ? "nuovo motore"
+            : r.source === "TERRITORY_RUN"
+              ? "scansione territorio"
+              : "legacy snapshot 18 luglio",
         CompletataIl: r.completedAt || "",
         EvidenceURL: r.evidenceUrls.join(" "),
         PdfHash: r.pdfHash || "",
@@ -822,6 +1005,19 @@ export function SanitaLeads() {
   }, [liveLeads])
   const archiveTotal = apiMeta?.dbTotal ?? liveLeads.length ?? 0
   const counterSum = certifiedRun + reviewCount + otherTerminal + technicalFinal
+  const discoveryActive = Boolean(
+    discoveryJob &&
+      ["queued", "waiting_for_archive", "running"].includes(discoveryJob.status)
+  )
+  const discoveryRegionReady = discoveryLoadedRegion === discoveryRegion
+  const discoveryProgress =
+    discoveryJob && discoveryJob.progress.municipalitiesTotal > 0
+      ? Math.round(
+          (discoveryJob.progress.municipalitiesCompleted /
+            discoveryJob.progress.municipalitiesTotal) *
+            100
+        )
+      : 0
 
   const kpiCards: { label: string; value: string | number; testid: string; onClick?: () => void }[] = [
     {
@@ -839,7 +1035,7 @@ export function SanitaLeads() {
     { label: "Certificati nuovo motore", value: certifiedRun, testid: "kpi-certified-run" },
     { label: "Da controllare", value: reviewCount, testid: "kpi-review" },
     { label: "In lavorazione", value: inProgress, testid: "kpi-in-progress" },
-    { label: "Retry", value: retryCount, testid: "kpi-retry" },
+    { label: "Da completare", value: retryCount, testid: "kpi-retry" },
     {
       label: "Legacy commerciali",
       value: legacyBreakdown.commercial,
@@ -857,12 +1053,7 @@ export function SanitaLeads() {
           Verifica polizze sanitarie
         </h1>
         <p className="mt-1 text-sm text-muted-foreground" data-testid="header-kpi">
-          Archivio legacy {archiveTotal} · Conclusi nuovo run {terminal}/{target} · Certificati
-          nuovo motore {certifiedRun} · Legacy commerciali {legacyBreakdown.commercial}
-          {" · "}Published legacy {legacyBreakdown.publishedValid}
-          {" · "}HOT legacy {legacyBreakdown.hot}
-          {" · "}scaduti legacy {legacyBreakdown.publishedExpired}
-          {" · "}data ignota legacy {legacyBreakdown.dateUnknown}
+          Archivio {archiveTotal} strutture · {terminal}/{target} concluse · {certifiedRun} risultati certificati
           {counterSum !== terminal ? (
             <span className="ml-2 text-amber-700">
               (riconciliazione run: {certifiedRun}+{reviewCount}+{otherTerminal}+{technicalFinal}=
@@ -873,7 +1064,7 @@ export function SanitaLeads() {
         </p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7" data-testid="kpi-cards">
+      <div className="hidden" data-testid="kpi-cards">
         {kpiCards.map((k) => (
           <button
             key={k.testid}
@@ -919,19 +1110,19 @@ export function SanitaLeads() {
             />
           </div>
           <div className="text-sm" data-testid="run-counters">
-            Certificati {certifiedRun} (Published {archiveStatus?.published ?? 0} · HOT{" "}
-            {archiveStatus?.hot ?? 0} · Autoassicurata {selfIns}) · da controllare {reviewCount} ·
-            altri terminali {otherTerminal} · tecnici {technicalFinal} · in lavorazione {inProgress}{" "}
-            · retry {retryCount}
+            Polizza pubblicata {archiveStatus?.published ?? 0} · HOT {archiveStatus?.hot ?? 0} ·
+            Autoassicurata {selfIns} · In lavorazione {inProgress}
           </div>
-          <div className="text-xs text-muted-foreground">
-            prese in carico {archiveStatus?.recordsTouched ?? 0} · somma terminali {counterSum}/
-            {terminal}
+          <div className="hidden text-xs text-muted-foreground">
+            “Da completare” include lead in coda e scansioni parziali recuperabili; non indica
+            automaticamente un errore. Prese in carico {archiveStatus?.recordsTouched ?? 0} ·
+            somma terminali {counterSum}/{terminal}
           </div>
           <div className="flex flex-wrap gap-2 pt-1" data-testid="revalidation-controls">
             <Button
               variant="outline"
               size="sm"
+              className="hidden"
               data-testid="btn-start"
               disabled={engineRunning || controlBusy !== null}
               onClick={() => runControlAction("start")}
@@ -946,6 +1137,7 @@ export function SanitaLeads() {
             <Button
               variant="outline"
               size="sm"
+              className={engineRunning ? "" : "hidden"}
               data-testid="btn-pause"
               disabled={!engineRunning || controlBusy !== null}
               onClick={() => runControlAction("pause")}
@@ -955,11 +1147,12 @@ export function SanitaLeads() {
               ) : (
                 <Pause className="mr-1 h-4 w-4" />
               )}
-              Pausa
+              Pausa archivio
             </Button>
             <Button
               variant="outline"
               size="sm"
+              className={engineRunning ? "hidden" : ""}
               data-testid="btn-resume"
               disabled={engineRunning || controlBusy !== null || !controlState?.checkpointExists}
               onClick={() => runControlAction("resume")}
@@ -969,11 +1162,12 @@ export function SanitaLeads() {
               ) : (
                 <RotateCcw className="mr-1 h-4 w-4" />
               )}
-              Riprendi
+              Riprendi archivio
             </Button>
             <Button
               variant="outline"
               size="sm"
+              className="hidden"
               data-testid="btn-retry-incomplete"
               disabled={engineRunning || controlBusy !== null || retryCount === 0}
               onClick={() => runControlAction("retry-incomplete")}
@@ -983,13 +1177,205 @@ export function SanitaLeads() {
               ) : (
                 <Repeat className="mr-1 h-4 w-4" />
               )}
-              Riprova incompleti
+              Riprendi incompleti
             </Button>
-            <Button variant="outline" size="sm" data-testid="btn-export" onClick={exportCsv}>
+            <Button className="hidden" variant="outline" size="sm" data-testid="btn-export" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" />
               Esporta
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="national-discovery-panel">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <MapPinned className="h-4 w-4 text-primary" />
+                Scansiona un territorio
+              </h2>
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                Scegli un comune o una regione e premi Avvia. I 877 vengono messi in pausa
+                e ripresi automaticamente, senza perdere il progresso.
+              </p>
+            </div>
+            <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-800">
+              Pausa e ripresa automatiche
+            </Badge>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[minmax(190px,0.8fr)_minmax(260px,1.2fr)_auto] md:items-end">
+            <label className="space-y-1 text-xs font-medium">
+              <span>1. Regione</span>
+              <select
+                data-testid="discovery-region"
+                value={discoveryRegion}
+                disabled={discoveryActive || discoveryLoadedRegion === null}
+                onChange={(event) => {
+                  setDiscoveryMunicipality("")
+                  setDiscoveryMunicipalities([])
+                  setDiscoveryError(null)
+                  setDiscoveryRegion(event.target.value as ItalianRegion)
+                }}
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              >
+                {ITALIAN_REGIONS.map((region) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-4 text-xs font-medium">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={discoveryWholeRegion}
+                    disabled={discoveryActive || !discoveryRegionReady}
+                    onChange={() => setDiscoveryWholeRegion(true)}
+                  />
+                  Regione completa
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={!discoveryWholeRegion}
+                    disabled={discoveryActive || !discoveryRegionReady}
+                    onChange={() => setDiscoveryWholeRegion(false)}
+                  />
+                  Un comune
+                </label>
+              </div>
+              <Input
+                data-testid="discovery-municipality"
+                list="national-municipalities"
+                value={discoveryMunicipality}
+                disabled={discoveryWholeRegion || discoveryActive || !discoveryRegionReady}
+                onChange={(event) => setDiscoveryMunicipality(event.target.value)}
+                placeholder="Scrivi o scegli il comune"
+                className="h-10"
+              />
+              <datalist id="national-municipalities">
+                {discoveryMunicipalities.map((municipality) => (
+                  <option key={municipality} value={municipality} />
+                ))}
+              </datalist>
+            </div>
+
+            <Button
+              data-testid="btn-national-discovery"
+              className="h-10"
+              disabled={
+                discoveryBusy ||
+                discoveryActive ||
+                !discoveryRegionReady ||
+                (!discoveryWholeRegion &&
+                  !discoveryMunicipalities.includes(discoveryMunicipality))
+              }
+              onClick={startNationalDiscovery}
+            >
+              {discoveryBusy ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <MapPinned className="mr-2 h-4 w-4" />
+              )}
+              Avvia scansione
+            </Button>
+          </div>
+
+          {discoveryError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {discoveryError}
+            </div>
+          ) : null}
+
+          {discoveryJob ? (
+            <div className="space-y-2 rounded-md border bg-muted/30 p-3" data-testid="discovery-job-status">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">
+                  {discoveryJob.region}
+                  {discoveryJob.municipality ? ` · ${discoveryJob.municipality}` : " · regione completa"}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      discoveryJob.status === "completed" &&
+                        "border-emerald-300 bg-emerald-50 text-emerald-800",
+                      (discoveryJob.status === "incomplete" ||
+                        discoveryJob.status === "failed") &&
+                        "border-amber-300 bg-amber-50 text-amber-900"
+                    )}
+                  >
+                    {discoveryJob.status === "waiting_for_archive"
+                      ? "Preparazione"
+                      : discoveryJob.status === "running"
+                        ? "Scansione in corso"
+                        : discoveryJob.status === "completed"
+                          ? "Completata"
+                          : discoveryJob.status === "incomplete"
+                            ? "Sospesa in sicurezza"
+                            : discoveryJob.status === "failed"
+                              ? "Interrotta"
+                              : discoveryJob.status === "cancelled"
+                                ? "Annullata"
+                                : "In coda"}
+                  </Badge>
+                  {discoveryActive ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={discoveryBusy}
+                      onClick={cancelNationalDiscovery}
+                    >
+                      <X className="mr-1 h-4 w-4" />
+                      Annulla
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${discoveryProgress}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  Comuni {discoveryJob.progress.municipalitiesCompleted}/
+                  {discoveryJob.progress.municipalitiesTotal}
+                </span>
+                <span>Strutture trovate {discoveryJob.progress.structuresFound ?? discoveryJob.progress.newStructuresAdded}</span>
+                <span>Prese in carico {discoveryJob.progress.structuresScanned ?? 0}</span>
+                <span>Certificati {discoveryJob.progress.certifiedResults ?? 0}</span>
+                {(discoveryJob.progress.unresolvedResults ?? 0) > 0 ? (
+                  <span>Non certificabili {discoveryJob.progress.unresolvedResults}</span>
+                ) : null}
+                {(discoveryJob.progress.frontierTotal ?? 0) > 0 ? (
+                  <span>
+                    Risorse sito {discoveryJob.progress.frontierCompleted ?? 0}/
+                    {discoveryJob.progress.frontierTotal}
+                    {" · "}in coda {discoveryJob.progress.frontierPending ?? 0}
+                  </span>
+                ) : null}
+                {discoveryJob.progress.currentMunicipality ? (
+                  <span>Ora: {discoveryJob.progress.currentMunicipality}</span>
+                ) : null}
+              </div>
+              <p className="text-xs">{discoveryJob.progress.message}</p>
+              {discoveryJob.progress.frontierStalled ? (
+                <p className="text-xs font-medium text-amber-700">
+                  Watchdog attivo: il sito non avanzava da 8 minuti, recupero automatico avviato.
+                </p>
+              ) : null}
+              {discoveryJob.errorMessage ? (
+                <p className="text-xs text-amber-800">{discoveryJob.errorMessage}</p>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -1024,8 +1410,11 @@ export function SanitaLeads() {
           className="h-9 rounded-md border bg-background px-2 text-sm"
         >
           <option value="ALL">Tutte le regioni</option>
-          <option value="Campania">Campania</option>
-          <option value="Veneto">Veneto</option>
+          {ITALIAN_REGIONS.map((region) => (
+            <option key={region} value={region}>
+              {region}
+            </option>
+          ))}
         </select>
         <select
           data-testid="outcome-filter"
