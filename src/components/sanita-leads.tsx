@@ -940,7 +940,23 @@ export function SanitaLeads() {
     retry: "Da completare",
   }
 
-  const exportCsv = () => {
+    // Etichette CSV leggibili dal cliente (niente gergo interno legacy/reval).
+  const CLIENT_OUTCOME_LABEL: Record<string, string> = {
+    policy_valid: "Polizza valida",
+    policy_expired: "Polizza scaduta",
+    date_unknown: "Polizza pubblicata (scadenza da verificare)",
+    self_insurance: "Autoassicurata",
+    hot: "Polizza non pubblicata (HOT)",
+  }
+
+  const fmtCsvDate = (iso: string | null) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ""
+    return d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+  }
+
+const exportCsv = () => {
     const CERTIFIED = new Set(["policy_valid", "policy_expired", "date_unknown", "self_insurance", "hot"])
     const rows = tabRows.filter((r) => CERTIFIED.has(r.outcome))
     downloadCsv(
@@ -949,25 +965,15 @@ export function SanitaLeads() {
         Struttura: r.companyName,
         Città: r.city || "",
         Regione: r.region || "",
-        Esito: outcomeLabelForRow(r),
-        Compagnia: r.policyCompany || "",
-        Numero: r.policyNumber || "",
-        Scadenza: r.policyExpiry || "",
-        Sito: r.website || "",
+        Esito: CLIENT_OUTCOME_LABEL[r.outcome] || outcomeLabelForRow(r),
+        "Compagnia assicurativa": r.policyCompany || "",
+        "Numero polizza": r.policyNumber || "",
+        "Scadenza polizza": r.policyExpiry || "",
         Telefono: r.phone || "",
         Email: r.email || "",
         PEC: r.pec || "",
-        PIVA: r.piva || "",
-        Categoria: r.category || "",
-        Fonte:
-          r.source === "SHADOW_RUN"
-            ? "nuovo motore"
-            : r.source === "TERRITORY_RUN"
-              ? "scansione territorio"
-              : "legacy snapshot 18 luglio",
-        CompletataIl: r.completedAt || "",
-        EvidenceURL: r.evidenceUrls.join(" "),
-        PdfHash: r.pdfHash || "",
+        "Sito web": r.website || "",
+        "Verificato il": fmtCsvDate(r.completedAt),
       }))
     )
   }
