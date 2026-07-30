@@ -26,6 +26,10 @@ const SELF_INSURANCE_PHRASES: RegExp[] = [
   // Forma "label: valore" tipica di footer e tabelle PARS/PARM, es.
   // "Casa di Cura Villa Fiorita s.r.l.: Autoassicurazione" (falso HOT 30/07/2026).
   /[:：]\s*auto[\s-]?assicurazione\b/i,
+  // Autotutela assicurativa (es. Relazione Rischio Clinico Marrelli Health/Calabrodental:
+  // "ha operato in autotutela assicurativa ... si è deciso di ritornare all’autotutela").
+  /autotutela\s+assicurativa/i,
+  /(?:ritorn\w+|torn\w+|deciso)\s+.{0,30}all['’]autotutela\b/i,
   /auto[\s-]?assicurazione\s*[/,;-]\s*ritenzione\s+del\s+rischio/i,
   /(?:è|e)\s+in\s+regime\s+di\s+auto[\s-]?assicurazione/i,
   /coperta\s+(?:dalla\s+)?(?:rsa|struttura|casa\s+di\s+cura).{0,40}fondi.{0,40}auto[\s-]?assicuraz/i,

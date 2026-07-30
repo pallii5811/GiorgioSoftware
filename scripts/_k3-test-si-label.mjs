@@ -18,5 +18,14 @@ check('alternativa "polizza o autoassicurazione" → non declared', detectSelfIn
 // Menzione secca senza label non promuove (resta prudente)
 check('menzione generica senza colon → non declared', detectSelfInsuranceDeclaration('si parla di autoassicurazione in generale').declared === false)
 
+
+// Caso reale Calabrodental/Marrelli Health (PDF Relazione Rischio Clinico 2025, verificato 30/07/2026)
+const calabro = 'La MH ha operato fino a gennaio del 2019 in autotutela assicurativa e dal febbraio 2019 ha stipulato specifica copertura assicurativa per le proprie attività sanitarie con la compagnia AmTrust Clinics fino a marzo 2021. Da tale data si è deciso di ritornare all’autotutela.'
+const d2 = detectSelfInsuranceDeclaration(calabro)
+check('Calabrodental autotutela → declared=true', d2.declared === true)
+check('Calabrodental autotutela → blocksHotAbsence=true', d2.blocksHotAbsence === true)
+// autotutela amministrativa (non assicurativa) non deve promuovere
+check('autotutela amministrativa generica → non declared', detectSelfInsuranceDeclaration('l’ente ha esercitato autotutela amministrativa sul provvedimento').declared === false)
+
 console.log(`=== ${pass} PASS / ${fail} FAIL ===`)
 process.exit(fail ? 1 : 0)
