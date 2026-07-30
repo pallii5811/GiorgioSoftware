@@ -375,6 +375,23 @@ function isLegacyScannedCert(l: Lead): boolean {
   return isLegacyCommercialRow(l)
 }
 
+/**
+ * Il motore nuovo (scansioni territorio) scrive token strutturati [STATE:]/[BV:]/[VS:]
+ * nell'evidence. I lead dello snapshot legacy (18 luglio) non li hanno mai:
+ * verificato su DB produzione 30/07/2026 — 0 righe legacy con questi token.
+ */
+function hasNewEngineTokens(evidence: string | null | undefined): boolean {
+  return /\[(?:STATE|BV|VS):/.test(evidence || "")
+}
+
+function revalStatusForLiveRow(l: Lead): UiRow["revalStatus"] {
+  if (!hasNewEngineTokens(l.evidence)) return "not_started"
+  const o = liveOutcome(l)
+  if (o === "pending") return "in_progress"
+  if (o === "review") return "review"
+  return "completed"
+}
+
 function liveToRow(l: Lead): UiRow {
   const urls = [...policyPdfUrlsForLead(l.evidence)]
   const html = policyHtmlSourceForLead(l.evidence)
@@ -392,8 +409,8 @@ function liveToRow(l: Lead): UiRow {
     completedAt: l.lastScannedAt,
     processingState: readProcessingState(l.evidence) || l.semantic?.processingState || null,
     unresolvedRelevantNodes: null,
-    source: "LEGACY_LIVE",
-    revalStatus: "not_started",
+    source: hasNewEngineTokens(l.evidence) ? "TERRITORY_RUN" : "LEGACY_LIVE",
+    revalStatus: revalStatusForLiveRow(l),
     live: l,
     website: l.website,
     phone: l.phone,
