@@ -42,9 +42,16 @@ export interface AuditSources {
 
 /** PDF che ha certificato la polizza — solo URL policy-relevanti, mai il primo PDF a caso. */
 export function pickPolicyPdfUrl(
-  crawl: Pick<CrawlResult, "policyPdfUrl" | "pagesVisited">
+  crawl: Pick<CrawlResult, "policyPdfUrl" | "policySourceUrl" | "pagesVisited">
 ): string | null {
-  if (crawl.policyPdfUrl) return crawl.policyPdfUrl;
+  if (crawl.policyPdfUrl && /\.pdf(?:$|[?#])/i.test(crawl.policyPdfUrl)) {
+    return crawl.policyPdfUrl;
+  }
+  // A certified HTML source must not be replaced by an unrelated policy-like
+  // PDF (for example a PARM linked from the same transparency page).
+  if (crawl.policySourceUrl && !/\.pdf(?:$|[?#])/i.test(crawl.policySourceUrl)) {
+    return null;
+  }
   const pdfs = (crawl.pagesVisited || []).filter((u) => /\.pdf(?:$|\?|#)/i.test(u));
   return (
     pdfs.find((u) => /polizz|parm|pars|assicuraz|rinnovo|_rc_|\/rc[-_]/i.test(u.toLowerCase())) ??
@@ -53,7 +60,10 @@ export function pickPolicyPdfUrl(
 }
 
 /** Pagina HTML o PDF che ha certificato la polizza. */
-export function pickPolicySourceUrl(crawl: Pick<CrawlResult, "policyPdfUrl" | "pagesVisited">): string | null {
+export function pickPolicySourceUrl(
+  crawl: Pick<CrawlResult, "policyPdfUrl" | "policySourceUrl" | "pagesVisited">
+): string | null {
+  if (crawl.policySourceUrl) return crawl.policySourceUrl;
   const pdf = pickPolicyPdfUrl(crawl);
   if (pdf) return pdf;
   return (
@@ -72,8 +82,11 @@ export function isParmOrGelliReportPdf(url: string): boolean {
 }
 
 function buildDocsSection(sources: AuditSources, verdict: Verdict, body?: string | null): string | null {
+  const exactPolicyResource = sources.policyPdfUrl || sources.policySourceUrl;
+  if (verdict === "PUBLISHED" && exactPolicyResource) {
+    return `[DOCS: ${exactPolicyResource}]`;
+  }
   if (!sources.policyPdfUrl) return null;
-  if (verdict === "PUBLISHED") return `[DOCS: ${sources.policyPdfUrl}]`;
   if (
     verdict === "HOT" &&
     body &&
@@ -92,10 +105,15 @@ export function policyDocsForDisplay(docs: string[] | null): string[] {
 }
 
 /** HOT con polizza RC pubblicata sul sito ma scaduta (legacy) OPPURE PUBLISHED_EXPIRED. */
+/** Token verdict [V:PUB]/[V:HOT] anche se preceduto da altri token ([PS:...], [EV_V:...]). */
+function hasVerdictToken(evidence: string, v: "PUB" | "HOT"): boolean {
+  return new RegExp(`(?:^|\s)\[V:${v}\]`, "i").test(evidence.slice(0, 200));
+}
+
 export function isHotPublishedExpiredEvidence(evidence: string | null | undefined): boolean {
   if (!evidence) return false;
-  if (/\[PS:PUBLISHED_EXPIRED\]/i.test(evidence) && /^\[V:PUB\]/i.test(evidence)) return true;
-  if (!/^\[V:HOT\]/i.test(evidence)) return false;
+  if (/\[PS:PUBLISHED_EXPIRED\]/i.test(evidence) && hasVerdictToken(evidence, "PUB")) return true;
+  if (!hasVerdictToken(evidence, "HOT")) return false;
   // Stesso evidence che dice "non pubblicata" e "scaduta" → non è una polizza certificata.
   if (/non\s+pubblicat|assenza\s+pubblicazione|assenza\s+polizza/i.test(evidence)) return false;
   return /polizza\s+rc\s+pubblicata|polizza\s+pubblicata\s+sul\s+sito|pubblicata\s+sul\s+sito/i.test(
@@ -119,9 +137,18 @@ function extractPdfUrlsFromText(text: string | null | undefined): string[] {
 /** URL PDF polizza per la UI — PUBLISHED e HOT «pubblicata ma scaduta». */
 export function policyPdfUrlsForLead(evidence: string | null | undefined): string[] {
   if (!evidence) return [];
-  const isPub = /^\[V:PUB\]/i.test(evidence);
+  const isPub = hasVerdictToken(evidence, "PUB");
   const isHotExpired = isHotPublishedExpiredEvidence(evidence);
-  if (!isPub && !isHotExpired) return [];
+  if (!isPub && !isHotExpired) {
+    // HOT: nessun PDF polizza (per definizione). Evidence mostrabile = pagina
+    // ufficiale controllata, dove la polizza andrebbe pubblicata (Art. 10).
+    if (hasVerdictToken(evidence, "HOT")) {
+      const { fonti } = parseEvidenceSections(evidence);
+      const checked = fonti?.match(/fonte polizza PDF:\s*(https?:\/\/\S+)/i)?.[1];
+      if (checked) return [checked];
+    }
+    return [];
+  }
 
   const { docs, body, fonti } = parseEvidenceSections(evidence);
   const fromDocs = policyDocsForDisplay(docs);
@@ -140,7 +167,7 @@ export function policyPdfUrlsForLead(evidence: string | null | undefined): strin
 /** Pagina HTML fonte polizza (se non c'è PDF). */
 export function policyHtmlSourceForLead(evidence: string | null | undefined): string | null {
   if (!evidence) return null;
-  const isPub = /^\[V:PUB\]/i.test(evidence);
+  const isPub = hasVerdictToken(evidence, "PUB");
   const isHotExpired = isHotPublishedExpiredEvidence(evidence);
   if (!isPub && !isHotExpired) return null;
 
