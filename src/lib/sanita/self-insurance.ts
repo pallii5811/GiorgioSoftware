@@ -18,17 +18,22 @@ export const DETECTOR_SELF_INSURANCE_COMPANY =
 const SELF_INSURANCE_PHRASES: RegExp[] = [
   /opera\s+sotto\s+il\s+regime\s+di\s+autoassicurazione/i,
   /adotta\s+un\s+sistema\s+di\s+autoassicurazione/i,
+  /adotta\s+(?:la\s+)?forma\s+di\s+auto[\s-]?assicurazione/i,
   /regime\s+di\s+auto[\s-]?assicurazione/i,
   /sistema\s+di\s+auto[\s-]?assicurazione/i,
   /auto[\s-]?assicurazione\s+con\s+l['']?appostamento\s+di\s+un\s+apposito\s+fondo/i,
   /in\s+auto[\s-]?assicurazione/i,
+  // Forma "label: valore" tipica di footer e tabelle PARS/PARM, es.
+  // "Casa di Cura Villa Fiorita s.r.l.: Autoassicurazione" (falso HOT 30/07/2026).
+  /[:：]\s*auto[\s-]?assicurazione\b/i,
+  /auto[\s-]?assicurazione\s*[/,;-]\s*ritenzione\s+del\s+rischio/i,
   /(?:è|e)\s+in\s+regime\s+di\s+auto[\s-]?assicurazione/i,
   /coperta\s+(?:dalla\s+)?(?:rsa|struttura|casa\s+di\s+cura).{0,40}fondi.{0,40}auto[\s-]?assicuraz/i,
   /autoritenzione\s+del\s+rischio/i,
   /\bautoritenzione\b/i,
   /assunzione\s+diretta\s+del\s+rischio/i,
   /gestione\s+diretta\s+del\s+rischio/i,
-  /gestione\s+diretta\s+dei\s+(?:sinistri|rischi)/i,
+  /(?:la\s+struttura|la\s+societ[aà]|la\s+casa\s+di\s+cura|l['’]istituto|l['’]azienda|l['’]ente).{0,120}(?:assume|adotta|gestisce|opera).{0,120}gestione\s+diretta\s+dei\s+(?:sinistri|rischi)/i,
   /fondo\s+interno\s+(?:di\s+)?(?:rischi|autoassicurazione)/i,
   /fondo\s+rischi\s+incrementato/i,
   /con\s+propri\s+fondi\s+in\s+regi[me]+\s+di\s+auto[\s-]?assicuraz/i,
@@ -54,6 +59,28 @@ function normalize(text: string): string {
   return (text || "").replace(/\s+/g, " ").trim();
 }
 
+function isAmbiguousAlternative(text: string, index: number, length: number): boolean {
+  const context = text.slice(Math.max(0, index - 140), index + length + 140);
+  return (
+    /(?:copertura|polizza)\s+assicurativa.{0,100}\b(?:o|oppure|ovvero)\b.{0,80}auto[\s-]?assicuraz/i.test(
+      context
+    ) ||
+    /auto[\s-]?assicuraz.{0,80}\b(?:o|oppure|ovvero)\b.{0,100}(?:copertura|polizza)\s+assicurativa/i.test(
+      context
+    ) ||
+    /(?:se|qualora|eventuale|periodo\s+in\s+cui).{0,120}auto[\s-]?assicuraz/i.test(
+      context
+    )
+  );
+}
+
+function isNormativeThirdPartyReference(text: string, index: number, length: number): boolean {
+  const context = text.slice(Math.max(0, index - 180), index + length + 180);
+  return /delibera|programma\s+regionale|aziende\s+sanitarie\s+sperimentatrici|indicazioni\s+operative|linee\s+guida/i.test(
+    context
+  );
+}
+
 export function isDetectorSelfInsuranceCompany(company: string | null | undefined): boolean {
   if (!company?.trim()) return false;
   return /autoassicurazione|gestione\s+diretta\s+del\s+rischio|autoritenzione/i.test(company);
@@ -70,6 +97,12 @@ export function detectSelfInsuranceDeclaration(text: string): SelfInsuranceDetec
   for (const re of SELF_INSURANCE_PHRASES) {
     const m = re.exec(t);
     if (!m) continue;
+    if (
+      isAmbiguousAlternative(t, m.index, m[0].length) ||
+      isNormativeThirdPartyReference(t, m.index, m[0].length)
+    ) {
+      continue;
+    }
     declared = true;
     const i = Math.max(0, m.index - 40);
     citation = t.slice(i, m.index + m[0].length + 80).trim();
@@ -77,12 +110,7 @@ export function detectSelfInsuranceDeclaration(text: string): SelfInsuranceDetec
   }
   const blocksHotAbsence =
     declared || NO_POLICY_THEN_SELF.test(t) || (inInsuranceSection && /auto[\s-]?assicuraz/i.test(t));
-  // Generic "autoassicurazione" in insurance-position section (PARS §3) is enough.
-  if (!declared && inInsuranceSection && /auto[\s-]?assicuraz/i.test(t)) {
-    declared = true;
-    const m = /auto[\s-]?assicuraz[^.]{0,80}/i.exec(t);
-    citation = m ? m[0].trim() : citation;
-  }
+  // A generic mention in this section blocks HOT, but is not a verified declaration.
   return { declared, citation, inInsuranceSection, blocksHotAbsence };
 }
 
@@ -104,14 +132,8 @@ export function resolveSelfInsuranceSignal(opts: {
   ) {
     return fromText;
   }
-  if (isDetectorSelfInsuranceCompany(opts.policyCompany)) {
-    return {
-      declared: true,
-      citation: opts.policyCompany!.trim(),
-      inInsuranceSection: fromText.inInsuranceSection,
-      blocksHotAbsence: true,
-    };
-  }
+  // The detector label is derived from this same text and is not independent
+  // evidence. It must never promote an ambiguous mention by itself.
   return fromText;
 }
 
