@@ -55,7 +55,16 @@ function aggregateCrawlResult(
     /trasparen|polizz|assicur|amministraz|gelli|rischio|document/i.test(u)
   );
   const pdfs = nodes.filter((n) => n.resourceType === "pdf");
-  const pdfsRead = pdfs.filter((n) => n.state === "COMPLETED").length;
+  // PDF escluso in modo terminale perche la risorsa e verificata assente
+  // (HTTP 404/410, cfr. classifyTerminalMissingUrl): non puo contenere una
+  // polizza, quindi e risolto, non "non processato". Altrimenti il gate
+  // policyPdfsQueued>policyPdfsRead blocca il lead per sempre anche a
+  // frontiera esaurita (deriveCrawlCompleteness tratta gia EXCLUDED=risolto).
+  const pdfsTerminalMissing = pdfs.filter(
+    (n) => n.state === "EXCLUDED" && (n.httpStatus === 404 || n.httpStatus === 410)
+  ).length;
+  const pdfsRead =
+    pdfs.filter((n) => n.state === "COMPLETED").length + pdfsTerminalMissing;
   const pdfsQueued = pdfs.length;
   const analysis = analyzePolicy(policyText || text, policyUrl || undefined);
 
