@@ -1,0 +1,285 @@
+{
+ "verdict": "PASS",
+ "stoppedAt": "2026-07-22T10:12:22.516Z",
+ "startedAt": "2026-07-22T08:24:10.173Z",
+ "exitCode": -1,
+ "stopReasons": [],
+ "corpus": [
+  "cmqkld5s700a8108eti0nofjv",
+  "cmqkld5rx009p108edj6t9krw",
+  "cmql46eia000ac9w78xh0rxdl",
+  "cmqkld5t300av108e5rrr47s9",
+  "cmqkld5s3009z108e1yj01zqy",
+  "cmqkld5s0009u108eghihpoxi",
+  "cmqkld5s300a0108e8p1p3xxg",
+  "cmqklex5e00b3108e2zcdos1w",
+  "cmqklex5g00b6108ejom1shk0",
+  "cmqkn3ghj0002xnfpr553khla",
+  "cmqkld5sa00af108epednu868",
+  "cmqkld5t000ao108esg4xv094"
+ ],
+ "firstOutcome": {
+  "cmqkld5t300av108e5rrr47s9": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T08:01:57.703Z",
+   "preExisting": true
+  },
+  "cmqkld5s3009z108e1yj01zqy": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T08:33:46.785Z"
+  },
+  "cmqkld5s0009u108eghihpoxi": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:03:48.362Z"
+  },
+  "cmqkld5s300a0108e8p1p3xxg": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T09:07:17.964Z"
+  },
+  "cmqklex5e00b3108e2zcdos1w": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:07:42.429Z"
+  },
+  "cmqklex5g00b6108ejom1shk0": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:37:43.976Z"
+  },
+  "cmqkn3ghj0002xnfpr553khla": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:39:08.655Z"
+  },
+  "cmqkld5sa00af108epednu868": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:40:14.931Z"
+  },
+  "cmqkld5t000ao108esg4xv094": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:49:05.631Z"
+  },
+  "cmqkld5s700a8108eti0nofjv": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:55:09.803Z"
+  },
+  "cmql46eia000ac9w78xh0rxdl": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T09:56:21.514Z"
+  },
+  "cmqkld5rx009p108edj6t9krw": {
+   "processingState": "RETRY_PENDING",
+   "kind": "retry",
+   "at": "2026-07-22T10:00:37.905Z"
+  }
+ },
+ "checkpoints": [
+  {
+   "mark": 3,
+   "at": "2026-07-22T09:03:48.363Z",
+   "corpusTerminal": 1,
+   "corpusRetry": 11,
+   "byState": {
+    "REVIEW_HUMAN": 1
+   },
+   "stats": {
+    "processed": 93,
+    "terminal": 12,
+    "hot": 2,
+    "pub": 0,
+    "review": 10,
+    "retry": 81,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "SITEMAP_UNRESOLVED": 2,
+    "FRONTIER_INCOMPLETE": 1,
+    "PDF_UNPROCESSED": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 1,
+    "RETRY_EXHAUSTED_6": 1,
+    "RETRY_EXHAUSTED_5": 5
+   }
+  },
+  {
+   "mark": 6,
+   "at": "2026-07-22T09:37:43.977Z",
+   "corpusTerminal": 2,
+   "corpusRetry": 10,
+   "byState": {
+    "REVIEW_HUMAN": 2
+   },
+   "stats": {
+    "processed": 96,
+    "terminal": 13,
+    "hot": 2,
+    "pub": 0,
+    "review": 11,
+    "retry": 83,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "SITEMAP_UNRESOLVED": 2,
+    "FRONTIER_INCOMPLETE": 1,
+    "PDF_UNPROCESSED": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 2,
+    "CRAWL_CAP": 1,
+    "RETRY_EXHAUSTED_5": 3
+   }
+  },
+  {
+   "mark": 9,
+   "at": "2026-07-22T09:49:05.631Z",
+   "corpusTerminal": 2,
+   "corpusRetry": 10,
+   "byState": {
+    "REVIEW_HUMAN": 2
+   },
+   "stats": {
+    "processed": 99,
+    "terminal": 13,
+    "hot": 2,
+    "pub": 0,
+    "review": 11,
+    "retry": 86,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "SITEMAP_UNRESOLVED": 3,
+    "FRONTIER_INCOMPLETE": 1,
+    "PDF_UNPROCESSED": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 2,
+    "CRAWL_CAP": 3
+   }
+  },
+  {
+   "mark": 12,
+   "at": "2026-07-22T10:00:37.905Z",
+   "corpusTerminal": 2,
+   "corpusRetry": 10,
+   "byState": {
+    "REVIEW_HUMAN": 2
+   },
+   "stats": {
+    "processed": 102,
+    "terminal": 13,
+    "hot": 2,
+    "pub": 0,
+    "review": 11,
+    "retry": 89,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {
+    "SITEMAP_UNRESOLVED": 3,
+    "FRONTIER_INCOMPLETE": 1,
+    "PDF_UNPROCESSED": 1,
+    "LEAD_WALL_TIMEOUT_1800000ms": 2,
+    "CRAWL_CAP": 3
+   }
+  }
+ ],
+ "audits": {
+  "cmqkld5t300av108e5rrr47s9": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": [],
+   "preExisting": true
+  },
+  "cmqkld5s300a0108e8p1p3xxg": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  }
+ },
+ "terminal": {
+  "cmqkld5t300av108e5rrr47s9": {
+   "finishedAt": "2026-07-22T08:01:57.703Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": null,
+   "reasonCode": "IDENTITY_MISMATCH"
+  },
+  "cmqkld5s300a0108e8p1p3xxg": {
+   "finishedAt": "2026-07-22T09:07:17.836Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": null,
+   "reasonCode": "IDENTITY_MISMATCH"
+  }
+ },
+ "retry": {
+  "cmqkld5s700a8108eti0nofjv": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "SITEMAP_UNRESOLVED",
+   "attempts": 7
+  },
+  "cmqkld5rx009p108edj6t9krw": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "SITEMAP_UNRESOLVED",
+   "attempts": 2
+  },
+  "cmql46eia000ac9w78xh0rxdl": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "FRONTIER_INCOMPLETE",
+   "attempts": 4
+  },
+  "cmqkld5s3009z108e1yj01zqy": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "PDF_UNPROCESSED",
+   "attempts": 2
+  },
+  "cmqkld5s0009u108eghihpoxi": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "WORKER_SIGTERM",
+   "attempts": 2
+  },
+  "cmqklex5e00b3108e2zcdos1w": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "CRAWL_CAP",
+   "attempts": 1
+  },
+  "cmqklex5g00b6108ejom1shk0": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "LEAD_WALL_TIMEOUT_1800000ms",
+   "attempts": 1
+  },
+  "cmqkn3ghj0002xnfpr553khla": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "CRAWL_CAP",
+   "attempts": 1
+  },
+  "cmqkld5sa00af108epednu868": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "SITEMAP_UNRESOLVED",
+   "attempts": 1
+  },
+  "cmqkld5t000ao108esg4xv094": {
+   "lastReason": "RETRY_PENDING",
+   "lastError": "CRAWL_CAP",
+   "attempts": 1
+  }
+ },
+ "gate": {
+  "handled12": true,
+  "internalTechnicalTerminal": 0,
+  "ocrRendererMissing": 0,
+  "falseHot": 0,
+  "falsePub": 0,
+  "auditViolations": 0,
+  "checkpointPreserved": true
+ },
+ "byState": {
+  "REVIEW_HUMAN": 2
+ }
+}

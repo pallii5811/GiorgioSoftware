@@ -1,0 +1,335 @@
+[
+{"type":"stdout","created":1785362145229,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Running build in Washington, D.C., USA (East) – iad1","id":"1785362145229897734814300000","date":1785362145229,"serial":"1785362145229897734814300000"}}
+,
+{"type":"stdout","created":1785362145230,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Build machine configuration: 2 cores, 8 GB","id":"1785362145230897734814300000","date":1785362145230,"serial":"1785362145230897734814300000"}}
+,
+{"type":"stdout","created":1785362145297,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Cloning github.com/pallii5811/GiorgioSoftware (Branch: k3/stopship-complete-engine-20260722, Commit: d97369a)","id":"1785362145297897734814300000","date":1785362145297,"serial":"1785362145297897734814300000"}}
+,
+{"type":"stdout","created":1785362145298,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Skipping build cache, deployment was triggered without cache.","id":"1785362145298897734814300000","date":1785362145298,"serial":"1785362145298897734814300000"}}
+,
+{"type":"stdout","created":1785362145804,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Cloning completed: 507.000ms","id":"1785362145804897734814300000","date":1785362145804,"serial":"1785362145804897734814300000"}}
+,
+{"type":"stdout","created":1785362145980,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Found .vercelignore","id":"1785362145980897734814300000","date":1785362145980,"serial":"1785362145980897734814300000"}}
+,
+{"type":"stdout","created":1785362145986,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Removed 0 ignored files defined in .vercelignore","id":"1785362145986897734814300000","date":1785362145986,"serial":"1785362145986897734814300000"}}
+,
+{"type":"stdout","created":1785362146402,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Running \"vercel build\"","id":"1785362146402563007927500000","date":1785362146402,"serial":"1785362146402563007927500000"}}
+,
+{"type":"stderr","created":1785362146429,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Vercel CLI 58.1.0","id":"1785362146429563007927500000","date":1785362146429,"serial":"1785362146429563007927500000"}}
+,
+{"type":"stdout","created":1785362146787,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Installing dependencies...","id":"1785362146787563007927500000","date":1785362146787,"serial":"1785362146787563007927500000"}}
+,
+{"type":"stderr","created":1785362150568,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation","id":"1785362150568563007927500000","date":1785362150568,"serial":"1785362150568563007927500000"}}
+,
+{"type":"stderr","created":1785362155494,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead","id":"1785362155494563007927500000","date":1785362155494,"serial":"1785362155494563007927500000"}}
+,
+{"type":"stdout","created":1785362178131,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362178131563007927500000","date":1785362178131,"serial":"1785362178131563007927500000"}}
+,
+{"type":"stdout","created":1785362178132,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"> windsurf-project-20@0.1.0 postinstall","id":"1785362178132563007927500000","date":1785362178132,"serial":"1785362178132563007927500000"}}
+,
+{"type":"stdout","created":1785362178132,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"> node scripts/prisma-smart.mjs","id":"1785362178132563007927500001","date":1785362178132,"serial":"1785362178132563007927500001"}}
+,
+{"type":"stdout","created":1785362178132,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362178132563007927500002","date":1785362178132,"serial":"1785362178132563007927500002"}}
+,
+{"type":"stdout","created":1785362178208,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] DATABASE_URL=postgresql:","id":"1785362178208563007927500000","date":1785362178208,"serial":"1785362178208563007927500000"}}
+,
+{"type":"stdout","created":1785362178209,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] schema=/vercel/path0/prisma/schema.prisma","id":"1785362178209563007927500000","date":1785362178209,"serial":"1785362178209563007927500000"}}
+,
+{"type":"stdout","created":1785362178210,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] run: npx prisma generate --schema /vercel/path0/prisma/schema.prisma","id":"1785362178210563007927500000","date":1785362178210,"serial":"1785362178210563007927500000"}}
+,
+{"type":"stdout","created":1785362179321,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Prisma schema loaded from prisma/schema.prisma","id":"1785362179321563007927500000","date":1785362179321,"serial":"1785362179321563007927500000"}}
+,
+{"type":"stdout","created":1785362179886,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362179886563007927500000","date":1785362179886,"serial":"1785362179886563007927500000"}}
+,
+{"type":"stdout","created":1785362179887,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"✔ Generated Prisma Client (v5.21.1) to ./node_modules/@prisma/client in 69ms","id":"1785362179887563007927500000","date":1785362179887,"serial":"1785362179887563007927500000"}}
+,
+{"type":"stdout","created":1785362179888,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362179888563007927500000","date":1785362179888,"serial":"1785362179888563007927500000"}}
+,
+{"type":"stdout","created":1785362179888,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Start by importing your Prisma Client (See: http://pris.ly/d/importing-client)","id":"1785362179888563007927500001","date":1785362179888,"serial":"1785362179888563007927500001"}}
+,
+{"type":"stdout","created":1785362179888,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362179888563007927500002","date":1785362179888,"serial":"1785362179888563007927500002"}}
+,
+{"type":"stdout","created":1785362179889,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Tip: Curious about the SQL queries Prisma ORM generates? Optimize helps you enhance your visibility: https://pris.ly/tip-2-optimize","id":"1785362179889563007927500000","date":1785362179889,"serial":"1785362179889563007927500000"}}
+,
+{"type":"stdout","created":1785362179889,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362179889563007927500001","date":1785362179889,"serial":"1785362179889563007927500001"}}
+,
+{"type":"stdout","created":1785362180107,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] skip db push (VERCEL/CI/PRISMA_SKIP_PUSH)","id":"1785362180107563007927500000","date":1785362180107,"serial":"1785362180107563007927500000"}}
+,
+{"type":"stdout","created":1785362180142,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362180142563007927500000","date":1785362180142,"serial":"1785362180142563007927500000"}}
+,
+{"type":"stdout","created":1785362180142,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"added 712 packages in 33s","id":"1785362180142563007927500001","date":1785362180142,"serial":"1785362180142563007927500001"}}
+,
+{"type":"stdout","created":1785362180143,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362180143563007927500000","date":1785362180143,"serial":"1785362180143563007927500000"}}
+,
+{"type":"stdout","created":1785362180143,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"257 packages are looking for funding","id":"1785362180143563007927500001","date":1785362180143,"serial":"1785362180143563007927500001"}}
+,
+{"type":"stdout","created":1785362180143,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  run `npm fund` for details","id":"1785362180143563007927500002","date":1785362180143,"serial":"1785362180143563007927500002"}}
+,
+{"type":"stdout","created":1785362180247,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Detected Next.js version: 16.2.6","id":"1785362180247563007927500000","date":1785362180247,"serial":"1785362180247563007927500000"}}
+,
+{"type":"stdout","created":1785362180248,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Running \"node scripts/prisma-smart.mjs && next build\"","id":"1785362180248563007927500000","date":1785362180248,"serial":"1785362180248563007927500000"}}
+,
+{"type":"stdout","created":1785362180295,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] DATABASE_URL=postgresql:","id":"1785362180295563007927500000","date":1785362180295,"serial":"1785362180295563007927500000"}}
+,
+{"type":"stdout","created":1785362180296,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] schema=/vercel/path0/prisma/schema.prisma","id":"1785362180296563007927500000","date":1785362180296,"serial":"1785362180296563007927500000"}}
+,
+{"type":"stdout","created":1785362180296,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] run: npx prisma generate --schema /vercel/path0/prisma/schema.prisma","id":"1785362180296563007927500001","date":1785362180296,"serial":"1785362180296563007927500001"}}
+,
+{"type":"stdout","created":1785362181325,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Prisma schema loaded from prisma/schema.prisma","id":"1785362181325563007927500000","date":1785362181325,"serial":"1785362181325563007927500000"}}
+,
+{"type":"stdout","created":1785362181861,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362181861563007927500000","date":1785362181861,"serial":"1785362181861563007927500000"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"✔ Generated Prisma Client (v5.21.1) to ./node_modules/@prisma/client in 67ms","id":"1785362181862563007927500000","date":1785362181862,"serial":"1785362181862563007927500000"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362181862563007927500001","date":1785362181862,"serial":"1785362181862563007927500001"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Start by importing your Prisma Client (See: http://pris.ly/d/importing-client)","id":"1785362181862563007927500002","date":1785362181862,"serial":"1785362181862563007927500002"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362181862563007927500003","date":1785362181862,"serial":"1785362181862563007927500003"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate","id":"1785362181862563007927500004","date":1785362181862,"serial":"1785362181862563007927500004"}}
+,
+{"type":"stdout","created":1785362181862,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362181862563007927500005","date":1785362181862,"serial":"1785362181862563007927500005"}}
+,
+{"type":"stderr","created":1785362181892,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"┌─────────────────────────────────────────────────────────┐","id":"1785362181892563007927500000","date":1785362181892,"serial":"1785362181892563007927500000"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│  Update available 5.21.1 -> 7.9.1                       │","id":"1785362181893563007927500000","date":1785362181893,"serial":"1785362181893563007927500000"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│                                                         │","id":"1785362181893563007927500001","date":1785362181893,"serial":"1785362181893563007927500001"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│  This is a major update - please follow the guide at    │","id":"1785362181893563007927500002","date":1785362181893,"serial":"1785362181893563007927500002"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│  https://pris.ly/d/major-version-upgrade                │","id":"1785362181893563007927500003","date":1785362181893,"serial":"1785362181893563007927500003"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│                                                         │","id":"1785362181893563007927500004","date":1785362181893,"serial":"1785362181893563007927500004"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│  Run the following to update                            │","id":"1785362181893563007927500005","date":1785362181893,"serial":"1785362181893563007927500005"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│    npm i --save-dev prisma@latest                       │","id":"1785362181893563007927500006","date":1785362181893,"serial":"1785362181893563007927500006"}}
+,
+{"type":"stderr","created":1785362181893,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"│    npm i @prisma/client@latest                          │","id":"1785362181893563007927500007","date":1785362181893,"serial":"1785362181893563007927500007"}}
+,
+{"type":"stderr","created":1785362181894,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"└─────────────────────────────────────────────────────────┘","id":"1785362181894563007927500000","date":1785362181894,"serial":"1785362181894563007927500000"}}
+,
+{"type":"stdout","created":1785362182066,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"[prisma-smart] skip db push (VERCEL/CI/PRISMA_SKIP_PUSH)","id":"1785362182066563007927500000","date":1785362182066,"serial":"1785362182066563007927500000"}}
+,
+{"type":"stdout","created":1785362182713,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  Applying modifyConfig from Vercel","id":"1785362182713563007927500000","date":1785362182713,"serial":"1785362182713563007927500000"}}
+,
+{"type":"stdout","created":1785362182719,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Attention: Next.js now collects completely anonymous telemetry regarding usage.","id":"1785362182719563007927500000","date":1785362182719,"serial":"1785362182719563007927500000"}}
+,
+{"type":"stdout","created":1785362182720,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"This information is used to shape Next.js' roadmap and prioritize features.","id":"1785362182720563007927500000","date":1785362182720,"serial":"1785362182720563007927500000"}}
+,
+{"type":"stdout","created":1785362182720,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:","id":"1785362182720563007927500001","date":1785362182720,"serial":"1785362182720563007927500001"}}
+,
+{"type":"stdout","created":1785362182720,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"https://nextjs.org/telemetry","id":"1785362182720563007927500002","date":1785362182720,"serial":"1785362182720563007927500002"}}
+,
+{"type":"stdout","created":1785362182721,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362182721563007927500000","date":1785362182721,"serial":"1785362182721563007927500000"}}
+,
+{"type":"stdout","created":1785362182744,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"▲ Next.js 16.2.6 (Turbopack)","id":"1785362182744563007927500000","date":1785362182744,"serial":"1785362182744563007927500000"}}
+,
+{"type":"stdout","created":1785362182745,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362182745563007927500000","date":1785362182745,"serial":"1785362182745563007927500000"}}
+,
+{"type":"stdout","created":1785362182790,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  Creating an optimized production build ...","id":"1785362182790563007927500000","date":1785362182790,"serial":"1785362182790563007927500000"}}
+,
+{"type":"stderr","created":1785362198951,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Turbopack build encountered 3 warnings:","id":"1785362198951563007927500000","date":1785362198951,"serial":"1785362198951563007927500000"}}
+,
+{"type":"stderr","created":1785362198952,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"./next.config.ts","id":"1785362198952563007927500000","date":1785362198952,"serial":"1785362198952563007927500000"}}
+,
+{"type":"stderr","created":1785362198952,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Encountered unexpected file in NFT list","id":"1785362198952563007927500001","date":1785362198952,"serial":"1785362198952563007927500001"}}
+,
+{"type":"stderr","created":1785362198952,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:","id":"1785362198952563007927500002","date":1785362198952,"serial":"1785362198952563007927500002"}}
+,
+{"type":"stderr","created":1785362198953,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- filesystem operations (like path.join, path.resolve or fs.readFile), or","id":"1785362198953563007927500000","date":1785362198953,"serial":"1785362198953563007927500000"}}
+,
+{"type":"stderr","created":1785362198953,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- very dynamic requires (like require('./' + foo)).","id":"1785362198953563007927500001","date":1785362198953,"serial":"1785362198953563007927500001"}}
+,
+{"type":"stderr","created":1785362198953,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"To resolve this, you can","id":"1785362198953563007927500002","date":1785362198953,"serial":"1785362198953563007927500002"}}
+,
+{"type":"stderr","created":1785362198953,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- remove them if possible, or","id":"1785362198953563007927500003","date":1785362198953,"serial":"1785362198953563007927500003"}}
+,
+{"type":"stderr","created":1785362198953,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- only use them in development, or","id":"1785362198953563007927500004","date":1785362198953,"serial":"1785362198953563007927500004"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or","id":"1785362198954563007927500000","date":1785362198954,"serial":"1785362198954563007927500000"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)","id":"1785362198954563007927500001","date":1785362198954,"serial":"1785362198954563007927500001"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198954563007927500002","date":1785362198954,"serial":"1785362198954563007927500002"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Import trace:","id":"1785362198954563007927500003","date":1785362198954,"serial":"1785362198954563007927500003"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  App Route:","id":"1785362198954563007927500004","date":1785362198954,"serial":"1785362198954563007927500004"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./next.config.ts","id":"1785362198954563007927500005","date":1785362198954,"serial":"1785362198954563007927500005"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/app/api/sanita/archive-revalidation/results/route.ts","id":"1785362198954563007927500006","date":1785362198954,"serial":"1785362198954563007927500006"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198954563007927500007","date":1785362198954,"serial":"1785362198954563007927500007"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198954563007927500008","date":1785362198954,"serial":"1785362198954563007927500008"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"./next.config.ts","id":"1785362198954563007927500009","date":1785362198954,"serial":"1785362198954563007927500009"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Encountered unexpected file in NFT list","id":"1785362198954563007927500010","date":1785362198954,"serial":"1785362198954563007927500010"}}
+,
+{"type":"stderr","created":1785362198954,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:","id":"1785362198954563007927500011","date":1785362198954,"serial":"1785362198954563007927500011"}}
+,
+{"type":"stderr","created":1785362198955,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- filesystem operations (like path.join, path.resolve or fs.readFile), or","id":"1785362198955563007927500000","date":1785362198955,"serial":"1785362198955563007927500000"}}
+,
+{"type":"stderr","created":1785362198955,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- very dynamic requires (like require('./' + foo)).","id":"1785362198955563007927500001","date":1785362198955,"serial":"1785362198955563007927500001"}}
+,
+{"type":"stderr","created":1785362198955,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"To resolve this, you can","id":"1785362198955563007927500002","date":1785362198955,"serial":"1785362198955563007927500002"}}
+,
+{"type":"stderr","created":1785362198955,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- remove them if possible, or","id":"1785362198955563007927500003","date":1785362198955,"serial":"1785362198955563007927500003"}}
+,
+{"type":"stderr","created":1785362198957,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- only use them in development, or","id":"1785362198957563007927500000","date":1785362198957,"serial":"1785362198957563007927500000"}}
+,
+{"type":"stderr","created":1785362198958,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or","id":"1785362198958563007927500000","date":1785362198958,"serial":"1785362198958563007927500000"}}
+,
+{"type":"stderr","created":1785362198958,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)","id":"1785362198958563007927500001","date":1785362198958,"serial":"1785362198958563007927500001"}}
+,
+{"type":"stderr","created":1785362198960,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198960563007927500000","date":1785362198960,"serial":"1785362198960563007927500000"}}
+,
+{"type":"stderr","created":1785362198960,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Output asset trace:","id":"1785362198960563007927500001","date":1785362198960,"serial":"1785362198960563007927500001"}}
+,
+{"type":"stderr","created":1785362198960,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/app/api/gare/route.js","id":"1785362198960563007927500002","date":1785362198960,"serial":"1785362198960563007927500002"}}
+,
+{"type":"stderr","created":1785362198961,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/chunks/[root-of-the-server]__07d5fwu._.js","id":"1785362198961563007927500000","date":1785362198961,"serial":"1785362198961563007927500000"}}
+,
+{"type":"stderr","created":1785362198961,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/chunks/[root-of-the-server]__0z-ify0._.js","id":"1785362198961563007927500001","date":1785362198961,"serial":"1785362198961563007927500001"}}
+,
+{"type":"stderr","created":1785362198961,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198961563007927500002","date":1785362198961,"serial":"1785362198961563007927500002"}}
+,
+{"type":"stderr","created":1785362198962,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Import trace:","id":"1785362198962563007927500000","date":1785362198962,"serial":"1785362198962563007927500000"}}
+,
+{"type":"stderr","created":1785362198963,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  App Route:","id":"1785362198963563007927500000","date":1785362198963,"serial":"1785362198963563007927500000"}}
+,
+{"type":"stderr","created":1785362198963,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./next.config.ts","id":"1785362198963563007927500001","date":1785362198963,"serial":"1785362198963563007927500001"}}
+,
+{"type":"stderr","created":1785362198964,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/app/api/sanita/archive-revalidation/results/route.ts","id":"1785362198964563007927500000","date":1785362198964,"serial":"1785362198964563007927500000"}}
+,
+{"type":"stderr","created":1785362198964,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198964563007927500001","date":1785362198964,"serial":"1785362198964563007927500001"}}
+,
+{"type":"stderr","created":1785362198966,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198966563007927500000","date":1785362198966,"serial":"1785362198966563007927500000"}}
+,
+{"type":"stderr","created":1785362198967,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"./next.config.ts","id":"1785362198967563007927500000","date":1785362198967,"serial":"1785362198967563007927500000"}}
+,
+{"type":"stderr","created":1785362198968,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Encountered unexpected file in NFT list","id":"1785362198968563007927500000","date":1785362198968,"serial":"1785362198968563007927500000"}}
+,
+{"type":"stderr","created":1785362198968,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:","id":"1785362198968563007927500001","date":1785362198968,"serial":"1785362198968563007927500001"}}
+,
+{"type":"stderr","created":1785362198969,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- filesystem operations (like path.join, path.resolve or fs.readFile), or","id":"1785362198969563007927500000","date":1785362198969,"serial":"1785362198969563007927500000"}}
+,
+{"type":"stderr","created":1785362198972,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- very dynamic requires (like require('./' + foo)).","id":"1785362198972563007927500000","date":1785362198972,"serial":"1785362198972563007927500000"}}
+,
+{"type":"stderr","created":1785362198973,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"To resolve this, you can","id":"1785362198973563007927500000","date":1785362198973,"serial":"1785362198973563007927500000"}}
+,
+{"type":"stderr","created":1785362198973,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- remove them if possible, or","id":"1785362198973563007927500001","date":1785362198973,"serial":"1785362198973563007927500001"}}
+,
+{"type":"stderr","created":1785362198973,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- only use them in development, or","id":"1785362198973563007927500002","date":1785362198973,"serial":"1785362198973563007927500002"}}
+,
+{"type":"stderr","created":1785362198974,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or","id":"1785362198974563007927500000","date":1785362198974,"serial":"1785362198974563007927500000"}}
+,
+{"type":"stderr","created":1785362198974,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"- add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)","id":"1785362198974563007927500001","date":1785362198974,"serial":"1785362198974563007927500001"}}
+,
+{"type":"stderr","created":1785362198975,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198975563007927500000","date":1785362198975,"serial":"1785362198975563007927500000"}}
+,
+{"type":"stderr","created":1785362198975,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Output asset trace:","id":"1785362198975563007927500001","date":1785362198975,"serial":"1785362198975563007927500001"}}
+,
+{"type":"stderr","created":1785362198975,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/app/api/sanita/stream/route.js","id":"1785362198975563007927500002","date":1785362198975,"serial":"1785362198975563007927500002"}}
+,
+{"type":"stderr","created":1785362198976,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/chunks/[root-of-the-server]__00yyj7a._.js","id":"1785362198976563007927500000","date":1785362198976,"serial":"1785362198976563007927500000"}}
+,
+{"type":"stderr","created":1785362198976,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  [output]/.next/server/chunks/[root-of-the-server]__0s2e6oc._.js","id":"1785362198976563007927500001","date":1785362198976,"serial":"1785362198976563007927500001"}}
+,
+{"type":"stderr","created":1785362198977,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198977563007927500000","date":1785362198977,"serial":"1785362198977563007927500000"}}
+,
+{"type":"stderr","created":1785362198977,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Import trace:","id":"1785362198977563007927500001","date":1785362198977,"serial":"1785362198977563007927500001"}}
+,
+{"type":"stderr","created":1785362198977,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  App Route:","id":"1785362198977563007927500002","date":1785362198977,"serial":"1785362198977563007927500002"}}
+,
+{"type":"stderr","created":1785362198978,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./next.config.ts","id":"1785362198978563007927500000","date":1785362198978,"serial":"1785362198978563007927500000"}}
+,
+{"type":"stderr","created":1785362198978,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/app/api/sanita/archive-revalidation/results/route.ts","id":"1785362198978563007927500001","date":1785362198978,"serial":"1785362198978563007927500001"}}
+,
+{"type":"stderr","created":1785362198978,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198978563007927500002","date":1785362198978,"serial":"1785362198978563007927500002"}}
+,
+{"type":"stderr","created":1785362198979,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362198979563007927500000","date":1785362198979,"serial":"1785362198979563007927500000"}}
+,
+{"type":"stderr","created":1785362199718,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199718563007927500000","date":1785362199718,"serial":"1785362199718563007927500000"}}
+,
+{"type":"stderr","created":1785362199719,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"> Build error occurred","id":"1785362199719563007927500000","date":1785362199719,"serial":"1785362199719563007927500000"}}
+,
+{"type":"stderr","created":1785362199723,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Error: Turbopack build failed with 1 errors:","id":"1785362199723563007927500000","date":1785362199723,"serial":"1785362199723563007927500000"}}
+,
+{"type":"stderr","created":1785362199724,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"./src/components/sanita-leads.tsx:32:1","id":"1785362199724563007927500000","date":1785362199724,"serial":"1785362199724563007927500000"}}
+,
+{"type":"stderr","created":1785362199724,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Module not found: Can't resolve '@/lib/sanita/italy-regions'","id":"1785362199724563007927500001","date":1785362199724,"serial":"1785362199724563007927500001"}}
+,
+{"type":"stderr","created":1785362199724,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m30 |\u001b[0m \u001b[36mimport\u001b[0m { readProcessingState, readBusinessVerdict } \u001b[36mfrom\u001b[0m \u001b[32m\"@/lib/sanita/processing-state\"\u001b[0m","id":"1785362199724563007927500002","date":1785362199724,"serial":"1785362199724563007927500002"}}
+,
+{"type":"stderr","created":1785362199724,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m31 |\u001b[0m \u001b[36mimport\u001b[0m { isInActionableSalesQueue } \u001b[36mfrom\u001b[0m \u001b[32m\"@/lib/sanita/actionable-queue\"\u001b[0m","id":"1785362199724563007927500003","date":1785362199724,"serial":"1785362199724563007927500003"}}
+,
+{"type":"stderr","created":1785362199725,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"\u001b[31m\u001b[1m>\u001b[0m \u001b[90m32 |\u001b[0m \u001b[36mimport\u001b[0m {","id":"1785362199725563007927500000","date":1785362199725,"serial":"1785362199725563007927500000"}}
+,
+{"type":"stderr","created":1785362199725,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m   |\u001b[0m \u001b[31m\u001b[1m^^^^^^^\u001b[0m","id":"1785362199725563007927500001","date":1785362199725,"serial":"1785362199725563007927500001"}}
+,
+{"type":"stderr","created":1785362199725,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"\u001b[31m\u001b[1m>\u001b[0m \u001b[90m33 |\u001b[0m   \u001b[33mITALIAN_REGIONS\u001b[0m,","id":"1785362199725563007927500002","date":1785362199725,"serial":"1785362199725563007927500002"}}
+,
+{"type":"stderr","created":1785362199725,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m   |\u001b[0m \u001b[31m\u001b[1m^^^^^^^^^^^^^^^^^^\u001b[0m","id":"1785362199725563007927500003","date":1785362199725,"serial":"1785362199725563007927500003"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"\u001b[31m\u001b[1m>\u001b[0m \u001b[90m34 |\u001b[0m   isItalianRegion,","id":"1785362199726563007927500000","date":1785362199726,"serial":"1785362199726563007927500000"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m   |\u001b[0m \u001b[31m\u001b[1m^^^^^^^^^^^^^^^^^^\u001b[0m","id":"1785362199726563007927500001","date":1785362199726,"serial":"1785362199726563007927500001"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"\u001b[31m\u001b[1m>\u001b[0m \u001b[90m35 |\u001b[0m   \u001b[36mtype\u001b[0m \u001b[33mItalianRegion\u001b[0m,","id":"1785362199726563007927500002","date":1785362199726,"serial":"1785362199726563007927500002"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m   |\u001b[0m \u001b[31m\u001b[1m^^^^^^^^^^^^^^^^^^^^^\u001b[0m","id":"1785362199726563007927500003","date":1785362199726,"serial":"1785362199726563007927500003"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"\u001b[31m\u001b[1m>\u001b[0m \u001b[90m36 |\u001b[0m } \u001b[36mfrom\u001b[0m \u001b[32m\"@/lib/sanita/italy-regions\"\u001b[0m","id":"1785362199726563007927500004","date":1785362199726,"serial":"1785362199726563007927500004"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m   |\u001b[0m \u001b[31m\u001b[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m","id":"1785362199726563007927500005","date":1785362199726,"serial":"1785362199726563007927500005"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m37 |\u001b[0m","id":"1785362199726563007927500006","date":1785362199726,"serial":"1785362199726563007927500006"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m38 |\u001b[0m \u001b[90m// ---------------------------------------------------------------------------\u001b[0m","id":"1785362199726563007927500007","date":1785362199726,"serial":"1785362199726563007927500007"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  \u001b[90m39 |\u001b[0m \u001b[90m// Tipi\u001b[0m","id":"1785362199726563007927500008","date":1785362199726,"serial":"1785362199726563007927500008"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199726563007927500009","date":1785362199726,"serial":"1785362199726563007927500009"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Import map: aliased to relative './src/lib/sanita/italy-regions' inside of [project]/","id":"1785362199726563007927500010","date":1785362199726,"serial":"1785362199726563007927500010"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199726563007927500011","date":1785362199726,"serial":"1785362199726563007927500011"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199726563007927500012","date":1785362199726,"serial":"1785362199726563007927500012"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Import traces:","id":"1785362199726563007927500013","date":1785362199726,"serial":"1785362199726563007927500013"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  App Route:","id":"1785362199726563007927500014","date":1785362199726,"serial":"1785362199726563007927500014"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/components/sanita-leads.tsx","id":"1785362199726563007927500015","date":1785362199726,"serial":"1785362199726563007927500015"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/app/api/sanita/archive-revalidation/results/route.ts","id":"1785362199726563007927500016","date":1785362199726,"serial":"1785362199726563007927500016"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199726563007927500017","date":1785362199726,"serial":"1785362199726563007927500017"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"  Server Component:","id":"1785362199726563007927500018","date":1785362199726,"serial":"1785362199726563007927500018"}}
+,
+{"type":"stderr","created":1785362199726,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/components/sanita-leads.tsx","id":"1785362199726563007927500019","date":1785362199726,"serial":"1785362199726563007927500019"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    ./src/app/sanita/page.tsx","id":"1785362199727563007927500000","date":1785362199727,"serial":"1785362199727563007927500000"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199727563007927500001","date":1785362199727,"serial":"1785362199727563007927500001"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"https://nextjs.org/docs/messages/module-not-found","id":"1785362199727563007927500002","date":1785362199727,"serial":"1785362199727563007927500002"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199727563007927500003","date":1785362199727,"serial":"1785362199727563007927500003"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"","id":"1785362199727563007927500004","date":1785362199727,"serial":"1785362199727563007927500004"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    at <unknown> (./src/components/sanita-leads.tsx:32:1)","id":"1785362199727563007927500005","date":1785362199727,"serial":"1785362199727563007927500005"}}
+,
+{"type":"stderr","created":1785362199727,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"    at <unknown> (https://nextjs.org/docs/messages/module-not-found)","id":"1785362199727563007927500006","date":1785362199727,"serial":"1785362199727563007927500006"}}
+,
+{"type":"stderr","created":1785362199807,"payload":{"deploymentId":"dpl_2rrinrR7uXnTyzrVbTTEvZgCvFwn","info":{"type":"build","name":"bld_rnkhr72ma","entrypoint":"."},"text":"Error: Command \"node scripts/prisma-smart.mjs && next build\" exited with 1","id":"1785362199807563007927500000","date":1785362199807,"serial":"1785362199807563007927500000"}}
+]

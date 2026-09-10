@@ -1,0 +1,56 @@
+{
+  "rule": "Only PUBLISHED_CURRENT|EXPIRED|DATE_UNKNOWN|HOT_VERIFIED count",
+  "analogous_countable": 0,
+  "audits": [
+    {
+      "leadId": "cmqktyimz000i111hygme29nh",
+      "company": "Casa Di Cura Malzoni Villa Platani Spa",
+      "canonical_processingState": "PUBLISHED_ANALOGOUS_MEASURE",
+      "canonical_businessVerdict": "PUBLISHED_ANALOGOUS_MEASURE",
+      "commercial_subtype": "PUBLISHED_ANALOGOUS_MEASURE",
+      "evidence_URL": "https://www.malzoni.it/wp-content/uploads/2024/01/Modello-PARM-17.03.2023.pdf",
+      "sourceClass": "FIRST_PARTY_FACILITY",
+      "entity_attribution": {
+        "policyFound": true,
+        "firstPartyUrl": true,
+        "siteHost": "malzoni.it",
+        "policyHost": "malzoni.it",
+        "IDENTITY": [
+          "[IDENTITY:OFFICIAL_CONFIRMED]"
+        ],
+        "documentKind": "PARM_ANALOGOUS_MEASURE"
+      },
+      "document_hash": "cd4409d852f10995d3e087f2c35db2aecb127a191eae1ae25f7ef18fbd7f5b6a",
+      "frontier_complete": false,
+      "unresolvedRelevantNodes": 164,
+      "countable_as_commercial": false,
+      "reason_counted_or_not": "PUBLISHED_ANALOGOUS_MEASURE is NOT in commercial set; ANALOGOUS alone must not count (PARM/misura analoga ≠ PUBLISHED_CURRENT/EXPIRED/DATE_UNKNOWN/HOT_VERIFIED)",
+      "not_artificially_promoted": true
+    },
+    {
+      "leadId": "cmqklex5q00bh108eq9blm01k",
+      "company": "Villa Dei Pini Casa di Cura Privata S.p.a.",
+      "canonical_processingState": "PUBLISHED_ANALOGOUS_MEASURE",
+      "canonical_businessVerdict": "PUBLISHED_ANALOGOUS_MEASURE",
+      "commercial_subtype": "PUBLISHED_ANALOGOUS_MEASURE",
+      "evidence_URL": "https://villadeipini.com/villadeipini/wp-content/uploads/2025/03/PARM_2025.pdf",
+      "sourceClass": "FIRST_PARTY_FACILITY",
+      "entity_attribution": {
+        "policyFound": true,
+        "firstPartyUrl": true,
+        "siteHost": "villadeipini.com",
+        "policyHost": "villadeipini.com",
+        "IDENTITY": [
+          "[IDENTITY:OFFICIAL_CONFIRMED]"
+        ],
+        "documentKind": "PARM_ANALOGOUS_MEASURE"
+      },
+      "document_hash": "f7c7d1a152f9762b390f0a2cf5a5b4004415823580beab80538f7289e5f4165d",
+      "frontier_complete": false,
+      "unresolvedRelevantNodes": 15,
+      "countable_as_commercial": false,
+      "reason_counted_or_not": "PUBLISHED_ANALOGOUS_MEASURE is NOT in commercial set; ANALOGOUS alone must not count (PARM/misura analoga ≠ PUBLISHED_CURRENT/EXPIRED/DATE_UNKNOWN/HOT_VERIFIED)",
+      "not_artificially_promoted": true
+    }
+  ]
+}

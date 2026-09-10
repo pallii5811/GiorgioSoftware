@@ -1,0 +1,29 @@
+{
+  "jobId": "3d4622a7-b150-4884-87c8-2c046efbdce8",
+  "mode": "city",
+  "status": "queued",
+  "targetKey": "city:Campania:sperone",
+  "region": "Campania",
+  "city": "Sperone",
+  "leadId": null,
+  "createdAt": "2026-07-21T10:12:08.312Z",
+  "updatedAt": "2026-07-21T10:20:23.007Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T10:20:23.007Z",
+  "lastUpdateLabel": "Interruzione richiesta",
+  "resumable": true,
+  "cancelRequested": true,
+  "pid": null,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": null,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": null,
+    "currentMessage": "Interruzione richiesta. Il job si fermera' in sicurezza.",
+    "currentStructure": null
+  },
+  "errorMessage": null
+}

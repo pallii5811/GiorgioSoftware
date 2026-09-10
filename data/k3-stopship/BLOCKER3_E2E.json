@@ -1,0 +1,191 @@
+{
+  "steps": [
+    {
+      "name": "sanita_200",
+      "ok": true,
+      "detail": 200
+    },
+    {
+      "name": "tab_Nuovi risultati",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "tab_Tutti i certificati",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "tab_In lavorazione",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "tab_Archivio",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "checkpoint_readable",
+      "ok": true,
+      "detail": {
+        "processed": 166,
+        "terminal": 22
+      }
+    },
+    {
+      "name": "start",
+      "ok": true,
+      "detail": {
+        "success": true,
+        "job": {
+          "jobId": "reval-mrwue41t",
+          "pid": 3777410,
+          "status": "running",
+          "startedAt": "2026-07-23T01:38:17.729Z",
+          "finishedAt": null,
+          "targetTotal": 877,
+          "mode": "start"
+        }
+      }
+    },
+    {
+      "name": "start2_no_duplicate",
+      "ok": true,
+      "detail": {
+        "error": "HTTP Error 409: Conflict"
+      }
+    },
+    {
+      "name": "pause",
+      "ok": true,
+      "detail": {
+        "success": true,
+        "job": {
+          "jobId": "reval-mrwue41t",
+          "pid": null,
+          "status": "paused",
+          "startedAt": "2026-07-23T01:38:17.729Z",
+          "finishedAt": "2026-07-23T01:38:17.805Z",
+          "targetTotal": 877,
+          "mode": "start"
+        },
+        "killedExternalPids": []
+      }
+    },
+    {
+      "name": "inProgress_zero",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "resume",
+      "ok": true,
+      "detail": {
+        "success": true,
+        "job": {
+          "jobId": "reval-mrwue455",
+          "pid": 3777423,
+          "status": "running",
+          "startedAt": "2026-07-23T01:38:17.849Z",
+          "finishedAt": null,
+          "targetTotal": 877,
+          "mode": "resume"
+        }
+      }
+    },
+    {
+      "name": "checkpoint_monotonic",
+      "ok": true,
+      "detail": {
+        "proc": [
+          166,
+          166
+        ],
+        "term": [
+          22,
+          22
+        ]
+      }
+    },
+    {
+      "name": "retry_incomplete",
+      "ok": true,
+      "detail": {
+        "success": true,
+        "job": {
+          "jobId": "reval-mrwue82j",
+          "pid": 3777514,
+          "status": "running",
+          "startedAt": "2026-07-23T01:38:22.939Z",
+          "finishedAt": null,
+          "targetTotal": 877,
+          "mode": "retry-incomplete"
+        }
+      }
+    },
+    {
+      "name": "terminals_pubhot_stable",
+      "ok": true,
+      "detail": {
+        "before": 10,
+        "after_match": true
+      }
+    },
+    {
+      "name": "export_or_results",
+      "ok": true,
+      "detail": {
+        "n": 20,
+        "keys": [
+          "success",
+          "results",
+          "meta"
+        ]
+      }
+    },
+    {
+      "name": "ALL_stable_3poll",
+      "ok": true,
+      "detail": [
+        "all",
+        "all",
+        "all"
+      ]
+    },
+    {
+      "name": "scope_working",
+      "ok": true,
+      "detail": {
+        "n": 3
+      }
+    },
+    {
+      "name": "scope_certified",
+      "ok": true,
+      "detail": {
+        "n": 3
+      }
+    },
+    {
+      "name": "scope_archive",
+      "ok": true,
+      "detail": {
+        "n": 3
+      }
+    }
+  ],
+  "pass": true,
+  "releaseSha": "40f2528",
+  "jobId": null,
+  "checkpoint": {
+    "before": {
+      "processed": 166,
+      "terminal": 22
+    },
+    "after": {
+      "processed": 166,
+      "terminal": 22
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "jobId": "bd979192-b735-4898-af84-1612d89e334b",
+  "mode": "single",
+  "status": "queued",
+  "targetKey": "single:restart-lead",
+  "region": "Campania",
+  "city": null,
+  "leadId": "restart-lead",
+  "targetTotal": null,
+  "namespace": "data\\sanita-jobs\\bd979192-b735-4898-af84-1612d89e334b",
+  "forceRescan": false,
+  "createdAt": "2026-07-21T13:51:02.120Z",
+  "updatedAt": "2026-07-21T13:51:02.122Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T13:49:01.120Z",
+  "lastUpdateLabel": "In attesa",
+  "resumable": true,
+  "cancelRequested": false,
+  "pid": 9999991,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": null,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": null,
+    "currentMessage": "Job in coda.",
+    "currentStructure": null
+  },
+  "errorMessage": null
+}

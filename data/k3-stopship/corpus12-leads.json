@@ -1,0 +1,101 @@
+{
+ "totalTarget": 877,
+ "corpus": [
+  {
+   "id": "cmqkld5rx009p108edj6t9krw",
+   "companyName": "Casa Di Cura Pineta Grande",
+   "city": "Villa Literno",
+   "region": "Campania",
+   "website": "https://www.pinetagrande.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5s0009u108eghihpoxi",
+   "companyName": "Villa delle Magnolie",
+   "city": "Limatola",
+   "region": "Campania",
+   "website": "http://www.villadellemagnolie.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5s3009z108e1yj01zqy",
+   "companyName": "Casa Di Cura Clinic Center S.p.A.",
+   "city": "Napoli",
+   "region": "Campania",
+   "website": "https://cliniccenter.eu/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5s300a0108e8p1p3xxg",
+   "companyName": "Hermitage Capodimonte S.p.A.",
+   "city": "Napoli",
+   "region": "Campania",
+   "website": "https://www.hermitagecapodimonte.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5s700a8108eti0nofjv",
+   "companyName": "Casa di Cura Villa Maione",
+   "city": "Villaricca",
+   "region": "Campania",
+   "website": "https://villamaione.com/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5sa00af108epednu868",
+   "companyName": "Casa Di Cura Cardiomed S.p.A..",
+   "city": "Ottaviano",
+   "region": "Campania",
+   "website": "https://www.clinicacardiomed.com/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5t000ao108esg4xv094",
+   "companyName": "Icm-Istituto Clinico Mediterraneo S.p.A..",
+   "city": "Agropoli",
+   "region": "Campania",
+   "website": "https://www.istitutoclinicomediterraneo.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkld5t300av108e5rrr47s9",
+   "companyName": "Via G. F. Montesano",
+   "city": "Roccapiemonte",
+   "region": "Campania",
+   "website": "https://www.montesano.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqklex5e00b3108e2zcdos1w",
+   "companyName": "Istituto Polidiagnostico S.Chiara Della D.R.Ssa Rosetta Di Buono & C.",
+   "city": "Agropoli",
+   "region": "Campania",
+   "website": "https://polidiagnosticosantachiara.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqklex5g00b6108ejom1shk0",
+   "companyName": "Malzoni Radio Surgery",
+   "city": "Agropoli",
+   "region": "Campania",
+   "website": "http://www.radiosurgerymalzoni.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmqkn3ghj0002xnfpr553khla",
+   "companyName": "Studio Fisiokinesiterapico EQUILIBRIO",
+   "city": "Agropoli",
+   "region": "Campania",
+   "website": "https://www.studiofisioterapiaequilibrio.it/",
+   "policyFound": false
+  },
+  {
+   "id": "cmql46eia000ac9w78xh0rxdl",
+   "companyName": "Laboratorio Analisi Cliniche Nuova Alba",
+   "city": "Albanella",
+   "region": "Campania",
+   "website": "https://www.laboratorionuovaalba.it/",
+   "policyFound": false
+  }
+ ]
+}

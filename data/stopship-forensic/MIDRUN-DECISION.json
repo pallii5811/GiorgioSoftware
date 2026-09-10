@@ -1,0 +1,8 @@
+{
+  "midRunDecision": "STOP",
+  "reason": "OCR_RENDERER_MISSING presente su lead 1 e 3; 0/3 esiti affidabili; corpus fermato. 877 non riavviato.",
+  "corpusStoppedAt": "2026-07-21T20:42:Z",
+  "inProgress": 0,
+  "workerSha256": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071",
+  "note": "Solo lead#1 era in riesecuzione corpus; #2 e #3 ancora su artefatti pre-demote (non ancora processati dal one-shot)."
+}

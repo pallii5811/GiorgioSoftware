@@ -1,0 +1,238 @@
+{
+  "checkedAt": "2026-07-21T20:39:41.365391+00:00",
+  "first3": [
+    "cmqkld5s700a8108eti0nofjv",
+    "cmqkld5rx009p108edj6t9krw",
+    "cmql46eia000ac9w78xh0rxdl"
+  ],
+  "decision": "STOP",
+  "reliableCount": 0,
+  "stopReasons": [
+    "cmqkld5s700a8108eti0nofjv: OCR_RENDERER_MISSING",
+    "cmql46eia000ac9w78xh0rxdl: OCR_RENDERER_MISSING"
+  ],
+  "corpusAlive": true,
+  "reports": [
+    {
+      "leadId": "cmqkld5s700a8108eti0nofjv",
+      "companyName": "Casa di Cura Villa Maione",
+      "website": "https://villamaione.com/",
+      "bucket": "inProgress",
+      "state": "IN_PROGRESS",
+      "durationSec": 1149,
+      "wallMs": 1148948,
+      "attempts": 1,
+      "error": null,
+      "reasonCode": "TECHNICAL_BLOCKED",
+      "crawlComplete": false,
+      "pagesVisited": 22,
+      "frontierResumeSeen": true,
+      "frontier": {
+        "exists": true,
+        "path": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+        "tables": [
+          "CrawlRun",
+          "CrawlFrontierNode",
+          "WaterfallStepRecord",
+          "CrawlNodeEvidence"
+        ],
+        "runs": [
+          {
+            "id": "cr_mrtlto4b_g6a3fpjb",
+            "leadId": "cmqkld5s700a8108eti0nofjv",
+            "runId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+            "engineVersion": "final-closure-20260719",
+            "state": "RUNNING",
+            "startedAt": "2026-07-20T19:15:08.507Z",
+            "heartbeatAt": "2026-07-21T20:38:23.963Z",
+            "completedAt": "2026-07-20T19:34:06.919Z",
+            "currentCheckpoint": "playwright_start:insufficient_text",
+            "workerLock": "scan-engine-slices",
+            "totalDiscovered": 69,
+            "totalRelevant": 68,
+            "totalCompleted": 33,
+            "totalPending": 5,
+            "totalFailed": 30,
+            "totalRetryPending": 0,
+            "urlCapReached": 0,
+            "timeCapReached": 0,
+            "identityVerified": 1,
+            "scopeVerified": 1,
+            "sitemapStatus": "DISCOVERED_COMPLETE",
+            "ocrDoubts": 0,
+            "unresolvedPolicyCandidates": 0,
+            "stopReason": "frontier_exhausted"
+          }
+        ]
+      },
+      "pdfFoundUrls": 0,
+      "pdfUrlsSample": [],
+      "pdfReadSignals": 0,
+      "ocrRequiredHint": true,
+      "ocrExecutedHint": false,
+      "ocrRendererMissing": true,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5s700a8108eti0nofjv.json",
+      "logTail": [
+        "{\"event\":\"frontier_resume\",\"id\":\"cmqkld5s700a8108eti0nofjv\",\"runId\":\"reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297\",\"frontierPath\":\"/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite\"}"
+      ],
+      "inProgressMeta": {
+        "startedAt": "2026-07-21T20:27:39.146Z",
+        "runId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+        "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+        "pass": "p1",
+        "resumed": true
+      },
+      "retryMeta": {
+        "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+        "lastError": "TECHNICAL_BLOCKED",
+        "attempts": 0,
+        "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+        "lastRunId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+        "demotedAt": "2026-07-21T20:26:48.699743+00:00"
+      },
+      "terminalMeta": null
+    },
+    {
+      "leadId": "cmqkld5rx009p108edj6t9krw",
+      "companyName": "Casa Di Cura Pineta Grande",
+      "website": "https://www.pinetagrande.it/",
+      "bucket": "retry",
+      "state": "TECHNICAL_BLOCKED",
+      "durationSec": 1800,
+      "wallMs": 1800024,
+      "attempts": 0,
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "reasonCode": "RETRY_EXHAUSTED_6",
+      "crawlComplete": false,
+      "pagesVisited": 2,
+      "frontierResumeSeen": false,
+      "frontier": {
+        "exists": true,
+        "path": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000.sqlite",
+        "tables": [
+          "CrawlRun",
+          "CrawlFrontierNode",
+          "WaterfallStepRecord",
+          "CrawlNodeEvidence"
+        ],
+        "runs": [
+          {
+            "id": "cr_mrts7ucg_wegw3aah",
+            "leadId": "cmqkld5rx009p108edj6t9krw",
+            "runId": "reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000",
+            "engineVersion": "final-closure-20260719",
+            "state": "RUNNING",
+            "startedAt": "2026-07-20T22:14:07.456Z",
+            "heartbeatAt": "2026-07-20T22:43:47.826Z",
+            "completedAt": "2026-07-20T22:32:50.771Z",
+            "currentCheckpoint": "playwright_start:insufficient_text",
+            "workerLock": "scan-engine-slices",
+            "totalDiscovered": 50,
+            "totalRelevant": 50,
+            "totalCompleted": 20,
+            "totalPending": 0,
+            "totalFailed": 30,
+            "totalRetryPending": 0,
+            "urlCapReached": 0,
+            "timeCapReached": 0,
+            "identityVerified": 0,
+            "scopeVerified": 0,
+            "sitemapStatus": "DISCOVERED_FAILED",
+            "ocrDoubts": 0,
+            "unresolvedPolicyCandidates": 0,
+            "stopReason": "frontier_exhausted"
+          }
+        ]
+      },
+      "pdfFoundUrls": 0,
+      "pdfUrlsSample": [],
+      "pdfReadSignals": 0,
+      "ocrRequiredHint": false,
+      "ocrExecutedHint": false,
+      "ocrRendererMissing": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5rx009p108edj6t9krw.json",
+      "logTail": [],
+      "inProgressMeta": null,
+      "retryMeta": {
+        "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+        "lastError": "RETRY_EXHAUSTED_6",
+        "attempts": 0,
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000.sqlite",
+        "lastRunId": "reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000",
+        "demotedAt": "2026-07-21T20:26:48.699743+00:00"
+      },
+      "terminalMeta": null
+    },
+    {
+      "leadId": "cmql46eia000ac9w78xh0rxdl",
+      "companyName": "Laboratorio Analisi Cliniche Nuova Alba",
+      "website": "https://www.laboratorionuovaalba.it/",
+      "bucket": "retry",
+      "state": "TECHNICAL_BLOCKED",
+      "durationSec": 102,
+      "wallMs": 102176,
+      "attempts": 0,
+      "error": null,
+      "reasonCode": "TECHNICAL_BLOCKED",
+      "crawlComplete": false,
+      "pagesVisited": 29,
+      "frontierResumeSeen": false,
+      "frontier": {
+        "exists": true,
+        "path": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121.sqlite",
+        "tables": [
+          "CrawlRun",
+          "CrawlFrontierNode",
+          "WaterfallStepRecord",
+          "CrawlNodeEvidence"
+        ],
+        "runs": [
+          {
+            "id": "cr_mrtojwa8_e6txuw2d",
+            "leadId": "cmql46eia000ac9w78xh0rxdl",
+            "runId": "reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121",
+            "engineVersion": "final-closure-20260719",
+            "state": "FAILED",
+            "startedAt": "2026-07-20T20:31:31.376Z",
+            "heartbeatAt": "2026-07-20T22:51:58.400Z",
+            "completedAt": "2026-07-20T22:51:57.889Z",
+            "currentCheckpoint": "playwright:insufficient_text",
+            "workerLock": null,
+            "totalDiscovered": 47,
+            "totalRelevant": 45,
+            "totalCompleted": 45,
+            "totalPending": 0,
+            "totalFailed": 1,
+            "totalRetryPending": 0,
+            "urlCapReached": 0,
+            "timeCapReached": 0,
+            "identityVerified": 1,
+            "scopeVerified": 1,
+            "sitemapStatus": "DISCOVERED_COMPLETE",
+            "ocrDoubts": 0,
+            "unresolvedPolicyCandidates": 0,
+            "stopReason": "OCR_RENDERER_MISSING"
+          }
+        ]
+      },
+      "pdfFoundUrls": 0,
+      "pdfUrlsSample": [],
+      "pdfReadSignals": 0,
+      "ocrRequiredHint": true,
+      "ocrExecutedHint": false,
+      "ocrRendererMissing": true,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmql46eia000ac9w78xh0rxdl.json",
+      "logTail": [],
+      "inProgressMeta": null,
+      "retryMeta": {
+        "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+        "lastError": "TECHNICAL_BLOCKED",
+        "attempts": 0,
+        "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121.sqlite",
+        "lastRunId": "reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121",
+        "demotedAt": "2026-07-21T20:26:48.699743+00:00"
+      },
+      "terminalMeta": null
+    }
+  ]
+}

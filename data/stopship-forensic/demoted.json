@@ -1,0 +1,74 @@
+[
+  {
+    "id": "cmqkld5s700a8108eti0nofjv",
+    "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+    "runId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+    "priorAttempts": 1
+  },
+  {
+    "id": "cmqkld5rx009p108edj6t9krw",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000.sqlite",
+    "runId": "reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000",
+    "priorAttempts": 6
+  },
+  {
+    "id": "cmql46eia000ac9w78xh0rxdl",
+    "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121.sqlite",
+    "runId": "reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121",
+    "priorAttempts": 2
+  },
+  {
+    "id": "cmqkld5t300av108e5rrr47s9",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685.sqlite",
+    "runId": "reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685",
+    "priorAttempts": 5
+  },
+  {
+    "id": "cmqkld5s3009z108e1yj01zqy",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238.sqlite",
+    "runId": "reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238",
+    "priorAttempts": 6
+  },
+  {
+    "id": "cmqkld5s0009u108eghihpoxi",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080.sqlite",
+    "runId": "reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080",
+    "priorAttempts": 6
+  },
+  {
+    "id": "cmqkld5s300a0108e8p1p3xxg",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824.sqlite",
+    "runId": "reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824",
+    "priorAttempts": 6
+  },
+  {
+    "id": "cmqklex5e00b3108e2zcdos1w",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524.sqlite",
+    "runId": "reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524",
+    "priorAttempts": 5
+  },
+  {
+    "id": "cmqklex5g00b6108ejom1shk0",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509.sqlite",
+    "runId": "reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509",
+    "priorAttempts": 5
+  },
+  {
+    "id": "cmqkn3ghj0002xnfpr553khla",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009.sqlite",
+    "runId": "reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009",
+    "priorAttempts": 5
+  },
+  {
+    "id": "cmqkld5sa00af108epednu868",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5sa00af108epednu868-1784586986414.sqlite",
+    "runId": "reval-p1-cmqkld5sa00af108epednu868-1784586986414",
+    "priorAttempts": 5
+  },
+  {
+    "id": "cmqkld5t000ao108esg4xv094",
+    "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t000ao108esg4xv094-1784586005359.sqlite",
+    "runId": "reval-p1-cmqkld5t000ao108esg4xv094-1784586005359",
+    "priorAttempts": 5
+  }
+]

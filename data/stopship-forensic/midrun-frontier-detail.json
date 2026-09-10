@@ -1,0 +1,152 @@
+﻿{
+  "1_Villa_Maione": {
+    "initialFinalFromRun": {
+      "discovered": 69,
+      "relevant": 68,
+      "completed": 33,
+      "pending": 5,
+      "failed": 30
+    },
+    "nodesTotal": 69,
+    "byState": {
+      "COMPLETED": 22,
+      "EXCLUDED": 11,
+      "FETCHED": 1,
+      "QUEUED": 5,
+      "TECHNICAL_BLOCKED": 30
+    },
+    "unresolvedNodes": 46,
+    "pdfNodes": 0,
+    "pdfCompleted": 0,
+    "run": {
+      "totalDiscovered": 69,
+      "totalRelevant": 68,
+      "totalCompleted": 33,
+      "totalPending": 5,
+      "totalFailed": 30,
+      "stopReason": "frontier_exhausted",
+      "currentCheckpoint": "playwright_start:insufficient_text",
+      "heartbeatAt": "2026-07-21T20:42:45.647Z",
+      "state": "RUNNING"
+    },
+    "colsSample": [
+      "id",
+      "crawlRunId",
+      "canonicalUrl",
+      "parentUrl",
+      "discoverySource",
+      "resourceType",
+      "relevance",
+      "state",
+      "httpStatus",
+      "contentType",
+      "retryCount",
+      "nextRetryAt",
+      "lastError",
+      "contentHash",
+      "discoveredAt",
+      "updatedAt",
+      "completedAt",
+      "exclusionReason"
+    ]
+  },
+  "2_Pineta_Grande": {
+    "initialFinalFromRun": {
+      "discovered": 50,
+      "relevant": 50,
+      "completed": 20,
+      "pending": 0,
+      "failed": 30
+    },
+    "nodesTotal": 50,
+    "byState": {
+      "COMPLETED": 2,
+      "EXCLUDED": 18,
+      "TECHNICAL_BLOCKED": 30
+    },
+    "unresolvedNodes": 48,
+    "pdfNodes": 0,
+    "pdfCompleted": 0,
+    "run": {
+      "totalDiscovered": 50,
+      "totalRelevant": 50,
+      "totalCompleted": 20,
+      "totalPending": 0,
+      "totalFailed": 30,
+      "stopReason": "frontier_exhausted",
+      "currentCheckpoint": "playwright_start:insufficient_text",
+      "heartbeatAt": "2026-07-20T22:43:47.826Z",
+      "state": "RUNNING"
+    },
+    "colsSample": [
+      "id",
+      "crawlRunId",
+      "canonicalUrl",
+      "parentUrl",
+      "discoverySource",
+      "resourceType",
+      "relevance",
+      "state",
+      "httpStatus",
+      "contentType",
+      "retryCount",
+      "nextRetryAt",
+      "lastError",
+      "contentHash",
+      "discoveredAt",
+      "updatedAt",
+      "completedAt",
+      "exclusionReason"
+    ]
+  },
+  "3_Nuova_Alba": {
+    "initialFinalFromRun": {
+      "discovered": 47,
+      "relevant": 45,
+      "completed": 45,
+      "pending": 0,
+      "failed": 1
+    },
+    "nodesTotal": 47,
+    "byState": {
+      "COMPLETED": 29,
+      "EXCLUDED": 16,
+      "FETCHED": 1,
+      "TECHNICAL_BLOCKED": 1
+    },
+    "unresolvedNodes": 17,
+    "pdfNodes": 0,
+    "pdfCompleted": 0,
+    "run": {
+      "totalDiscovered": 47,
+      "totalRelevant": 45,
+      "totalCompleted": 45,
+      "totalPending": 0,
+      "totalFailed": 1,
+      "stopReason": "OCR_RENDERER_MISSING",
+      "currentCheckpoint": "playwright:insufficient_text",
+      "heartbeatAt": "2026-07-20T22:51:58.400Z",
+      "state": "FAILED"
+    },
+    "colsSample": [
+      "id",
+      "crawlRunId",
+      "canonicalUrl",
+      "parentUrl",
+      "discoverySource",
+      "resourceType",
+      "relevance",
+      "state",
+      "httpStatus",
+      "contentType",
+      "retryCount",
+      "nextRetryAt",
+      "lastError",
+      "contentHash",
+      "discoveredAt",
+      "updatedAt",
+      "completedAt",
+      "exclusionReason"
+    ]
+  }
+}

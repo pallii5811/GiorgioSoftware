@@ -195,3 +195,24 @@ tmp-v3-export/ui-smoke/
 # Copie di sicurezza dello script che ha riparato gli accenti.
 *.mojibake.bak
 
+# ---------------------------------------------------------------------------
+# Schermate di collaudo: 104 PNG per 216 MB, cioe' quasi tutto il peso del
+# repo per immagini che nessuno riapre. I verdetti dei collaudi stanno nei
+# report.json accanto, e quelli restano.
+data/**/*.png
+docs/**/*.png
+!docs/staging-acceptance/screenshots/.gitkeep
+
+# Alberi di lavorazione temporanei: copie parziali dei sorgenti tenute per
+# fare diff con il server. Il server non c'e' piu' e la sorgente buona e' src/.
+tmp/
+
+# ---------------------------------------------------------------------------
+# Questi tre contengono una chiave API Anthropic scritta in chiaro. Non sono
+# mai finiti in git — verificato con git log --all -S sul prefisso della chiave —
+# e non ci devono finire: una chiave pubblicata su GitHub viene raccolta in
+# minuti. La chiave che c'e' dentro va comunque revocata: e' in chiaro su disco.
+tmp-set-ant-backend.py
+tmp-test-ant.py
+tmp-vercel-set-env.py
+

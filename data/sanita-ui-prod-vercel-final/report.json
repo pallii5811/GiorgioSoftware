@@ -1,0 +1,111 @@
+{
+  "base": "https://giorgio-software.vercel.app",
+  "startedAt": "2026-07-23T03:41:47.234Z",
+  "checks": {
+    "four_tabs": {
+      "pass": true,
+      "detail": "[\"Nuovi risultati\",\"Tutti i certificati\",\"In lavorazione\",\"Archivio completo\"]"
+    },
+    "no_coda_commerciale": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "no_stato_verifiche": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "expected_tabs": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "legacy_labeled": {
+      "pass": true,
+      "detail": "Legacy certificati11"
+    },
+    "all_after_20s": {
+      "pass": true,
+      "detail": "ALL"
+    },
+    "all_after_tab_change": {
+      "pass": true,
+      "detail": "ALL"
+    },
+    "click_completed_opens_run": {
+      "pass": true,
+      "detail": "aria=true url=https://giorgio-software.vercel.app/sanita"
+    },
+    "url_no_campania": {
+      "pass": true,
+      "detail": "https://giorgio-software.vercel.app/sanita"
+    },
+    "run_rows_visible": {
+      "pass": true,
+      "detail": "rows=25 count=25 risultati"
+    },
+    "run_rows_are_shadow": {
+      "pass": true,
+      "detail": "Nuova scansione,Nuova scansione,Nuova scansione,Nuova scansione,Nuova scansione"
+    },
+    "filter_policy_valid": {
+      "pass": true,
+      "detail": "n=2"
+    },
+    "filter_policy_expired": {
+      "pass": true,
+      "detail": "n=1"
+    },
+    "filter_date_unknown": {
+      "pass": true,
+      "detail": "n=2"
+    },
+    "filter_self_insurance": {
+      "pass": true,
+      "detail": "n=2"
+    },
+    "filter_hot": {
+      "pass": true,
+      "detail": "n=4"
+    },
+    "filter_review": {
+      "pass": true,
+      "detail": "n=14"
+    },
+    "self_insurance_malzoni_or_pini": {
+      "pass": true,
+      "detail": "Villa Dei Pini Casa di Cura Privata S.p.a. | Casa Di Cura Malzoni Villa Platani Spa"
+    },
+    "working_tab": {
+      "pass": true,
+      "detail": "https://giorgio-software.vercel.app/sanita?tab=review&outcome=self_insurance"
+    },
+    "archive_reval_column": {
+      "pass": true,
+      "detail": null
+    },
+    "counter_reconciliation": {
+      "pass": true,
+      "detail": "sum=25 terminal=25 cert=11 SI=2 review=14"
+    },
+    "scope_run_api": {
+      "pass": true,
+      "detail": "n=25"
+    },
+    "scope_working_api": {
+      "pass": true,
+      "detail": "n=18"
+    }
+  },
+  "errors": [],
+  "api": {
+    "terminalCompleted": 25,
+    "certifiedCurrentRun": 11,
+    "selfInsurance": 2,
+    "reviewCurrent": 14,
+    "otherNonCommercialTerminal": 0,
+    "technicalBlockedFinal": 0,
+    "runResults": 25,
+    "workingResults": 18
+  },
+  "finishedAt": "2026-07-23T03:42:26.090Z",
+  "failed": 0
+}

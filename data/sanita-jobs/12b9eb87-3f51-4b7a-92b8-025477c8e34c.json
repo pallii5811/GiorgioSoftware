@@ -1,0 +1,33 @@
+{
+  "jobId": "12b9eb87-3f51-4b7a-92b8-025477c8e34c",
+  "mode": "single",
+  "status": "queued",
+  "targetKey": "single:cmqktyimz000i111hygme29nh",
+  "region": "Campania",
+  "city": null,
+  "leadId": "cmqktyimz000i111hygme29nh",
+  "targetTotal": null,
+  "namespace": "data\\sanita-jobs\\12b9eb87-3f51-4b7a-92b8-025477c8e34c",
+  "forceRescan": false,
+  "createdAt": "2026-07-21T13:10:00.000Z",
+  "updatedAt": "2026-07-21T13:51:02.170Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T13:10:00.000Z",
+  "lastUpdateLabel": "In attesa",
+  "resumable": true,
+  "cancelRequested": false,
+  "pid": 4123456,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": 1,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": 0,
+    "currentMessage": "Job in coda.",
+    "currentStructure": "Casa Di Cura Malzoni Villa Platani Spa"
+  },
+  "errorMessage": null,
+  "acquireLock": true
+}

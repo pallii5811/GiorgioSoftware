@@ -1,0 +1,910 @@
+{
+  "techCount": 12,
+  "rootCauseMatrix": {
+    "sito_errato": 0,
+    "sito_offline": 0,
+    "TLS": 12,
+    "timeout": 8,
+    "WAF_Cloudflare": 0,
+    "browser_crash": 0,
+    "PDF_download": 7,
+    "PDF_parser": 0,
+    "OCR": 12,
+    "identita": 12,
+    "frontier": 12,
+    "bug_worker": 0,
+    "limite_temporale": 8,
+    "retry_non_ripreso": 0,
+    "RETRY_EXHAUSTED": 10,
+    "crawl_incomplete": 12,
+    "altro": 0
+  },
+  "primaryRootCause": "RETRY_EXHAUSTED→TECHNICAL_BLOCKED in production-revalidate-sanita-v3.mjs (orchestrator), not a true terminal commercial outcome",
+  "leads": [
+    {
+      "leadId": "cmqkld5s700a8108eti0nofjv",
+      "companyName": "Casa di Cura Villa Maione",
+      "website": "https://villamaione.com/",
+      "city": "Villaricca",
+      "region": "Campania",
+      "phaseFailed": "unknown",
+      "reasonCode": "TECHNICAL_BLOCKED",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": null,
+      "wallMs": 1148948,
+      "crawlComplete": false,
+      "pagesVisited": 22,
+      "websiteReachable": true,
+      "attempts": 1,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://villamaione.com/",
+        "https://villamaione.com/amministrazione-trasparente"
+      ],
+      "pdfs": [],
+      "ocrAttempted": true,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5s700a8108eti0nofjv.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-20T19:34:17.434Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": "REVIEW",
+        "reasonCode": "TECHNICAL_BLOCKED"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+        "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+        "wallMs": 1148948,
+        "error": null,
+        "token": "REVIEW",
+        "processingState": "TECHNICAL_BLOCKED",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 1,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "REASON:OCR_RENDERER_MISSING",
+        "STATE:TECHNICAL_BLOCKED",
+        "V:REV",
+        "VS:TECHNICAL_BLOCKED"
+      ]
+    },
+    {
+      "leadId": "cmqkld5rx009p108edj6t9krw",
+      "companyName": "Casa Di Cura Pineta Grande",
+      "website": "https://www.pinetagrande.it/",
+      "city": "Castel Volturno",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_6",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800024,
+      "crawlComplete": false,
+      "pagesVisited": 2,
+      "websiteReachable": true,
+      "attempts": 6,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://www.pinetagrande.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5rx009p108edj6t9krw.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-20T22:44:07.519Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_6"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000.sqlite",
+        "wallMs": 1800024,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmql46eia000ac9w78xh0rxdl",
+      "companyName": "Laboratorio Analisi Cliniche Nuova Alba",
+      "website": "https://www.laboratorionuovaalba.it/",
+      "city": "Albanella",
+      "region": "Campania",
+      "phaseFailed": "unknown",
+      "reasonCode": "TECHNICAL_BLOCKED",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": null,
+      "wallMs": 102176,
+      "crawlComplete": false,
+      "pagesVisited": 29,
+      "websiteReachable": true,
+      "attempts": 2,
+      "httpCodes": [
+        "424"
+      ],
+      "urlsSample": [
+        "https://www.laboratorionuovaalba.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": true,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmql46eia000ac9w78xh0rxdl.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-20T22:52:00.291Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": "REVIEW",
+        "reasonCode": "TECHNICAL_BLOCKED"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121",
+        "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121.sqlite",
+        "wallMs": 102176,
+        "error": null,
+        "token": "REVIEW",
+        "processingState": "TECHNICAL_BLOCKED",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 1,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "REASON:OCR_RENDERER_MISSING",
+        "STATE:TECHNICAL_BLOCKED",
+        "V:REV",
+        "VS:TECHNICAL_BLOCKED"
+      ]
+    },
+    {
+      "leadId": "cmqkld5t300av108e5rrr47s9",
+      "companyName": "Villa Silvia 'G.F.Montesano'",
+      "website": "https://www.montesano.it/",
+      "city": "Roccapiemonte",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800019,
+      "crawlComplete": false,
+      "pagesVisited": 21,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [
+        "495"
+      ],
+      "urlsSample": [
+        "https://www.montesano.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5t300av108e5rrr47s9.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T00:36:46.694Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685.sqlite",
+        "wallMs": 1800019,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:MISMATCH",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkld5s3009z108e1yj01zqy",
+      "companyName": "Casa Di Cura Clinic Center S.p.A.",
+      "website": "https://cliniccenter.eu/",
+      "city": "Napoli",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_6",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800009,
+      "crawlComplete": false,
+      "pagesVisited": 64,
+      "websiteReachable": true,
+      "attempts": 6,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://cliniccenter.eu/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5s3009z108e1yj01zqy.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T00:36:46.941Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_6"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238.sqlite",
+        "wallMs": 1800009,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkld5s0009u108eghihpoxi",
+      "companyName": "Villa Delle Magnolie",
+      "website": "http://www.villadellemagnolie.it/",
+      "city": "Castel Morrone",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_6",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800025,
+      "crawlComplete": false,
+      "pagesVisited": 43,
+      "websiteReachable": true,
+      "attempts": 6,
+      "httpCodes": [],
+      "urlsSample": [
+        "http://www.villadellemagnolie.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5s0009u108eghihpoxi.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T17:29:32.250Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_6"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080.sqlite",
+        "wallMs": 1800025,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkld5s300a0108e8p1p3xxg",
+      "companyName": "Hermitage Capodimonte S.p.A.",
+      "website": "https://www.hermitagecapodimonte.it/",
+      "city": "Napoli",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_6",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800020,
+      "crawlComplete": false,
+      "pagesVisited": 40,
+      "websiteReachable": true,
+      "attempts": 6,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://www.hermitagecapodimonte.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5s300a0108e8p1p3xxg.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T17:29:32.265Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_6"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824.sqlite",
+        "wallMs": 1800020,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqklex5e00b3108e2zcdos1w",
+      "companyName": "Istituto Polidiagnostico S.Chiara Della D.R.Ssa Rosetta Di Buono & C.",
+      "website": "https://polidiagnosticosantachiara.it/",
+      "city": "Agropoli",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800033,
+      "crawlComplete": false,
+      "pagesVisited": 49,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [
+        "494"
+      ],
+      "urlsSample": [
+        "https://polidiagnosticosantachiara.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqklex5e00b3108e2zcdos1w.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T17:59:33.689Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524.sqlite",
+        "wallMs": 1800033,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqklex5g00b6108ejom1shk0",
+      "companyName": "Malzoni Radio Surgery",
+      "website": "http://www.radiosurgerymalzoni.it/",
+      "city": "Agropoli",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800030,
+      "crawlComplete": false,
+      "pagesVisited": 40,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [],
+      "urlsSample": [
+        "http://www.radiosurgerymalzoni.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqklex5g00b6108ejom1shk0.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T18:00:47.670Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509.sqlite",
+        "wallMs": 1800030,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "PDF_download",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "PDF download+parse+OCR pagina per pagina",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkn3ghj0002xnfpr553khla",
+      "companyName": "Studio Fisiokinesiterapico EQUILIBRIO",
+      "website": "https://www.studiofisioterapiaequilibrio.it/",
+      "city": "Agropoli",
+      "region": "Campania",
+      "phaseFailed": "orchestrator_retry_exhausted",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": null,
+      "wallMs": 320317,
+      "crawlComplete": false,
+      "pagesVisited": 40,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://www.studiofisioterapiaequilibrio.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkn3ghj0002xnfpr553khla.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T18:04:56.830Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009.sqlite",
+        "wallMs": 320317,
+        "error": null,
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 1,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkld5sa00af108epednu868",
+      "companyName": "Casa Di Cura Cardiomed S.p.A..",
+      "website": "https://www.clinicacardiomed.com/",
+      "city": "Ottaviano",
+      "region": "Campania",
+      "phaseFailed": "orchestrator_retry_exhausted",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": null,
+      "wallMs": 64992,
+      "crawlComplete": false,
+      "pagesVisited": 15,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://www.clinicacardiomed.com/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5sa00af108epednu868.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T18:06:03.264Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5sa00af108epednu868-1784586986414",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5sa00af108epednu868-1784586986414.sqlite",
+        "wallMs": 64992,
+        "error": null,
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 1,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 1,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    },
+    {
+      "leadId": "cmqkld5t000ao108esg4xv094",
+      "companyName": "Icm-Istituto Clinico Mediterraneo S.p.A..",
+      "website": "https://www.istitutoclinicomediterraneo.it/",
+      "city": "Agropoli",
+      "region": "Campania",
+      "phaseFailed": "wall_timeout_during_analyzeLead",
+      "reasonCode": "RETRY_EXHAUSTED_5",
+      "processingState": "TECHNICAL_BLOCKED",
+      "error": "LEAD_WALL_TIMEOUT_1800000ms",
+      "wallMs": 1800022,
+      "crawlComplete": false,
+      "pagesVisited": 15,
+      "websiteReachable": true,
+      "attempts": 5,
+      "httpCodes": [],
+      "urlsSample": [
+        "https://www.istitutoclinicomediterraneo.it/"
+      ],
+      "pdfs": [],
+      "ocrAttempted": false,
+      "resultPath": "/opt/leadsniper-revalidate/data/revalidation/results/cmqkld5t000ao108esg4xv094.json",
+      "terminalEntry": {
+        "finishedAt": "2026-07-21T18:41:26.708Z",
+        "processingState": "TECHNICAL_BLOCKED",
+        "newVerdict": null,
+        "reasonCode": "RETRY_EXHAUSTED_5"
+      },
+      "pass1": {
+        "runId": "reval-p1-cmqkld5t000ao108esg4xv094-1784586005359",
+        "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t000ao108esg4xv094-1784586005359.sqlite",
+        "wallMs": 1800022,
+        "error": "LEAD_WALL_TIMEOUT_1800000ms",
+        "token": null,
+        "processingState": "RETRY_PENDING",
+        "crawlComplete": false,
+        "policyFound": false
+      },
+      "counters": {
+        "analyzed": 0,
+        "withPolicy": 0,
+        "published": 0,
+        "hot": 0,
+        "review": 0,
+        "reviewHuman": 0,
+        "retryPending": 0,
+        "technicalBlocked": 0,
+        "outOfScope": 0,
+        "regionalChecked": 0,
+        "regionalWithPolicy": 0
+      },
+      "rootCauseTags": [
+        "OCR",
+        "RETRY_EXHAUSTED",
+        "TLS",
+        "crawl_incomplete",
+        "frontier",
+        "identita",
+        "limite_temporale",
+        "timeout"
+      ],
+      "missingForComplete": [
+        "crawl completo / frontier esaurita su nodi rilevanti",
+        "risolvere errore worker: LEAD_WALL_TIMEOUT_1800000ms",
+        "non dichiarare TECHNICAL_BLOCKED: restare in retry fino a esito commerciale"
+      ],
+      "evidenceMarkers": [
+        "BV:NONE",
+        "IDENTITY:OFFICIAL_CONFIRMED",
+        "STATE:RETRY_PENDING",
+        "VS:REVALIDATION_PENDING"
+      ]
+    }
+  ]
+}

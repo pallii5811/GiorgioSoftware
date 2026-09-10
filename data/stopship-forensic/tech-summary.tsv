@@ -1,0 +1,13 @@
+leadId	company	website	tags	http	ocr	attempts
+cmqkld5s700a8108eti0nofjv	Casa di Cura Villa Maione	https://villamaione.com/	TLS,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkld5rx009p108edj6t9krw	Casa Di Cura Pineta Grande	https://www.pinetagrande.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmql46eia000ac9w78xh0rxdl	Laboratorio Analisi Cliniche Nuova Alba	https://www.laboratorionuovaalba.it/	TLS,PDF_download,OCR,identita,frontier,retry_non_ripreso	424	True	None
+cmqkld5t300av108e5rrr47s9	Villa Silvia 'G.F.Montesano'	https://www.montesano.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso	495	True	None
+cmqkld5s3009z108e1yj01zqy	Casa Di Cura Clinic Center S.p.A.	https://cliniccenter.eu/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkld5s0009u108eghihpoxi	Villa Delle Magnolie	http://www.villadellemagnolie.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkld5s300a0108e8p1p3xxg	Hermitage Capodimonte S.p.A.	https://www.hermitagecapodimonte.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqklex5e00b3108e2zcdos1w	Istituto Polidiagnostico S.Chiara Della D.R.Ssa Rosetta Di B	https://polidiagnosticosantachiara.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso	494	True	None
+cmqklex5g00b6108ejom1shk0	Malzoni Radio Surgery	http://www.radiosurgerymalzoni.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkn3ghj0002xnfpr553khla	Studio Fisiokinesiterapico EQUILIBRIO	https://www.studiofisioterapiaequilibrio.it/	TLS,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkld5sa00af108epednu868	Casa Di Cura Cardiomed S.p.A..	https://www.clinicacardiomed.com/	TLS,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None
+cmqkld5t000ao108esg4xv094	Icm-Istituto Clinico Mediterraneo S.p.A..	https://www.istitutoclinicomediterraneo.it/	TLS,timeout,PDF_download,OCR,identita,frontier,retry_non_ripreso		True	None

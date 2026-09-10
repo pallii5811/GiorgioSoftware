@@ -1,0 +1,37 @@
+{
+  "checkpoint": 25,
+  "at": "2026-07-21T17:02:23.076Z",
+  "processed": 61,
+  "stats": {
+    "processed": 61,
+    "terminal": 10,
+    "hot": 1,
+    "pub": 0,
+    "review": 4,
+    "retry": 51,
+    "tech": 5,
+    "outOfScope": 0,
+    "errors": 1
+  },
+  "terminal": 10,
+  "inProgress": 2,
+  "retry": 11,
+  "PUBLISHED": 0,
+  "HOT": 1,
+  "REVIEW": 4,
+  "RETRY": 51,
+  "TECHNICAL": 5,
+  "baselineSha": "5e93be5d8dd71384f9773138b5b1392c40f5550535266f39671e11af60d22894",
+  "baselineCount": 117,
+  "workerSha": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071",
+  "ENGINE_LOGICAL_SHA": "fe8b677a2cb4372d6f117c8534d473a51d40913b",
+  "cpSha": "8132e54868d5edffe4bfc7c297ad53cabddee7f01454520280928dd074cb5f6e",
+  "applyLiveExecuted": 0,
+  "zombieUiJobs": 0,
+  "revalLocks": 2,
+  "livePub": 117,
+  "crmByStatus": {
+    "NEW": 1279
+  },
+  "pass": true
+}

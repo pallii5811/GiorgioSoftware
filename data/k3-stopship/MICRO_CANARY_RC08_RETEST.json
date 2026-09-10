@@ -1,0 +1,101 @@
+{
+ "verdict": "NON PASS",
+ "stoppedAt": "2026-07-22T17:12:57.537Z",
+ "startedAt": "2026-07-22T17:10:29.272Z",
+ "exitCode": -1,
+ "stopReasons": [],
+ "canary": [
+  "cmqkld5rk009b108ekvol7g87",
+  "cmql4qrif000yc9w74e0tmpqt",
+  "cmql4d399000uc9w7yzw2dgac"
+ ],
+ "firstOutcome": {
+  "cmqkld5rk009b108ekvol7g87": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T17:10:57.379Z"
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T17:11:47.089Z"
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "processingState": "REVIEW_HUMAN",
+   "kind": "terminal",
+   "at": "2026-07-22T17:11:57.483Z"
+  }
+ },
+ "checkpoints": [
+  {
+   "mark": 3,
+   "at": "2026-07-22T17:11:57.483Z",
+   "canaryTerminal": 3,
+   "canaryRetry": 0,
+   "byState": {
+    "REVIEW_HUMAN": 3
+   },
+   "stats": {
+    "processed": 137,
+    "terminal": 33,
+    "hot": 2,
+    "pub": 2,
+    "review": 29,
+    "retry": 104,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+   },
+   "retryReasons": {}
+  }
+ ],
+ "audits": {
+  "cmqkld5rk009b108ekvol7g87": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "processingState": "REVIEW_HUMAN",
+   "violations": []
+  }
+ },
+ "terminal": {
+  "cmqkld5rk009b108ekvol7g87": {
+   "finishedAt": "2026-07-22T17:10:57.255Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmql4qrif000yc9w74e0tmpqt": {
+   "finishedAt": "2026-07-22T17:11:46.985Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": "REVIEW",
+   "reasonCode": "REVIEW_HUMAN"
+  },
+  "cmql4d399000uc9w7yzw2dgac": {
+   "finishedAt": "2026-07-22T17:11:57.345Z",
+   "processingState": "REVIEW_HUMAN",
+   "newVerdict": null,
+   "reasonCode": "IDENTITY_MISMATCH"
+  }
+ },
+ "retry": {},
+ "gate": {
+  "handled10": false,
+  "completedCommercial": 0,
+  "minCompleted8": false,
+  "internalTechnicalTerminal": 0,
+  "ocrRendererMissing": 0,
+  "falseHot": 0,
+  "falsePub": 0,
+  "auditViolations": 0,
+  "checkpointPreserved": true
+ },
+ "byState": {
+  "REVIEW_HUMAN": 3
+ }
+}

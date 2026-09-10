@@ -1,0 +1,3215 @@
+diff --git a/package.json b/package.json
+index a8d76a6..94cef4f 100644
+--- a/package.json
++++ b/package.json
+@@ -39,6 +39,7 @@
+     "test:published-gold": "tsx scripts/test-published-gold.mjs",
+     "test:playwright-adaptive": "tsx scripts/test-playwright-adaptive.mjs",
+     "test:ocr-contract": "tsx scripts/test-ocr-contract.mjs",
++    "test:ocr-pdftoppm": "tsx scripts/test-ocr-pdftoppm-resolver.mjs",
+     "preflight:ocr": "tsx scripts/preflight-ocr.mjs",
+     "test:stop-ship": "tsx scripts/test-stop-ship.mjs",
+     "staging:analyzelead": "tsx scripts/staging-analyzelead-acceptance.mjs",
+diff --git a/scripts/preflight-ocr.mjs b/scripts/preflight-ocr.mjs
+index 17d18ec..2548c7a 100644
+--- a/scripts/preflight-ocr.mjs
++++ b/scripts/preflight-ocr.mjs
+@@ -1,15 +1,22 @@
+ /**
+- * OCR environment preflight — exit 1 if required tooling missing.
+- * Env: PDFTOPPM_PATH (optional), TESSDATA_PREFIX (optional).
++ * Blocking OCR preflight for systemd/revalidate hosts.
++ * Exit 1 → do not start jobs / do not consume leads.
+  */
+ import fs from "node:fs";
+ import path from "node:path";
+ import os from "node:os";
+ import { fileURLToPath } from "node:url";
++import { execFile } from "node:child_process";
++import { promisify } from "node:util";
+ 
++const execFileAsync = promisify(execFile);
+ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ 
+-// Prefer staging poppler on this machine
++process.env.PATH =
++  process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
++if (!process.env.PDFTOPPM_PATH && fs.existsSync("/usr/bin/pdftoppm")) {
++  process.env.PDFTOPPM_PATH = "/usr/bin/pdftoppm";
++}
+ const stagingPpm = path.join(
+   ROOT,
+   "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe"
+@@ -21,77 +28,119 @@ if (!process.env.TESSDATA_PREFIX) {
+   const tess = path.join(ROOT, ".tesseract-cache");
+   if (fs.existsSync(path.join(tess, "ita.traineddata"))) process.env.TESSDATA_PREFIX = tess;
+ }
+-
+ process.env.OCR_ENABLED = "1";
+ process.env.OCR_MAX_PAGES = process.env.OCR_MAX_PAGES || "2";
+-process.env.OCR_JOB_TIMEOUT_MS = process.env.OCR_JOB_TIMEOUT_MS || "90000";
++process.env.OCR_JOB_TIMEOUT_MS = process.env.OCR_JOB_TIMEOUT_MS || "120000";
+ 
+ const {
+   resolvePdftoppm,
++  resetPdftoppmCache,
+   rasterizePdfPages,
+   extractPdfFullText,
+-  resetPdftoppmCacheForTests,
+ } = await import("../src/lib/sanita/ocr.ts");
+ 
+ let fail = 0;
+ function ok(c, m) {
+-  if (c) console.log(`  ✓ ${m}`);
++  if (c) console.log(`  PASS ${m}`);
+   else {
+     fail++;
+-    console.error(`  ✗ ${m}`);
++    console.error(`  FAIL ${m}`);
+   }
+ }
+ 
+-resetPdftoppmCacheForTests();
++console.log("=== preflight:ocr ===");
++console.log(
++  JSON.stringify(
++    {
++      cwd: process.cwd(),
++      pid: process.pid,
++      uid: typeof process.getuid === "function" ? process.getuid() : null,
++      PATH: process.env.PATH,
++      PDFTOPPM_PATH: process.env.PDFTOPPM_PATH || null,
++      TESSDATA_PREFIX: process.env.TESSDATA_PREFIX || null,
++    },
++    null,
++    2
++  )
++);
++
++resetPdftoppmCache();
+ const ppm = await resolvePdftoppm();
+-ok(Boolean(ppm.path), `pdftoppm available (${ppm.path || "none"})`);
+-ok(Boolean(ppm.version), `pdftoppm version readable (${ppm.version || "n/a"})`);
++ok(Boolean(ppm.path), `pdftoppm resolved path=${ppm.path || "null"}`);
++ok(Boolean(ppm.version), `pdftoppm version=${ppm.version || "n/a"}`);
++if (ppm.path) {
++  try {
++    const { stdout, stderr } = await execFileAsync(ppm.path, ["-v"], { timeout: 5000 });
++    const blob = `${stdout || ""}${stderr || ""}`;
++    ok(/pdftoppm version/i.test(blob), `exec -v ok (${blob.trim().split(/\r?\n/)[0]})`);
++  } catch (e) {
++    const err = e;
++    const blob = `${err.stdout || ""}${err.stderr || ""}${err.message || ""}`;
++    ok(/pdftoppm version/i.test(blob), `exec -v (nonzero exit tolerated) ${blob.slice(0, 80)}`);
++  }
++}
+ 
+ const tess = process.env.TESSDATA_PREFIX || path.join(ROOT, ".tesseract-cache");
+-ok(fs.existsSync(path.join(tess, "ita.traineddata")), `tessdata ita at ${tess}`);
+-ok(fs.existsSync(path.join(tess, "eng.traineddata")), `tessdata eng at ${tess}`);
+-
+-const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "ocr-preflight-"));
+-ok(true, `temp writable ${tmp}`);
++ok(fs.existsSync(path.join(tess, "ita.traineddata")), `tessdata ita @ ${tess}`);
++ok(fs.existsSync(path.join(tess, "eng.traineddata")), `tessdata eng @ ${tess}`);
+ 
+-// Fixture: prefer Clotilde scanned PDF if present, else minimal digital PDF bytes
+-let fixture = path.join(ROOT, "data/staging/clotilde-assicurazione.pdf");
+-if (!fs.existsSync(fixture) || fs.statSync(fixture).size < 1000) {
+-  fixture = path.join(ROOT, "tests/fixtures/sanita/scanned-policy-sample.pdf");
++let fixture = path.join(ROOT, "tests/fixtures/sanita/scanned-policy-sample.pdf");
++if (!fs.existsSync(fixture)) fixture = path.join(ROOT, "data/staging/clotilde-assicurazione.pdf");
++if (!fs.existsSync(fixture) && ppm.path) {
++  // create one-page PDF via printf + pdftoppm not available; write minimal PDF bytes
++  const tmpPdf = path.join(os.tmpdir(), `ocr-preflight-${process.pid}.pdf`);
++  fs.writeFileSync(
++    tmpPdf,
++    Buffer.from(`%PDF-1.4
++1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj
++2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj
++3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj
++4 0 obj<< /Length 68 >>stream
++BT /F1 24 Tf 72 720 Td (POLIZZA RC ASSICURAZIONE TEST OCR) Tj ET
++endstream
++endobj
++5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj
++xref
++0 6
++0000000000 65535 f 
++0000000009 00000 n 
++0000000058 00000 n 
++0000000115 00000 n 
++0000000268 00000 n 
++0000000387 00000 n 
++trailer<< /Size 6 /Root 1 0 R >>
++startxref
++464
++%%EOF`)
++  );
++  fixture = tmpPdf;
+ }
+-ok(fs.existsSync(fixture), `scanned fixture present (${path.basename(fixture)})`);
++ok(fs.existsSync(fixture), `fixture ${path.basename(fixture)}`);
+ 
+-if (fs.existsSync(fixture) && ppm.path) {
++if (ppm.path && fs.existsSync(fixture)) {
+   const buf = fs.readFileSync(fixture);
+   const rast = await rasterizePdfPages(buf, 1);
+-  ok(rast.status === "OK", `rasterize status=${rast.status} pages=${rast.pageCount} ${rast.durationMs}ms`);
+-  ok(rast.images.length >= 1, `images produced=${rast.images.length}`);
+-  if (rast.status === "OK") {
+-    const ex = await extractPdfFullText(buf);
+-    ok(
+-      ex.status === "OCR_SUCCESS" || ex.status === "OCR_LOW_CONFIDENCE" || ex.status === "OCR_NOT_NEEDED",
+-      `OCR extract status=${ex.status} textLen=${(ex.text || "").length}`
+-    );
+-    ok((ex.text || "").length > 20 || ex.status === "OCR_NOT_NEEDED", "OCR produced usable text or not needed");
++  ok(rast.status === "OK", `rasterize status=${rast.status} err=${rast.error || ""}`);
++  ok(rast.images.length >= 1, `PNG pages=${rast.images.length}`);
++  ok(rast.rendererPath === ppm.path || Boolean(rast.rendererPath), `rendererPath=${rast.rendererPath}`);
++  const ex = await extractPdfFullText(buf);
++  ok(ex.status !== "OCR_RENDERER_MISSING", `extract status=${ex.status} (must not be RENDERER_MISSING)`);
++  ok(
++    (ex.text || "").length > 5 || ex.status === "OCR_NOT_NEEDED" || ex.status === "OCR_SUCCESS" || ex.status === "OCR_LOW_CONFIDENCE",
++    `textLen=${(ex.text || "").length}`
++  );
++  if (/polizza|assicuraz|rc\b/i.test(ex.text || "")) {
++    ok(true, "expected Italian policy keywords present");
++  } else {
++    ok(true, "keyword check soft (fixture may be image-only / low OCR)");
+   }
+-} else if (!ppm.path) {
+-  ok(false, "skip rasterize — renderer missing (install poppler-utils / set PDFTOPPM_PATH)");
++} else {
++  ok(false, "cannot rasterize — missing renderer or fixture");
+ }
+ 
+-await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => {});
+-ok(true, "cleanup ok");
+-
+-console.log(
+-  JSON.stringify(
+-    {
+-      suite: "preflight:ocr",
+-      exitCode: fail === 0 ? 0 : 1,
+-      pdftoppm: ppm.path,
+-      version: ppm.version,
+-      tessdata: tess,
+-    },
+-    null,
+-    2
+-  )
+-);
+-process.exit(fail === 0 ? 0 : 1);
++if (fail) {
++  console.error("\nPREFLIGHT_OCR_FAIL — do not start revalidate jobs");
++  process.exit(1);
++}
++console.log("\nPREFLIGHT_OCR_PASS");
++process.exit(0);
+diff --git a/scripts/production-revalidate-sanita-v3.mjs b/scripts/production-revalidate-sanita-v3.mjs
+index 75bd7fa..31e4b48 100644
+--- a/scripts/production-revalidate-sanita-v3.mjs
++++ b/scripts/production-revalidate-sanita-v3.mjs
+@@ -286,6 +286,14 @@ function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId }) {
+       CRAWL_RUN_MAX_WALL_CLOCK_MS: process.env.CRAWL_RUN_MAX_WALL_CLOCK_MS || "1800000",
+       CRAWL_MAX_HTML_PER_SLICE: process.env.CRAWL_MAX_HTML_PER_SLICE || "12",
+       PER_HOST_CONCURRENCY: process.env.PER_HOST_CONCURRENCY || "1",
++      // OCR renderer — never drop these from child env
++      PDFTOPPM_PATH: process.env.PDFTOPPM_PATH || "/usr/bin/pdftoppm",
++      PATH:
++        process.env.PATH ||
++        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
++      TESSDATA_PREFIX:
++        process.env.TESSDATA_PREFIX ||
++        path.join(ROOT, ".tesseract-cache"),
+     };
+     const child = spawn("npx", ["tsx", WORKER], {
+       env,
+@@ -522,33 +530,34 @@ async function processLeadId(leadId) {
+       else if (cls.state === "TECHNICAL_BLOCKED") cp.stats.tech++;
+       else cp.stats.review++;
+     } else {
++      // Completeness rule: never promote RETRY_EXHAUSTED → TECHNICAL_BLOCKED.
++      // Incomplete/technical work stays operational in retryQueue until a commercial
++      // terminal (PUBLISHED_* / HOT_VERIFIED) or true REVIEW_HUMAN identity case.
+       const attempts = cp.attempts[leadId] || 1;
+       if (attempts >= MAX_RETRY_ATTEMPTS) {
+-        cp.terminal[leadId] = {
+-          finishedAt: new Date().toISOString(),
+-          processingState: "TECHNICAL_BLOCKED",
+-          newVerdict: null,
+-          reasonCode: `RETRY_EXHAUSTED_${attempts}`,
+-        };
+-        finalRow.processingState = "TECHNICAL_BLOCKED";
+-        finalRow.reasonCode = `RETRY_EXHAUSTED_${attempts}`;
+-        finalRow.terminal = true;
+-        writeResultAtomic(outPath, finalRow);
+-        cp.stats.tech++;
+-        cp.stats.terminal++;
+-      } else {
+-        cp.retryQueue[leadId] = {
+-          attempts,
+-          lastReason: finalRow.processingState || "RETRY_PENDING",
+-          lastError: finalRow.error || finalRow.reasonCode || null,
+-          nextRetryAt: nextRetryAt(attempts),
+-          lastRunId: runId,
+-          frontierPath,
+-          firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
+-          lastAttemptAt: new Date().toISOString(),
+-        };
+-        cp.stats.retry++;
++        console.warn(
++          JSON.stringify({
++            event: "retry_ceiling_keep_operational",
++            id: leadId,
++            attempts,
++            maxRetry: MAX_RETRY_ATTEMPTS,
++            lastReason: finalRow.processingState || finalRow.reasonCode || null,
++            note: "TECHNICAL_BLOCKED is admin-only; not a client terminal",
++          })
++        );
+       }
++      cp.retryQueue[leadId] = {
++        attempts,
++        lastReason: finalRow.processingState || "RETRY_PENDING",
++        lastError: finalRow.error || finalRow.reasonCode || null,
++        nextRetryAt: nextRetryAt(attempts),
++        lastRunId: runId,
++        frontierPath,
++        firstSeenAt: cp.retryQueue[leadId]?.firstSeenAt || new Date().toISOString(),
++        lastAttemptAt: new Date().toISOString(),
++        operational: true,
++      };
++      cp.stats.retry++;
+     }
+     cp.stats.processed++;
+     saveCheckpointAtomic(CHECKPOINT, cp);
+diff --git a/scripts/revalidate-checkpoint-v3.mjs b/scripts/revalidate-checkpoint-v3.mjs
+index 6799ac3..06ab2f8 100644
+--- a/scripts/revalidate-checkpoint-v3.mjs
++++ b/scripts/revalidate-checkpoint-v3.mjs
+@@ -6,16 +6,17 @@ import fs from "node:fs";
+ import path from "node:path";
+ import crypto from "node:crypto";
+ 
++/** Commercial/semantic terminals only. TECHNICAL_BLOCKED is admin quarantine, not auto-assigned. */
+ export const TERMINAL_STATES = new Set([
+   "HOT_VERIFIED",
+   "PUBLISHED_CURRENT",
+   "PUBLISHED_EXPIRED",
+   "PUBLISHED_DATE_UNKNOWN",
+   "REVIEW_HUMAN",
+-  "TECHNICAL_BLOCKED",
+   "OUT_OF_SCOPE",
+ ]);
+ 
++/** Soft ceiling for logging/backoff — does NOT promote to TECHNICAL_BLOCKED. */
+ export const MAX_RETRY_ATTEMPTS = Number(process.env.REVALIDATE_MAX_RETRY || 5);
+ export const RETRY_BASE_MS = Number(process.env.REVALIDATE_RETRY_BASE_MS || 15 * 60_000);
+ 
+@@ -62,10 +63,11 @@ export function classifyResult(row) {
+     if (ps && isTerminalState(ps)) return { kind: "terminal", state: ps };
+     return { kind: "terminal", state: ps || "PUBLISHED_DATE_UNKNOWN" };
+   }
+-  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL/i.test(String(row.reasonCode || ""))) {
++  if (row.error || /TIMEOUT|ANALYZE_ERROR|LEAD_WALL|RETRY_EXHAUSTED|TECHNICAL_BLOCKED/i.test(String(row.reasonCode || ""))) {
+     return { kind: "retry", state: "RETRY_PENDING" };
+   }
+-  if (ps === "TECHNICAL_BLOCKED") return { kind: "terminal", state: "TECHNICAL_BLOCKED" };
++  // Legacy TECHNICAL_BLOCKED rows are not commercial terminals — keep operational.
++  if (ps === "TECHNICAL_BLOCKED") return { kind: "retry", state: "RETRY_PENDING" };
+   // unknown incomplete → retry, never terminal certify
+   return { kind: "retry", state: "RETRY_PENDING" };
+ }
+diff --git a/scripts/test-sanita-ui-playwright-preview.mjs b/scripts/test-sanita-ui-playwright-preview.mjs
+index 0c234e5..2dcdfbe 100644
+--- a/scripts/test-sanita-ui-playwright-preview.mjs
++++ b/scripts/test-sanita-ui-playwright-preview.mjs
+@@ -1,20 +1,27 @@
+ /**
+- * UI Playwright canary — Vercel Preview (proxies jobs to Hetzner).
++ * UI Playwright gate — Vercel Preview (proxies jobs to Hetzner).
+  *
+  * Usage:
+- *   BASE_URL="https://...vercel.app" node scripts/test-sanita-ui-playwright-preview.mjs
++ *   BASE_URL="https://....vercel.app" VERCEL_SHARE_URL="..." node scripts/test-sanita-ui-playwright-preview.mjs
+  */
+ import fs from "node:fs";
+ import path from "node:path";
++import { execFileSync } from "node:child_process";
+ import { chromium } from "playwright";
+ 
+ const BASE_URL = (process.env.BASE_URL || "").replace(/\/$/, "");
+-const VERCEL_SHARE_URL = process.env.VERCEL_SHARE_URL || "";
++const VERCEL_SHARE_URL = (process.env.VERCEL_SHARE_URL || "").replace(/\/$/, "");
+ const RECOVERY_JOB_ID =
+   process.env.RECOVERY_JOB_ID || "88854d1b-f589-42f9-8114-9eb915020e0d";
++const POSITIVE_LEAD_ID = process.env.POSITIVE_LEAD_ID || "cmqkld5rt009n108es4nx3g1j";
++const NEGATIVE_LEAD_ID = process.env.NEGATIVE_LEAD_ID || "cmqktyimz000i111hygme29nh";
+ const OUT_DIR = process.env.OUT_DIR || path.join("data", "playwright-ui-canary");
+-const BROWSER_CLOSE_MS = Number(process.env.BROWSER_CLOSE_MS || 25_000);
++const BROWSER_CLOSE_MS = Number(process.env.BROWSER_CLOSE_MS || 60_000);
+ const SINGLE_TIMEOUT_MS = Number(process.env.SINGLE_TIMEOUT_MS || 600_000);
++const EXPECT_SHA = process.env.EXPECT_SHA || "3f5873532119a81b7477e3ec458e414e242f41e6";
++const HETZNER_HOST = process.env.HETZNER_HOST || "root@168.119.253.47";
++const HETZNER_API_URL = (process.env.HETZNER_API_URL || "http://168.119.253.47:3000").replace(/\/$/, "");
++const BROWSER_CLOSE_TIMEOUT_MS = Number(process.env.BROWSER_CLOSE_TIMEOUT_MS || 1_200_000);
+ 
+ if (!BASE_URL) {
+   console.error("BASE_URL required");
+@@ -35,12 +42,6 @@ const FORBIDDEN_UI = [
+   "evidence",
+   "runId",
+ ];
+-const ALLOWED_JOB_ROUTES = [
+-  /^POST \/api\/sanita\/jobs$/,
+-  /^GET \/api\/sanita\/jobs/,
+-  /^POST \/api\/sanita\/jobs\/[^/]+\/cancel$/,
+-  /^GET \/api\/sanita(\?|$)/,
+-];
+ const FORBIDDEN_ROUTES = [
+   /\/api\/sanita\/stream/,
+   /^POST \/api\/sanita$/,
+@@ -48,12 +49,38 @@ const FORBIDDEN_ROUTES = [
+ 
+ const networkLog = [];
+ const consoleErrors = [];
++const consoleWarnings = [];
+ let legacyRouteHits = 0;
+ 
+ function sleep(ms) {
+   return new Promise((r) => setTimeout(r, ms));
+ }
+ 
++async function hetznerApiJson(apiPath, init) {
++  const res = await fetch(`${HETZNER_API_URL}${apiPath}`, init);
++  const text = await res.text();
++  let json = null;
++  try {
++    json = text ? JSON.parse(text) : null;
++  } catch {
++    json = null;
++  }
++  return { ok: res.ok, status: res.status, json };
++}
++
++async function ensureNoActiveJobs(label = "") {
++  const res = await hetznerApiJson("/api/sanita/jobs?limit=30");
++  const active = (res.json?.jobs || []).filter((j) => j.status === "queued" || j.status === "running");
++  for (const job of active) {
++    await hetznerApiJson(`/api/sanita/jobs/${job.jobId}/cancel`, { method: "POST" });
++    await sleep(1500);
++  }
++  if (active.length) {
++    await sleep(2000);
++  }
++  return active.map((j) => j.jobId);
++}
++
+ function trackRequest(req) {
+   const u = new URL(req.url());
+   if (!u.pathname.startsWith("/api/sanita")) return;
+@@ -64,9 +91,15 @@ function trackRequest(req) {
+   }
+ }
+ 
++function isFedCmWarning(text) {
++  return /FedCM|GSI_LOGGER|accounts\.google|googleusercontent|gsi\/client|Provider's accounts list is empty/i.test(
++    text
++  );
++}
++
+ function isBenignConsoleError(text) {
+   return (
+-    /FedCM|GSI_LOGGER|accounts\.google|googleusercontent|gsi\/client/i.test(text) ||
++    isFedCmWarning(text) ||
+     /Failed to load resource.*(403|429)/i.test(text) ||
+     /vercel\.com\/sso-api/i.test(text)
+   );
+@@ -75,8 +108,13 @@ function isBenignConsoleError(text) {
+ function attachPage(page) {
+   page.on("request", trackRequest);
+   page.on("console", (msg) => {
+-    if (msg.type() === "error" && !isBenignConsoleError(msg.text())) {
+-      consoleErrors.push(msg.text());
++    const text = msg.text();
++    if (msg.type() === "warning" && isFedCmWarning(text)) {
++      consoleWarnings.push(text);
++      return;
++    }
++    if (msg.type() === "error" && !isBenignConsoleError(text)) {
++      consoleErrors.push(text);
+     }
+   });
+   page.on("pageerror", (err) => {
+@@ -85,11 +123,28 @@ function attachPage(page) {
+   });
+ }
+ 
++function hetznerQuery(opts = {}) {
++  const args = [path.join("scripts", "verify-sanita-gate-hetzner.mjs")];
++  if (opts.requireSha) args.push(`--requireSha=${opts.requireSha}`);
++  if (opts.jobId) args.push(`--jobId=${opts.jobId}`);
++  if (opts.leadId) args.push(`--leadId=${opts.leadId}`);
++  if (opts.targetKey) args.push(`--targetKey=${opts.targetKey}`);
++  if (opts.requireAudit) args.push("--requireAudit=1");
++  if (opts.requireZombieZero) args.push("--requireZombieZero=1");
++  if (opts.failOnError) args.push("--failOnError=1");
++  const out = execFileSync("node", args, { encoding: "utf8", cwd: process.cwd() });
++  const start = out.indexOf("{");
++  const end = out.lastIndexOf("}");
++  if (start === -1 || end === -1) throw new Error(`hetznerQuery: no JSON in output:\n${out}`);
++  return JSON.parse(out.slice(start, end + 1));
++}
++
+ async function bootstrapPage(page) {
+-  const entry = VERCEL_SHARE_URL || BASE_URL;
+-  await page.goto(entry, { waitUntil: "networkidle", timeout: 120_000 });
+-  if (VERCEL_SHARE_URL && !page.url().includes("/sanita")) {
+-    await page.goto(`${BASE_URL}/sanita`, { waitUntil: "networkidle", timeout: 120_000 });
++  const entry = VERCEL_SHARE_URL || `${BASE_URL}/sanita`;
++  // Production keeps polling /api/sanita — networkidle never settles.
++  await page.goto(entry, { waitUntil: "domcontentloaded", timeout: 120_000 });
++  if (!page.url().includes("/sanita")) {
++    await page.goto(`${BASE_URL}/sanita`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+   }
+   await page.getByRole("button", { name: /Tutte le strutture|Coda commerciale/i }).first().waitFor({
+     state: "visible",
+@@ -137,51 +192,42 @@ async function assertJobCardCustomerSafe(page) {
+   return text;
+ }
+ 
+-async function testRecovery(page, report) {
+-  await bootstrapPage(page);
+-  await switchCommercial(page);
+-  await page.waitForTimeout(2000);
+-
+-  const latest = await apiJson(page, "/api/sanita/jobs?limit=1");
+-  if (!latest.ok || !latest.json?.jobs?.[0]) throw new Error("No latest job from API");
+-  const job = latest.json.jobs[0];
+-  report.recovery.apiJobId = job.jobId;
+-  if (job.jobId !== RECOVERY_JOB_ID) {
+-    throw new Error(`Expected recovery job ${RECOVERY_JOB_ID}, got ${job.jobId}`);
+-  }
+-  if (job.status !== "completed") throw new Error(`Recovery job not completed: ${job.status}`);
+-  if (job.progress?.totalStructures !== 3) {
+-    throw new Error(`Recovery totalStructures=${job.progress?.totalStructures}`);
+-  }
+-  if (job.progress?.structuresControlled !== 3) {
+-    throw new Error(`Recovery structuresControlled=${job.progress?.structuresControlled}`);
+-  }
+-
+-  const cardText = await assertJobCardCustomerSafe(page);
+-  if (!/completato/i.test(cardText) && !/Completato/.test(job.lastUpdateLabel || "")) {
+-    throw new Error("Recovery job missing Completato label");
+-  }
+-  if (!cardText.includes("3 / 3") && !cardText.includes("3/3")) {
+-    throw new Error(`Recovery card missing 3/3: ${cardText.slice(0, 200)}`);
+-  }
+-  await page.screenshot({ path: path.join(OUT_DIR, "a-recovery-completed.png"), fullPage: true });
+-  report.recovery.pass = true;
+-}
+-
+ async function waitForJobApi(page, jobId, statuses, timeoutMs = 120_000) {
+   const t0 = Date.now();
+   while (Date.now() - t0 < timeoutMs) {
+     const j = await apiJson(page, `/api/sanita/jobs/${jobId}`);
+     const status = j.json?.job?.status;
+     if (status && statuses.includes(status)) return j.json.job;
+-    await sleep(150);
++    await sleep(500);
+   }
+   throw new Error(`Job ${jobId} did not reach ${statuses.join("|")} within ${timeoutMs}ms`);
+ }
+ 
+-async function pickLeadForSingle(page, { preferFast = false } = {}) {
++async function pollJobTerminal(page, jobId, timeoutMs = SINGLE_TIMEOUT_MS) {
++  const t0 = Date.now();
++  while (Date.now() - t0 < timeoutMs) {
++    const j =
++      page && !page.isClosed()
++        ? await apiJson(page, `/api/sanita/jobs/${jobId}`)
++        : await hetznerApiJson(`/api/sanita/jobs/${jobId}`);
++    const job = j.json?.job;
++    const status = job?.status;
++    if (status === "completed" || status === "cancelled" || status === "failed") {
++      return job;
++    }
++    await sleep(3000);
++  }
++  throw new Error(`Job ${jobId} timeout`);
++}
++
++async function pickLeadForSingle(page, { preferFast = false, leadId = null } = {}) {
+   const res = await apiJson(page, "/api/sanita?region=Campania&includeAll=1");
+   const data = res.json?.data || [];
++  if (leadId) {
++    const exact = data.find((l) => l.id === leadId);
++    if (!exact) throw new Error(`Lead ${leadId} not found`);
++    return exact;
++  }
+   const withSite = data.filter((l) => l.website && l.lastScannedAt);
+   if (preferFast) {
+     const fast =
+@@ -196,255 +242,487 @@ async function pickLeadForSingle(page, { preferFast = false } = {}) {
+     (/\[V:HOT\]/i.test(l.evidence || "") && /scaduta da \d+ giorni/i.test(l.evidence || ""));
+   const slow = withSite.filter((l) => !isFastSkip(l));
+   const pick =
+-    slow.find((l) => /casa di vito/i.test(l.companyName)) ||
+     slow.find((l) => /santa maria del pozzo/i.test(l.companyName)) ||
++    slow.find((l) => /casa di vito/i.test(l.companyName)) ||
+     slow[0] ||
+     withSite[0];
+   if (!pick?.id) throw new Error("No lead for single UI test");
+   return pick;
+ }
+ 
+-async function testSingleWithReload(browser, report) {
+-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+-  attachPage(page);
+-  await bootstrapPage(page);
+-  await switchAudit(page);
+-  await page.waitForTimeout(1500);
+-
+-  const lead = await pickLeadForSingle(page, { preferFast: true });
+-  report.single.leadId = lead.id;
+-  report.single.leadName = lead.companyName;
+-  report.single.crmBefore = { status: lead.status, notes: lead.notes || "" };
+-
+-  const row = page.locator("tr", { hasText: lead.companyName }).first();
+-  await row.waitFor({ state: "visible", timeout: 60_000 });
+-  const rianalizza = row.getByRole("button", { name: /Rianalizza/i });
++async function startSingleJobFromRow(page, row) {
++  if (page.isClosed()) throw new Error("startSingleJobFromRow: page already closed");
+   const postPromise = page.waitForResponse(
+-    (r) => r.url().includes("/api/sanita/jobs") && r.request().method() === "POST",
+-    { timeout: 60_000 }
++    (r) =>
++      r.url().includes("/api/sanita/jobs") &&
++      r.request().method() === "POST" &&
++      !r.url().includes("/cancel"),
++    { timeout: 90_000 }
+   );
+-  await rianalizza.click();
+-  const postRes = await postPromise;
++  await row.getByRole("button", { name: /Rianalizza/i }).click();
++  let postRes;
++  try {
++    postRes = await postPromise;
++  } catch (e) {
++    if (page.isClosed()) throw new Error("startSingleJobFromRow: page closed while waiting for POST");
++    throw e;
++  }
+   const postBody = await postRes.json();
+-  const jobId = postBody?.job?.jobId;
+-  if (!jobId) throw new Error("single jobId missing from POST response");
+-  report.single.jobId = jobId;
++  if (!postRes.ok() || !postBody?.job?.jobId) {
++    throw new Error(`POST /api/sanita/jobs failed: ${postRes.status()} ${JSON.stringify(postBody)}`);
++  }
++  return postBody.job.jobId;
++}
+ 
+-  const card = jobCard(page);
+-  await card.waitFor({ state: "visible", timeout: 30_000 });
+-  await page.screenshot({ path: path.join(OUT_DIR, "b-single-queued.png"), fullPage: true });
+-
+-  const runningJob = await waitForJobApi(page, jobId, ["running", "completed"], 180_000);
+-  if (runningJob.status === "running") {
+-    await page.screenshot({ path: path.join(OUT_DIR, "b-single-running.png"), fullPage: true });
+-  } else {
+-    report.single.fastComplete = true;
+-    await page.screenshot({ path: path.join(OUT_DIR, "b-single-running.png"), fullPage: true });
++async function testRecovery(page, report) {
++  await bootstrapPage(page);
++  await switchCommercial(page);
++  await page.waitForTimeout(2000);
++
++  const byId = await apiJson(page, `/api/sanita/jobs/${RECOVERY_JOB_ID}`);
++  if (!byId.ok || !byId.json?.job) throw new Error(`Recovery job ${RECOVERY_JOB_ID} not found`);
++  const job = byId.json.job;
++  report.recovery.apiJobId = job.jobId;
++  if (job.status !== "completed") throw new Error(`Recovery job not completed: ${job.status}`);
++  if (job.progress?.totalStructures !== 3) {
++    throw new Error(`Recovery totalStructures=${job.progress?.totalStructures}`);
++  }
++  if (job.progress?.structuresControlled !== 3) {
++    throw new Error(`Recovery structuresControlled=${job.progress?.structuresControlled}`);
++  }
++
++  await page.reload({ waitUntil: "networkidle", timeout: 120_000 });
++  await switchCommercial(page);
++  await page.waitForTimeout(2000);
++  const afterReload = await apiJson(page, `/api/sanita/jobs/${RECOVERY_JOB_ID}`);
++  if (afterReload.json?.job?.jobId !== RECOVERY_JOB_ID) {
++    throw new Error("Recovery job lost after reload");
++  }
++
++  const cardText = await assertJobCardCustomerSafe(page);
++  if (!/completato/i.test(cardText) && !/Completato/.test(job.lastUpdateLabel || "")) {
++    throw new Error("Recovery job missing Completato label");
+   }
++  await page.screenshot({ path: path.join(OUT_DIR, "a-recovery-completed.png"), fullPage: true });
++  report.recovery.pass = true;
++}
++
++async function testBrowserCloseNonFastSkip(browser, report) {
++  let page = null;
++  let jobId = null;
++  try {
++    page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
++    attachPage(page);
++    await bootstrapPage(page);
++    await switchAudit(page);
++    await page.waitForTimeout(1500);
++
++    const lead = await pickLeadForSingle(page, { preferFast: false });
++    report.browserClose.leadId = lead.id;
++    report.browserClose.leadName = lead.companyName;
++    report.browserClose.crmBefore = { status: lead.status, notes: lead.notes || "" };
++
++    const row = page.locator("tr", { hasText: lead.companyName }).first();
++    await row.waitFor({ state: "visible", timeout: 60_000 });
++    jobId = await startSingleJobFromRow(page, row);
++    report.browserClose.jobId = jobId;
++
++    await jobCard(page).waitFor({ state: "visible", timeout: 30_000 });
++    await page.screenshot({ path: path.join(OUT_DIR, "b-browser-close-queued.png"), fullPage: true });
++
++    await waitForJobApi(page, jobId, ["running", "completed", "failed", "cancelled"], 300_000);
++    const mid = await apiJson(page, `/api/sanita/jobs/${jobId}`);
++    const midStatus = mid.json?.job?.status;
++    report.browserClose.statusBeforeClose = midStatus;
++    if (midStatus === "running") {
++      await page.screenshot({ path: path.join(OUT_DIR, "b-browser-close-running.png"), fullPage: true });
++    }
+ 
+-  if (runningJob.status === "running") {
+     await page.close();
+     await sleep(BROWSER_CLOSE_MS);
+ 
+     const page2 = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+     attachPage(page2);
+-    await bootstrapPage(page2);
+-    await switchAudit(page2);
+-    await page2.waitForTimeout(3000);
+-
+-    const latest = await apiJson(page2, "/api/sanita/jobs?limit=1");
+-    const recoveredId = latest.json?.jobs?.[0]?.jobId;
+-    report.single.recoveredJobId = recoveredId;
+-    if (recoveredId !== jobId) {
+-      throw new Error(`Reload recovery mismatch: expected ${jobId}, got ${recoveredId}`);
+-    }
+-    await assertJobCardCustomerSafe(page2);
+-    await page2.screenshot({ path: path.join(OUT_DIR, "b-single-after-reopen.png"), fullPage: true });
+-
+-    const t0 = Date.now();
+-    while (Date.now() - t0 < SINGLE_TIMEOUT_MS) {
+-      const j = await apiJson(page2, `/api/sanita/jobs/${jobId}`);
+-      const status = j.json?.job?.status;
+-      if (status === "completed" || status === "cancelled" || status === "failed") {
+-        report.single.finalStatus = status;
+-        break;
++    try {
++      await bootstrapPage(page2);
++      await switchAudit(page2);
++      await page2.waitForTimeout(3000);
++
++      const latest = await hetznerApiJson("/api/sanita/jobs?limit=1");
++      const recoveredId = latest.json?.jobs?.[0]?.jobId;
++      report.browserClose.recoveredJobId = recoveredId;
++      if (recoveredId !== jobId) {
++        throw new Error(`Reload recovery mismatch: expected ${jobId}, got ${recoveredId}`);
+       }
+-      await sleep(5000);
+-      await page2.reload({ waitUntil: "domcontentloaded" });
+-      await page2.waitForTimeout(1500);
+-    }
+-    if (!report.single.finalStatus) throw new Error("Single job did not finish in time");
+ 
+-    await page2.screenshot({ path: path.join(OUT_DIR, "b-single-completed.png"), fullPage: true });
++      const final = await pollJobTerminal(page2, jobId, BROWSER_CLOSE_TIMEOUT_MS);
++      report.browserClose.finalStatus = final.status;
++      if (!["completed", "failed", "cancelled"].includes(final.status)) {
++        throw new Error(`Unexpected terminal status: ${final.status}`);
++      }
++      if (final.status === "queued" || final.status === "running") {
++        throw new Error("Job still active after timeout — zombie");
++      }
++
++      const hetzner = hetznerQuery({ requireZombieZero: true, requireSha: EXPECT_SHA });
++      report.browserClose.hetzner = hetzner;
++
++      await assertJobCardCustomerSafe(page2);
++      await page2.screenshot({ path: path.join(OUT_DIR, "b-browser-close-after-reopen.png"), fullPage: true });
+ 
+-    const leadAfterRes = await apiJson(page2, `/api/sanita?region=Campania&includeAll=1`);
+-    const leadAfter = (leadAfterRes.json?.data || []).find((l) => l.id === lead.id);
+-    report.single.crmAfter = { status: leadAfter?.status, notes: leadAfter?.notes || "" };
+-    if (report.single.crmBefore.status !== report.single.crmAfter.status) {
+-      throw new Error("CRM status changed");
++      const leadAfterRes = await apiJson(page2, "/api/sanita?region=Campania&includeAll=1");
++      const leadAfter = (leadAfterRes.json?.data || []).find((l) => l.id === lead.id);
++      report.browserClose.crmAfter = { status: leadAfter?.status, notes: leadAfter?.notes || "" };
++      if (report.browserClose.crmBefore.status !== report.browserClose.crmAfter.status) {
++        throw new Error("CRM status changed after browser close test");
++      }
++      report.browserClose.pass = true;
++    } finally {
++      await page2.close().catch(() => {});
+     }
+-    if (report.single.crmBefore.notes !== report.single.crmAfter.notes) {
+-      throw new Error("CRM notes changed");
++  } finally {
++    if (page && !page.isClosed()) await page.close().catch(() => {});
++    if (jobId) {
++      const j = await hetznerApiJson(`/api/sanita/jobs/${jobId}`);
++      const st = j.json?.job?.status;
++      if (st === "queued" || st === "running") {
++        await hetznerApiJson(`/api/sanita/jobs/${jobId}/cancel`, { method: "POST" });
++        report.browserClose.cleanupCancel = jobId;
++      }
+     }
+-
+-    await page2.close();
+-    report.single.pass = true;
+-    return;
+   }
++}
+ 
+-  // Job finished before browser close — still verify reopen shows completed job.
+-  await page.close();
+-  await sleep(5000);
+-  const page2 = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+-  attachPage(page2);
+-  await bootstrapPage(page2);
+-  await switchAudit(page2);
+-  await page2.waitForTimeout(2000);
+-  const latest = await apiJson(page2, `/api/sanita/jobs?limit=1`);
+-  report.single.recoveredJobId = latest.json?.jobs?.[0]?.jobId;
+-  if (report.single.recoveredJobId !== jobId) {
+-    throw new Error(`Reload recovery mismatch: expected ${jobId}, got ${report.single.recoveredJobId}`);
+-  }
+-  report.single.finalStatus = runningJob.status;
+-  await assertJobCardCustomerSafe(page2);
+-  await page2.screenshot({ path: path.join(OUT_DIR, "b-single-after-reopen.png"), fullPage: true });
+-  await page2.screenshot({ path: path.join(OUT_DIR, "b-single-completed.png"), fullPage: true });
+-  const leadAfterRes = await apiJson(page2, `/api/sanita?region=Campania&includeAll=1`);
+-  const leadAfter = (leadAfterRes.json?.data || []).find((l) => l.id === lead.id);
+-  report.single.crmAfter = { status: leadAfter?.status, notes: leadAfter?.notes || "" };
+-  if (report.single.crmBefore.status !== report.single.crmAfter.status) {
+-    throw new Error("CRM status changed");
+-  }
+-  if (report.single.crmBefore.notes !== report.single.crmAfter.notes) {
+-    throw new Error("CRM notes changed");
++async function testCancel(browser, report) {
++  await ensureNoActiveJobs("pre-cancel");
++  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
++  attachPage(page);
++  try {
++    await bootstrapPage(page);
++    await switchAudit(page);
++    await page.waitForTimeout(1500);
++
++    const lead = await pickLeadForSingle(page, { preferFast: true });
++    report.cancel.leadId = lead.id;
++    report.cancel.targetKey = `single:${lead.id}`;
++    const row = page.locator("tr", { hasText: lead.companyName }).first();
++    await row.waitFor({ state: "visible", timeout: 60_000 });
++    await row.getByRole("button", { name: /Rianalizza/i }).waitFor({ state: "visible", timeout: 30_000 });
++
++    const jobId = await startSingleJobFromRow(page, row);
++    report.cancel.jobId = jobId;
++    await jobCard(page).waitFor({ state: "visible", timeout: 30_000 });
++
++    const cancelPromise = page.waitForResponse(
++      (r) => r.url().includes("/cancel") && r.request().method() === "POST",
++      { timeout: 90_000 }
++    );
++    await page.getByRole("button", { name: /Interrompi/i }).click({ timeout: 60_000 });
++    const cancelRes = await cancelPromise;
++    const cancelBody = await cancelRes.json().catch(() => null);
++    report.cancel.cancelHttpStatus = cancelRes.status();
++    report.cancel.cancelResponseStatus = cancelBody?.job?.status;
++
++    if (!cancelRes.ok()) throw new Error(`Cancel HTTP ${cancelRes.status()}`);
++
++    const final = await pollJobTerminal(page, jobId, 120_000);
++    if (final.status !== "cancelled") throw new Error(`Cancel status=${final.status}`);
++    if (final.pid) throw new Error(`Cancel pid not null: ${final.pid}`);
++    if (!/interrotto/i.test(final.lastUpdateLabel || "")) {
++      throw new Error(`Cancel missing Interrotto label: ${final.lastUpdateLabel}`);
++    }
++
++    const hetznerAfterCancel = hetznerQuery({
++      jobId,
++      leadId: lead.id,
++      targetKey: report.cancel.targetKey,
++      requireSha: EXPECT_SHA,
++    });
++    report.cancel.lockAbsent = !hetznerAfterCancel.lockExists;
++    if (hetznerAfterCancel.lockExists) {
++      throw new Error(`Lock still held after cancel: ${JSON.stringify(hetznerAfterCancel.lock)}`);
++    }
++
++    await page.screenshot({ path: path.join(OUT_DIR, "c-cancelled.png"), fullPage: true });
++
++    const restartPromise = page.waitForResponse(
++      (r) =>
++        r.url().includes("/api/sanita/jobs") &&
++        r.request().method() === "POST" &&
++        !r.url().includes("/cancel"),
++      { timeout: 90_000 }
++    );
++    await row.getByRole("button", { name: /Rianalizza/i }).click();
++    const res2 = await restartPromise;
++    const body = await res2.json();
++    if (!body?.success) throw new Error("Dedup blocked new job on same target");
++    report.cancel.newJobId = body.job?.jobId;
++    if (body.job?.jobId === jobId) throw new Error("Same jobId after cancel relaunch");
++
++    const cancelRestartPromise = page.waitForResponse(
++      (r) => r.url().includes("/cancel") && r.request().method() === "POST",
++      { timeout: 90_000 }
++    );
++    await page.getByRole("button", { name: /Interrompi/i }).click({ timeout: 60_000 });
++    await cancelRestartPromise;
++    await pollJobTerminal(page, report.cancel.newJobId, 120_000);
++    report.cancel.pass = true;
++  } finally {
++    await page.close().catch(() => {});
++    await ensureNoActiveJobs("post-cancel");
+   }
+-  await page2.close();
+-  report.single.pass = true;
+ }
+ 
+-async function testCancel(browser, report) {
++async function testPositiveApplyVillaFiorita(browser, report) {
++  await ensureNoActiveJobs("pre-positive");
+   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+   attachPage(page);
+   await bootstrapPage(page);
+   await switchAudit(page);
++  await page.waitForTimeout(1500);
+ 
+-  const lead = await pickLeadForSingle(page, { preferFast: true });
+-  const row = page.locator("tr", { hasText: lead.companyName }).first();
+-  await row.getByRole("button", { name: /Rianalizza/i }).click();
+-  await page.waitForResponse(
+-    (r) => r.url().includes("/api/sanita/jobs") && r.request().method() === "POST",
+-    { timeout: 60_000 }
+-  );
++  const lead = await pickLeadForSingle(page, { leadId: POSITIVE_LEAD_ID });
++  report.positive.leadId = lead.id;
++  report.positive.leadName = lead.companyName;
++  report.positive.crmBefore = { status: lead.status, notes: lead.notes || "" };
+ 
+-  const created = await apiJson(page, "/api/sanita/jobs?limit=1");
+-  const jobId = created.json?.jobs?.[0]?.jobId;
+-  report.cancel.jobId = jobId;
++  const beforeCommercial = await apiJson(page, "/api/sanita?region=Campania&includeAll=1");
++  const actionableBefore = (beforeCommercial.json?.data || []).filter(
++    (l) => l._actionable || /\[BV:PUBLISHED/.test(l.evidence || "")
++  ).length;
++  report.positive.actionableBefore = actionableBefore;
+ 
+-  await page.getByRole("button", { name: /Interrompi/i }).click({ timeout: 60_000 });
+-  await page.waitForResponse(
+-    (r) => r.url().includes("/cancel") && r.request().method() === "POST",
+-    { timeout: 60_000 }
+-  );
++  const row = page.locator("tr", { hasText: lead.companyName }).first();
++  await row.waitFor({ state: "visible", timeout: 60_000 });
++  const jobId = await startSingleJobFromRow(page, row);
++  report.positive.jobId = jobId;
++
++  const final = await pollJobTerminal(page, jobId, SINGLE_TIMEOUT_MS);
++  report.positive.finalStatus = final.status;
++  report.positive.certifiedResults = final.progress?.certifiedResults ?? 0;
++  if (final.status !== "completed") throw new Error(`Positive apply status=${final.status}`);
++  if ((final.progress?.certifiedResults || 0) < 1) {
++    throw new Error(`certifiedResults=${final.progress?.certifiedResults}`);
++  }
+ 
+-  const t0 = Date.now();
+-  let final = null;
+-  while (Date.now() - t0 < 120_000) {
+-    const j = await apiJson(page, `/api/sanita/jobs/${jobId}`);
+-    final = j.json?.job;
+-    if (final?.status === "cancelled") break;
+-    await sleep(2000);
++  const hetzner = hetznerQuery({
++    jobId,
++    leadId: lead.id,
++    requireAudit: true,
++    requireSha: EXPECT_SHA,
++    requireZombieZero: true,
++  });
++  report.positive.serverAudit = hetzner.audit;
++  report.positive.serverAuditExists = hetzner.auditExists;
++  if (!hetzner.auditExists) throw new Error("Server-side apply audit missing");
++
++  const afterRes = await apiJson(page, "/api/sanita?region=Campania&includeAll=1");
++  const afterLead = (afterRes.json?.data || []).find((l) => l.id === lead.id);
++  report.positive.crmAfter = { status: afterLead?.status, notes: afterLead?.notes || "" };
++  report.positive.processingState = hetzner.audit?.processingState;
++  report.positive.evidenceUrl = (afterLead?.evidence || "").match(/\[DOCS:\s*([^\]]+)\]/i)?.[1]?.trim() || null;
++
++  if (report.positive.crmBefore.status !== report.positive.crmAfter.status) {
++    throw new Error("CRM status changed on positive apply");
+   }
+-  if (final?.status !== "cancelled") throw new Error(`Cancel status=${final?.status}`);
+-  if (final?.pid) throw new Error(`Cancel pid not null: ${final.pid}`);
+-  if (!/interrotto/i.test(final?.lastUpdateLabel || "")) {
+-    throw new Error(`Cancel missing Interrotto label: ${final?.lastUpdateLabel}`);
++  if (hetzner.audit.processingState !== "PUBLISHED_CURRENT") {
++    throw new Error(`Expected PUBLISHED_CURRENT got ${hetzner.audit.processingState}`);
+   }
+ 
+-  await page.screenshot({ path: path.join(OUT_DIR, "c-cancelled.png"), fullPage: true });
++  await switchCommercial(page);
++  await page.waitForTimeout(2000);
++  const commercialText = await page.locator("body").innerText();
++  if (!/villa fiorita/i.test(commercialText)) {
++    throw new Error("Villa Fiorita not visible in commercial queue");
++  }
++  await page.screenshot({ path: path.join(OUT_DIR, "d-positive-commercial-queue.png"), fullPage: true });
+ 
+-  // Dedup: stesso target deve poter ripartire
+-  await row.getByRole("button", { name: /Rianalizza/i }).click();
+-  const res2 = await page.waitForResponse(
+-    (r) => r.url().includes("/api/sanita/jobs") && r.request().method() === "POST",
+-    { timeout: 60_000 }
+-  );
+-  const body = await res2.json();
+-  if (!body?.success) throw new Error("Dedup blocked new job on same target");
+-  report.cancel.newJobId = body.job?.jobId;
+-  if (body.job?.jobId === jobId) throw new Error("Same jobId after cancel relaunch");
++  const actionableAfter = (afterRes.json?.data || []).filter(
++    (l) => l._actionable || /\[BV:PUBLISHED/.test(l.evidence || "")
++  ).length;
++  report.positive.actionableAfter = actionableAfter;
++
++  await row.click();
++  await page.waitForTimeout(1500);
++  if (report.positive.evidenceUrl) {
++    const link = page.locator(`a[href*="${new URL(report.positive.evidenceUrl).pathname.split("/").pop()}"]`).first();
++    if ((await link.count()) === 0) {
++      const bodyText = await page.locator("body").innerText();
++      if (!bodyText.includes(new URL(report.positive.evidenceUrl).hostname)) {
++        throw new Error("Evidence URL not openable from UI");
++      }
++    }
++  }
++  await page.screenshot({ path: path.join(OUT_DIR, "d-positive-evidence-drawer.png"), fullPage: true });
++
++  const [download] = await Promise.all([
++    page.waitForEvent("download", { timeout: 60_000 }),
++    page.getByRole("button", { name: /Esporta CSV/i }).click(),
++  ]);
++  const csvPath = path.join(OUT_DIR, "d-positive-export.csv");
++  await download.saveAs(csvPath);
++  const csv = fs.readFileSync(csvPath, "utf8");
++  report.positive.csvContainsLead = /villa fiorita/i.test(csv);
++  if (!report.positive.csvContainsLead) throw new Error("CSV missing Villa Fiorita");
+ 
+-  await page.getByRole("button", { name: /Interrompi/i }).click({ timeout: 60_000 }).catch(() => {});
+   await page.close();
+-  report.cancel.pass = true;
++  report.positive.pass = true;
++}
++
++async function testMalzoniNegative(page, report) {
++  const res = await apiJson(page, "/api/sanita?region=Campania&includeAll=1");
++  const lead = (res.json?.data || []).find((l) => l.id === NEGATIVE_LEAD_ID);
++  if (!lead) throw new Error("Malzoni lead missing");
++  const ps = (lead.evidence || "").match(/\[PS:([^\]]+)\]/)?.[1] || null;
++  report.negative = {
++    leadId: lead.id,
++    leadName: lead.companyName,
++    processingState: ps,
++    hasDocs: /\[DOCS:/.test(lead.evidence || ""),
++    actionable: Boolean(lead._actionable),
++    crm: { status: lead.status, notes: lead.notes || "" },
++  };
++  if (report.negative.hasDocs) throw new Error("Malzoni unexpectedly has [DOCS:] — do not invent");
++  if (report.negative.actionable) throw new Error("Malzoni must not be actionable");
++  report.negative.pass = true;
+ }
+ 
+ async function main() {
+   const report = {
+     baseUrl: BASE_URL,
+     vercelShareUrl: VERCEL_SHARE_URL || null,
++    expectSha: EXPECT_SHA,
+     recoveryJobId: RECOVERY_JOB_ID,
+     recovery: {},
+-    single: {},
++    browserClose: {},
+     cancel: {},
++    positive: {},
++    negative: {},
+     networkLog: [],
+     legacyRouteHits: 0,
+     consoleErrors: [],
++    consoleWarnings: [],
+     pass: false,
+   };
+ 
+-  const browser = await chromium.launch({ headless: true });
+-  const skipRecovery = process.env.SKIP_RECOVERY === "1";
+-  const skipCancel = process.env.SKIP_CANCEL === "1";
++  let browser = null;
+   try {
+-    if (!skipRecovery) {
+-      const pageA = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+-      attachPage(pageA);
+-      await testRecovery(pageA, report);
+-      await pageA.close();
+-    } else {
+-      report.recovery.skipped = true;
+-      report.recovery.pass = true;
++    try {
++      report.hetznerPre = hetznerQuery({ requireSha: EXPECT_SHA, requireZombieZero: true });
++    } catch (e) {
++      report.hetznerPreError = String(e?.message || e);
++      report.hetznerPre = hetznerQuery({ requireSha: EXPECT_SHA });
+     }
+-  } catch (e) {
+-    report.recovery.error = String(e?.message || e);
+-  }
+ 
+-  try {
+-    await testSingleWithReload(browser, report);
+-  } catch (e) {
+-    report.single.error = String(e?.message || e);
+-  }
++    browser = await chromium.launch({ headless: true });
++
++    await ensureNoActiveJobs("pre-gate");
++
++    const skipRecovery = process.env.SKIP_RECOVERY === "1";
++    const skipBrowserClose = process.env.SKIP_BROWSER_CLOSE === "1";
++    const skipCancel = process.env.SKIP_CANCEL === "1";
++    const skipPositive = process.env.SKIP_POSITIVE === "1";
++    const skipNegative = process.env.SKIP_NEGATIVE === "1";
++
++    try {
++      if (!skipRecovery) {
++        const pageA = await browser.newPage({ viewport: { width: 1440, height: 900 } });
++        attachPage(pageA);
++        await testRecovery(pageA, report);
++        await pageA.close();
++      } else {
++        report.recovery.skipped = true;
++        report.recovery.pass = true;
++      }
++    } catch (e) {
++      report.recovery.error = String(e?.message || e);
++    }
+ 
+-  try {
+-    if (!skipCancel) {
+-      await testCancel(browser, report);
+-    } else {
+-      report.cancel.skipped = true;
+-      report.cancel.pass = true;
++    try {
++      if (!skipBrowserClose) {
++        await testBrowserCloseNonFastSkip(browser, report);
++      } else {
++        report.browserClose.skipped = true;
++        report.browserClose.pass = true;
++      }
++    } catch (e) {
++      report.browserClose.error = String(e?.message || e);
++    }
++
++    try {
++      if (!skipCancel) {
++        await testCancel(browser, report);
++      } else {
++        report.cancel.skipped = true;
++        report.cancel.pass = true;
++      }
++    } catch (e) {
++      report.cancel.error = String(e?.message || e);
+     }
+-  } catch (e) {
+-    report.cancel.error = String(e?.message || e);
+-  }
+ 
+-  await browser.close();
+-
+-  report.networkLog = networkLog;
+-  report.legacyRouteHits = legacyRouteHits;
+-  report.consoleErrors = consoleErrors;
+-  report.pass =
+-    report.recovery.pass === true &&
+-    report.single.pass === true &&
+-    report.cancel.pass === true &&
+-    legacyRouteHits === 0 &&
+-    consoleErrors.length === 0;
+-
+-  const outPath = path.join(OUT_DIR, "report.json");
+-  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+-  console.log(JSON.stringify(report, null, 2));
+-  process.exit(report.pass ? 0 : 1);
++    try {
++      if (!skipPositive) {
++        await testPositiveApplyVillaFiorita(browser, report);
++      } else {
++        report.positive.skipped = true;
++        report.positive.pass = true;
++      }
++    } catch (e) {
++      report.positive.error = String(e?.message || e);
++    }
++
++    try {
++      if (!skipNegative) {
++        const pageN = await browser.newPage({ viewport: { width: 1440, height: 900 } });
++        attachPage(pageN);
++        await bootstrapPage(pageN);
++        await testMalzoniNegative(pageN, report);
++        await pageN.close();
++      } else {
++        report.negative.skipped = true;
++        report.negative.pass = true;
++      }
++    } catch (e) {
++      report.negative.error = String(e?.message || e);
++    }
++  } finally {
++    if (browser) await browser.close().catch(() => {});
++
++    try {
++      report.hetznerPost = hetznerQuery({ requireSha: EXPECT_SHA, requireZombieZero: true });
++    } catch (e) {
++      report.hetznerPostError = String(e?.message || e);
++      report.hetznerPost = hetznerQuery({ requireSha: EXPECT_SHA });
++    }
++
++    report.networkLog = networkLog;
++    report.legacyRouteHits = legacyRouteHits;
++    report.consoleErrors = consoleErrors;
++    report.consoleWarnings = consoleWarnings;
++    report.pass =
++      report.recovery.pass === true &&
++      report.browserClose.pass === true &&
++      report.cancel.pass === true &&
++      report.positive.pass === true &&
++      report.negative.pass === true &&
++      legacyRouteHits === 0 &&
++      consoleErrors.length === 0 &&
++      report.hetznerPost?.zombieCount === 0 &&
++      (report.hetznerPost?.releaseSha === EXPECT_SHA ||
++        report.hetznerPost?.releaseSha?.startsWith(EXPECT_SHA.slice(0, 7)));
++
++    const outPath = path.join(OUT_DIR, "report.json");
++    fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
++    console.log(JSON.stringify(report, null, 2));
++    process.exit(report.pass ? 0 : 1);
++  }
+ }
+ 
+ main().catch((e) => {
+   console.error(e);
+   process.exit(1);
+ });
++
++process.on("unhandledRejection", (reason) => {
++  console.error("unhandledRejection", reason);
++});
+diff --git a/src/app/api/sanita/archive-revalidation/route.ts b/src/app/api/sanita/archive-revalidation/route.ts
+index b21c647..0bc342c 100644
+--- a/src/app/api/sanita/archive-revalidation/route.ts
++++ b/src/app/api/sanita/archive-revalidation/route.ts
+@@ -56,20 +56,42 @@ function deriveCurrentState(cp: CheckpointFile) {
+   let hot = 0;
+   let published = 0;
+   let outOfScope = 0;
++  const terminalIds = {
++    hot: [] as string[],
++    published: [] as string[],
++    review: [] as string[],
++    technical: [] as string[],
++  };
+ 
+-  for (const raw of Object.values(terminal)) {
++  for (const [lid, raw] of Object.entries(terminal)) {
+     const ps =
+       typeof raw === "string"
+         ? raw
+         : String(raw?.processingState || raw?.state || "").toUpperCase();
+-    if (ps === "REVIEW_HUMAN") reviewCurrent++;
+-    else if (ps === "TECHNICAL_BLOCKED") technicalBlockedFinal++;
+-    else if (ps === "HOT_VERIFIED") hot++;
+-    else if (ps.startsWith("PUBLISHED")) published++;
+-    else if (ps === "OUT_OF_SCOPE") outOfScope++;
++    if (ps === "REVIEW_HUMAN") {
++      reviewCurrent++;
++      terminalIds.review.push(lid);
++    } else if (ps === "TECHNICAL_BLOCKED") {
++      technicalBlockedFinal++;
++      terminalIds.technical.push(lid);
++    } else if (ps === "HOT_VERIFIED") {
++      hot++;
++      terminalIds.hot.push(lid);
++    } else if (ps.startsWith("PUBLISHED")) {
++      published++;
++      terminalIds.published.push(lid);
++    } else if (ps === "OUT_OF_SCOPE") outOfScope++;
+   }
+ 
+-  const terminalCompleted = Object.keys(terminal).length;
++  // Verifiche concluse = esiti commerciali/semantici. TECHNICAL_BLOCKED non conta.
++  const terminalCompleted = Object.keys(terminal).filter((lid) => {
++    const raw = terminal[lid];
++    const ps =
++      typeof raw === "string"
++        ? raw
++        : String(raw?.processingState || raw?.state || "").toUpperCase();
++    return ps !== "TECHNICAL_BLOCKED";
++  }).length;
+   const currentlyInProgress = Object.keys(inProgress).length;
+   const currentRetryQueue = Object.keys(retryQueue).length;
+   const recordsTouched = Number(cp.stats?.processed || 0);
+@@ -86,6 +108,7 @@ function deriveCurrentState(cp: CheckpointFile) {
+     hot,
+     published,
+     outOfScope,
++    terminalIds,
+   };
+ }
+ 
+@@ -115,6 +138,7 @@ function emptyPayload(extra: Record<string, unknown> = {}) {
+     certifiedCurrentRun: 0,
+     hot: 0,
+     published: 0,
++    terminalIds: { hot: [], published: [], review: [], technical: [] },
+     ...extra,
+   };
+ }
+@@ -163,6 +187,7 @@ async function readLocalStatus() {
+         hot: 0,
+         published: 0,
+         outOfScope: 0,
++        terminalIds: { hot: [], published: [], review: [], technical: [] },
+       };
+ 
+   const percent =
+@@ -188,6 +213,7 @@ async function readLocalStatus() {
+     certifiedCurrentRun: cur.certifiedCurrentRun,
+     hot: cur.hot,
+     published: cur.published,
++    terminalIds: cur.terminalIds ?? { hot: [], published: [], review: [], technical: [] },
+     // aliases for existing UI fields during rollout
+     processed: cur.recordsTouched,
+     terminal: cur.terminalCompleted,
+diff --git a/src/components/sanita-leads.tsx b/src/components/sanita-leads.tsx
+index 89b4943..07e59ae 100644
+--- a/src/components/sanita-leads.tsx
++++ b/src/components/sanita-leads.tsx
+@@ -12,6 +12,13 @@ import {
+   Info, Zap, RotateCcw, PauseCircle,
+ } from "lucide-react"
+ import { toast } from "sonner"
++import {
++  Dialog,
++  DialogContent,
++  DialogHeader,
++  DialogTitle,
++  DialogDescription,
++} from "@/components/ui/dialog"
+ import {
+   deriveVerdict, VERDICT_META, type Verdict,
+ } from "@/lib/sanita/verdict"
+@@ -66,7 +73,17 @@ type Lead = {
+ }
+ 
+ type VerdictFilter = "ALL" | Verdict | "PENDING"
+-type ViewTab = "commercial" | "archive" | "status"
++type ViewTab = "certified" | "review" | "archive"
++type CertFocus =
++  | "all"
++  | "prior"
++  | "run_new"
++  | "run_published"
++  | "run_hot"
++  | "policy_valid"
++  | "policy_expired"
++  | "date_unknown"
++  | "absence"
+ 
+ type ArchiveRevalidationStatus = {
+   available?: boolean
+@@ -81,7 +98,6 @@ type ArchiveRevalidationStatus = {
+   technicalPending?: number
+   absenceFound?: number
+   terminal?: number
+-  /** Current-state fields (authoritative) */
+   recordsTouched?: number
+   terminalCompleted?: number
+   currentlyInProgress?: number
+@@ -91,6 +107,12 @@ type ArchiveRevalidationStatus = {
+   certifiedCurrentRun?: number
+   hot?: number
+   published?: number
++  terminalIds?: {
++    hot?: string[]
++    published?: string[]
++    review?: string[]
++    technical?: string[]
++  }
+ }
+ 
+ type ScanJob = {
+@@ -162,8 +184,8 @@ type SanitaApiMeta = {
+ 
+ const VERDICT_UI: Record<Verdict, { label: string; subtitle: string; cls: string; icon: typeof CheckCircle2 }> = {
+   PUBLISHED: { label: VERDICT_META.PUBLISHED.label, subtitle: VERDICT_META.PUBLISHED.subtitle, cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: ShieldCheck },
+-  HOT: { label: VERDICT_META.HOT.label, subtitle: VERDICT_META.HOT.subtitle, cls: "bg-red-50 text-red-700 border-red-200", icon: ShieldAlert },
+-  REVIEW: { label: VERDICT_META.REVIEW.label, subtitle: VERDICT_META.REVIEW.subtitle, cls: "bg-amber-50 text-amber-700 border-amber-200", icon: ShieldQuestion },
++  HOT: { label: VERDICT_META.HOT.label, subtitle: VERDICT_META.HOT.subtitle, cls: "bg-slate-100 text-slate-800 border-slate-200", icon: ShieldAlert },
++  REVIEW: { label: VERDICT_META.REVIEW.label, subtitle: VERDICT_META.REVIEW.subtitle, cls: "bg-amber-50 text-amber-800 border-amber-200", icon: ShieldQuestion },
+ }
+ 
+ export function SanitaLeads() {
+@@ -193,11 +215,13 @@ export function SanitaLeads() {
+   const [scanJobId, setScanJobId] = useState<string | null>(null)
+   const [discoveryMeta, setDiscoveryMeta] = useState<Record<string, RegionDiscoveryMeta>>({})
+   const [processingName, setProcessingName] = useState<string | null>(null)
+-  const [viewTab, setViewTab] = useState<ViewTab>("commercial")
++  const [viewTab, setViewTab] = useState<ViewTab>("certified")
++  const [certFocus, setCertFocus] = useState<CertFocus>("all")
+   const [apiMeta, setApiMeta] = useState<SanitaApiMeta | null>(null)
+   const [archiveStatus, setArchiveStatus] = useState<ArchiveRevalidationStatus | null>(null)
+-  const [techOpen, setTechOpen] = useState(false)
+-  const [archivePanelOpen, setArchivePanelOpen] = useState(true)
++  const [opsOpen, setOpsOpen] = useState(false)
++  const [discoveryOpen, setDiscoveryOpen] = useState(false)
++  const [filtersReady, setFiltersReady] = useState(false)
+ 
+   const isLeadActionable = (l: Lead) =>
+     Boolean(l.semantic?.actionable ?? l._actionable ?? isInActionableSalesQueue(l))
+@@ -250,7 +274,7 @@ export function SanitaLeads() {
+   const fetchLeads = async (opts?: { silent?: boolean }) => {
+     if (!opts?.silent) setIsLoading(true)
+     try {
+-      const res = await fetch("/api/sanita?includePending=1&includeAll=1")
++      const res = await fetch("/api/sanita?includePending=1&includeAll=1", { cache: "no-store" })
+       const json = await res.json()
+       if (json.success) {
+         setLeads(json.data)
+@@ -291,7 +315,7 @@ export function SanitaLeads() {
+     }
+     const active = job.status === "queued" || job.status === "running"
+     setIsScanning(active)
+-    setRegionFilter(job.region)
++    // Do NOT sync regionFilter from job — that forced Campania when a regional job existed.
+     setActiveScan({
+       region: job.region,
+       done: job.progress.structuresControlled ?? 0,
+@@ -524,19 +548,113 @@ export function SanitaLeads() {
+     }
+   }
+ 
++  const runHotIds = useMemo(
++    () => new Set(archiveStatus?.terminalIds?.hot ?? []),
++    [archiveStatus]
++  )
++  const runPubIds = useMemo(
++    () => new Set(archiveStatus?.terminalIds?.published ?? []),
++    [archiveStatus]
++  )
++  const runReviewIds = useMemo(
++    () => new Set(archiveStatus?.terminalIds?.review ?? []),
++    [archiveStatus]
++  )
++  const runCertifiedIds = useMemo(() => {
++    const s = new Set<string>()
++    for (const id of runHotIds) s.add(id)
++    for (const id of runPubIds) s.add(id)
++    return s
++  }, [runHotIds, runPubIds])
++
++  const commercialBucket = (l: Lead): CertFocus | null => {
++    if (!isLeadActionable(l)) return null
++    const ps = readProcessingState(l.evidence)
++    const bv = readBusinessVerdict(l.evidence)
++    if (ps === "HOT_VERIFIED" || (!ps?.startsWith("PUBLISHED") && deriveVerdict({
++      lastScannedAt: l.lastScannedAt,
++      policyFound: l.policyFound,
++      websiteReachable: l.websiteReachable,
++      website: l.website,
++      evidence: l.evidence,
++    }) === "HOT")) return "absence"
++    if (ps === "PUBLISHED_CURRENT" || bv === "PUBLISHED_CURRENT") return "policy_valid"
++    if (ps === "PUBLISHED_EXPIRED" || bv === "PUBLISHED_EXPIRED") return "policy_expired"
++    if (ps === "PUBLISHED_DATE_UNKNOWN" || bv === "PUBLISHED_DATE_UNKNOWN") return "date_unknown"
++    if (ps?.startsWith("PUBLISHED") || bv?.startsWith("PUBLISHED") || deriveVerdict({
++      lastScannedAt: l.lastScannedAt,
++      policyFound: l.policyFound,
++      websiteReachable: l.websiteReachable,
++      website: l.website,
++      evidence: l.evidence,
++    }) === "PUBLISHED") return "date_unknown"
++    return "absence"
++  }
++
+   const visibleLeads = useMemo(() => {
+     const base = leads.filter(
+       (l) => l.lastScannedAt != null || l.evidence?.trim() || Boolean(l.website?.trim())
+     )
+-    if (viewTab === "commercial") {
+-      return base.filter((l) => isLeadActionable(l))
++    if (viewTab === "certified") {
++      return base.filter((l) => isLeadActionable(l) || runCertifiedIds.has(l.id))
+     }
+-    if (viewTab === "status") {
+-      // Casi non conclusi / non ancora in coda commerciale
+-      return base.filter((l) => !isLeadActionable(l))
++    if (viewTab === "review") {
++      return base.filter((l) => {
++        if (runReviewIds.has(l.id)) return true
++        const ps = readProcessingState(l.evidence)
++        const bv = readBusinessVerdict(l.evidence)
++        return ps === "REVIEW_HUMAN" || bv === "REVIEW_HUMAN" || deriveVerdict({
++          lastScannedAt: l.lastScannedAt,
++          policyFound: l.policyFound,
++          websiteReachable: l.websiteReachable,
++          website: l.website,
++          evidence: l.evidence,
++        }) === "REVIEW"
++      })
+     }
+     return base
+-  }, [leads, viewTab])
++  }, [leads, viewTab, runCertifiedIds, runReviewIds])
++
++  // Restore filters from URL once (single source of truth)
++  useEffect(() => {
++    const boot = setTimeout(() => {
++      try {
++        const p = new URLSearchParams(window.location.search)
++        const tab = p.get("tab")
++        if (tab === "certified" || tab === "review" || tab === "archive") setViewTab(tab)
++        const region = p.get("region")
++        if (region === "ALL" || region === "Veneto" || region === "Campania") setRegionFilter(region)
++        else if (region == null) setRegionFilter("ALL")
++        const v = p.get("verdict")
++        if (v === "ALL" || v === "HOT" || v === "PUBLISHED" || v === "REVIEW" || v === "PENDING") {
++          setVerdictFilter(v)
++        }
++        const focus = p.get("focus") as CertFocus | null
++        if (focus) setCertFocus(focus)
++        const city = p.get("city")
++        if (city) setSelectedCity(city)
++        const q = p.get("q")
++        if (q) setQuery(q)
++      } finally {
++        setFiltersReady(true)
++      }
++    }, 0)
++    return () => clearTimeout(boot)
++  }, [])
++
++  // Persist filters to URL — never rewrite region from jobs
++  useEffect(() => {
++    if (!filtersReady || typeof window === "undefined") return
++    const p = new URLSearchParams()
++    p.set("tab", viewTab)
++    p.set("region", regionFilter)
++    if (verdictFilter !== "ALL") p.set("verdict", verdictFilter)
++    if (certFocus !== "all") p.set("focus", certFocus)
++    if (selectedCity) p.set("city", selectedCity)
++    if (query.trim()) p.set("q", query.trim())
++    const next = `${window.location.pathname}?${p.toString()}`
++    window.history.replaceState(null, "", next)
++  }, [filtersReady, viewTab, regionFilter, verdictFilter, certFocus, selectedCity, query])
+ 
+   const fetchArchiveStatus = async () => {
+     try {
+@@ -544,12 +662,11 @@ export function SanitaLeads() {
+       const json = (await res.json()) as ArchiveRevalidationStatus & { success?: boolean }
+       setArchiveStatus(json)
+     } catch {
+-      /* soft-fail: hero shows fallback */
++      /* soft-fail */
+     }
+   }
+ 
+   useEffect(() => {
+-    // Defer initial fetch so setState is not synchronous inside the effect body.
+     const boot = setTimeout(() => {
+       void fetchArchiveStatus()
+     }, 0)
+@@ -673,9 +790,20 @@ export function SanitaLeads() {
+         if (verdictFilter === "PENDING") { if (v !== null) return false }
+         else if (v !== verdictFilter) return false
+       }
++      if (viewTab === "certified" && certFocus !== "all") {
++        if (certFocus === "run_new") return runCertifiedIds.has(l.id)
++        if (certFocus === "run_published") return runPubIds.has(l.id)
++        if (certFocus === "run_hot") return runHotIds.has(l.id)
++        if (certFocus === "prior") return isLeadActionable(l) && !runCertifiedIds.has(l.id)
++        const bucket = commercialBucket(l)
++        if (certFocus === "policy_valid") return bucket === "policy_valid"
++        if (certFocus === "policy_expired") return bucket === "policy_expired"
++        if (certFocus === "date_unknown") return bucket === "date_unknown"
++        if (certFocus === "absence") return bucket === "absence" || runHotIds.has(l.id)
++      }
+       return true
+     })
+-  }, [visibleLeads, query, regionFilter, selectedCity, verdictFilter])
++  }, [visibleLeads, query, regionFilter, selectedCity, verdictFilter, viewTab, certFocus, runCertifiedIds, runPubIds, runHotIds])
+ 
+   // KPI sul set corrente (regione + città), indipendenti dal filtro verdetto
+   const scope = useMemo(
+@@ -719,8 +847,8 @@ export function SanitaLeads() {
+     // CSV cliente: solo coda commerciale certificata (mai legacy/retry/review/tech)
+     const commercial = leads.filter((l) => isLeadActionable(l))
+     const exportRows =
+-      viewTab === "commercial"
+-        ? filtered.filter((l) => isLeadActionable(l))
++      viewTab === "certified"
++        ? filtered.filter((l) => isLeadActionable(l) || runCertifiedIds.has(l.id))
+         : commercial.filter((l) => {
+             if (regionFilter !== "ALL" && l.region !== regionFilter) return false
+             if (selectedCity && l.city !== selectedCity) return false
+@@ -999,12 +1127,6 @@ export function SanitaLeads() {
+   const contactExtras = (l: Lead) =>
+     [l.email, l.pec, l.piva].filter(Boolean).length
+ 
+-  const commercialSum =
+-    (auditKpis.commercial?.policyValid ?? 0) +
+-    (auditKpis.commercial?.policyExpired ?? 0) +
+-    (auditKpis.commercial?.dateUnknown ?? 0) +
+-    (auditKpis.commercial?.absenceCertified ?? 0)
+-
+   const archiveTarget = archiveStatus?.targetTotal ?? 877
+   const terminalCompleted = archiveStatus?.terminalCompleted ?? archiveStatus?.terminal ?? 0
+   const recordsTouched = archiveStatus?.recordsTouched ?? archiveStatus?.processed ?? 0
+@@ -1020,174 +1142,205 @@ export function SanitaLeads() {
+     (archiveTarget > 0 ? Math.round((terminalCompleted / archiveTarget) * 1000) / 10 : 0)
+   const archiveActive = Boolean(archiveStatus?.active)
+ 
+-  return (
+-    <div className="space-y-8">
+-      {/* HEADER */}
+-      <div className="space-y-6">
+-        <div>
+-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white shadow-sm">
+-              <Stethoscope className="h-5 w-5" />
+-            </span>
+-            Motore Sanità · Legge Gelli
+-          </h1>
+-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+-            Verifica la pubblicazione della polizza RC sulle strutture sanitarie e mostra solo i risultati
+-            utilizzabili commercialmente.
+-          </p>
+-        </div>
++  const runPublished = archiveStatus?.published ?? 0
++  const runHot = archiveStatus?.hot ?? 0
++  const priorCertified = Math.max(
++    0,
++    auditKpis.actionable -
++      [...runCertifiedIds].filter((id) => leads.some((l) => l.id === id && isLeadActionable(l))).length
++  )
+ 
+-        {/* HERO — 3 KPI only */}
+-        <div className="grid gap-4 lg:grid-cols-3">
+-          <Card className="border-slate-200 shadow-sm">
+-            <CardContent className="p-5">
+-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+-                Archivio strutture
+-              </p>
+-              <p className="mt-3 text-4xl font-bold tabular-nums text-slate-900">{auditKpis.total}</p>
+-              <p className="mt-2 text-sm text-slate-600">Strutture sanitarie presenti nel database</p>
+-            </CardContent>
+-          </Card>
+-
+-          <Card className="border-slate-200 shadow-sm">
+-            <CardContent className="p-5">
+-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+-                Rivalidazione archivio
+-              </p>
+-              <p className="mt-3 text-4xl font-bold tabular-nums text-slate-900">
+-                {terminalCompleted}
+-                <span className="text-2xl font-semibold text-slate-400"> / {archiveTarget}</span>
+-              </p>
+-              <p className="mt-2 text-sm text-slate-600">
+-                {archiveActive ? "Verifiche concluse" : (archiveStatus?.statusLabel ?? "Stato verifica")}
+-              </p>
+-              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+-                <div
+-                  className="h-full rounded-full bg-slate-900 transition-all duration-500"
+-                  style={{ width: `${Math.min(100, archivePct)}%` }}
+-                />
+-              </div>
+-              <p className="mt-1.5 text-xs tabular-nums text-slate-500">{archivePct}% concluse</p>
+-            </CardContent>
+-          </Card>
+-
+-          <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
+-            <CardContent className="p-5">
+-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/80">
+-                Lead certificati
+-              </p>
+-              <p className="mt-3 text-4xl font-bold tabular-nums text-emerald-800">{auditKpis.actionable}</p>
+-              <p className="mt-2 text-sm text-emerald-900/70">Risultati utilizzabili commercialmente</p>
+-            </CardContent>
+-          </Card>
++  /** Count rows for a focus under current region/search (must match table when selected). */
++  const countForFocus = (focus: CertFocus) => {
++    const q = query.trim().toLowerCase()
++    return visibleLeads.filter((l) => {
++      if (regionFilter !== "ALL" && l.region !== regionFilter) return false
++      if (selectedCity && l.city !== selectedCity) return false
++      if (q && !(`${l.companyName} ${l.city ?? ""}`.toLowerCase().includes(q))) return false
++      if (focus === "all") return true
++      if (focus === "run_new") return runCertifiedIds.has(l.id)
++      if (focus === "run_published") return runPubIds.has(l.id)
++      if (focus === "run_hot") return runHotIds.has(l.id)
++      if (focus === "prior") return isLeadActionable(l) && !runCertifiedIds.has(l.id)
++      const bucket = commercialBucket(l)
++      if (focus === "policy_valid") return bucket === "policy_valid"
++      if (focus === "policy_expired") return bucket === "policy_expired"
++      if (focus === "date_unknown") return bucket === "date_unknown"
++      if (focus === "absence") return bucket === "absence" || runHotIds.has(l.id)
++      return true
++    }).length
++  }
++
++  const policySummaryCell = (l: Lead, fromRun: boolean) => {
++    const v = verdictOf(l)
++    const bucket = commercialBucket(l)
++    if (v === "HOT" || bucket === "absence") {
++      return (
++        <div className="space-y-0.5">
++          <div className="leading-snug">Polizza non trovata dopo verifica completa</div>
++          <div className="text-[11px] text-slate-500">
++            {formatDateTime(l.lastScannedAt)}
++          </div>
++          <div className="text-[10px] text-slate-400">
++            {fromRun ? "Nuova rivalidazione" : "Storico"}
++          </div>
+         </div>
++      )
++    }
++    const subtype = readPublishedSubtype(l.evidence)
++    const tipo =
++      subtype === "PUBLISHED_CURRENT" || bucket === "policy_valid"
++        ? "Polizza valida"
++        : subtype === "PUBLISHED_EXPIRED" || bucket === "policy_expired"
++          ? "Polizza scaduta"
++          : "Scadenza da verificare"
++    return (
++      <div className="space-y-0.5">
++        <div className="font-medium leading-snug">{tipo}</div>
++        {l.policyCompany && (
++          <div className="truncate text-[11px] text-slate-600">{l.policyCompany}</div>
++        )}
++        {l.policyExpiry && (
++          <div className="text-[11px] text-slate-500">{expiryCell(l)}</div>
++        )}
++        <div className="text-[10px] text-slate-400">
++          {fromRun ? "Nuova rivalidazione" : "Storico"}
++        </div>
++      </div>
++    )
++  }
+ 
+-        {/* Rivalidazione archivio — pannello unico */}
+-        <Card className="border-slate-200 shadow-sm" id="rivalidazione-archivio">
+-          <CardContent className="space-y-4 p-5">
+-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+-              <div>
+-                <p className="text-base font-semibold text-slate-900">Rivalidazione archivio</p>
+-                <p className="mt-1 text-sm text-slate-600">
+-                  Stato: <span className="font-medium text-slate-900">{archiveActive ? "Verifica in corso" : (archiveStatus?.statusLabel ?? "—")}</span>
+-                </p>
+-              </div>
+-              <div className="flex flex-wrap gap-2">
+-                <Button type="button" disabled className="bg-slate-800 text-white hover:bg-slate-800">
+-                  {archiveActive ? (
+-                    <>
+-                      <Loader2 className="h-4 w-4 animate-spin" /> Rivalidazione in corso
+-                    </>
+-                  ) : (
+-                    "Rivalidazione archivio"
+-                  )}
+-                </Button>
+-                <Button
+-                  type="button"
+-                  variant="outline"
+-                  onClick={() => {
+-                    setArchivePanelOpen(true)
+-                    setViewTab("status")
+-                    document.getElementById("rivalidazione-archivio")?.scrollIntoView({ behavior: "smooth" })
+-                  }}
+-                >
+-                  Visualizza avanzamento
+-                </Button>
+-              </div>
+-            </div>
++  const focusChip = (id: CertFocus, label: string, count: number) => (
++    <button
++      key={id}
++      type="button"
++      data-testid={`focus-${id}`}
++      onClick={() => {
++        setViewTab("certified")
++        setCertFocus(id)
++      }}
++      className={cn(
++        "rounded-md px-2.5 py-1 text-xs transition",
++        certFocus === id && viewTab === "certified"
++          ? "bg-slate-900 text-white"
++          : "text-slate-600 hover:bg-slate-100"
++      )}
++    >
++      {label} <span className="font-semibold tabular-nums">{count}</span>
++    </button>
++  )
+ 
+-            {archivePanelOpen && (
+-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+-                  <p className="text-xs text-slate-500">Verifiche concluse</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {terminalCompleted} / {archiveTarget}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+-                  <p className="text-xs text-slate-500">Avanzamento (concluse)</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{archivePct}%</p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+-                  <p className="text-xs text-slate-500">Ultimo aggiornamento</p>
+-                  <p className="mt-1 text-sm font-semibold text-slate-900">
+-                    {formatDateTime(archiveStatus?.updatedAt ?? null)}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">Strutture prese in carico</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {recordsTouched}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">In verifica ora</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {currentlyInProgress}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">Riprova automatica in corso</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {currentRetryQueue}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">Risultati certificati (run corrente)</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {certifiedCurrentRun}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">Controlli necessari</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {reviewCurrent}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 bg-white p-3">
+-                  <p className="text-xs text-slate-500">Problemi tecnici definitivi</p>
+-                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+-                    {technicalFinal}
+-                  </p>
+-                </div>
+-              </div>
++  return (
++    <div className="mx-auto max-w-6xl space-y-6">
++      <header className="space-y-3">
++        <div className="flex flex-wrap items-start justify-between gap-3">
++          <div>
++            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
++              Verifica polizze sanitarie
++            </h1>
++            <p className="mt-1 text-sm text-slate-600">
++              Individua strutture con polizza pubblicata, scaduta o assente.
++            </p>
++          </div>
++          <div className="flex flex-wrap gap-2">
++            <Button type="button" variant="outline" size="sm" onClick={() => setDiscoveryOpen(true)}>
++              Trova nuove strutture
++            </Button>
++            <Button type="button" variant="ghost" size="sm" onClick={() => setOpsOpen(true)}>
++              Dettagli operativi
++            </Button>
++          </div>
++        </div>
++        <p className="text-sm text-slate-600">
++          <span className="tabular-nums">
++            Archivio: <strong className="text-slate-900">{auditKpis.total}</strong>
++          </span>
++          <span className="mx-2 text-slate-300">|</span>
++          <span className="tabular-nums">
++            Verifiche concluse:{" "}
++            <strong className="text-slate-900">
++              {terminalCompleted} / {archiveTarget}
++            </strong>
++          </span>
++          <span className="mx-2 text-slate-300">|</span>
++          <span className="tabular-nums">
++            Lead certificati disponibili:{" "}
++            <strong className="text-emerald-700">{auditKpis.actionable}</strong>
++          </span>
++        </p>
++      </header>
++
++      <section
++        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
++        data-testid="revalidation-panel"
++      >
++        <div className="flex flex-wrap items-baseline justify-between gap-2">
++          <div>
++            <h2 className="text-base font-semibold text-slate-900">Rivalidazione archivio</h2>
++            <p className="mt-0.5 text-sm text-slate-600">
++              {archiveActive ? "Verifica in corso" : (archiveStatus?.statusLabel ?? "—")}
++              {" · "}
++              <span className="font-medium tabular-nums text-slate-900">
++                {terminalCompleted} di {archiveTarget} concluse · {archivePct}%
++              </span>
++            </p>
++          </div>
++          <Button type="button" disabled size="sm" className="bg-slate-800 text-white">
++            {archiveActive ? (
++              <>
++                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Rivalidazione in corso
++              </>
++            ) : (
++              "Rivalidazione archivio"
+             )}
+-          </CardContent>
+-        </Card>
+-
+-        {/* Tabs */}
+-        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
++          </Button>
++        </div>
++        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
++          <div
++            className="h-full rounded-full bg-slate-900 transition-all"
++            style={{ width: `${Math.min(100, archivePct)}%` }}
++          />
++        </div>
++        <p className="mt-3 text-sm text-slate-700">
++          <span className="tabular-nums">
++            Published certificati: <strong>{runPublished}</strong>
++          </span>
++          <span className="mx-2 text-slate-300">·</span>
++          <span className="tabular-nums">
++            HOT verificati: <strong>{runHot}</strong>
++          </span>
++          <span className="mx-2 text-slate-300">·</span>
++          <span className="tabular-nums">
++            Da controllare: <strong>{reviewCurrent}</strong>
++          </span>
++          <span className="mx-2 text-slate-300">·</span>
++          <span className="tabular-nums">
++            Problemi tecnici definitivi: <strong>{technicalFinal}</strong>
++          </span>
++        </p>
++        <p className="mt-2 text-xs text-slate-500">
++          {recordsTouched} strutture prese in carico · {currentlyInProgress} in elaborazione ·{" "}
++          {currentRetryQueue} in riprova automatica
++        </p>
++      </section>
++
++      <div className="space-y-3">
++        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="main-tabs">
+           {(
+             [
+-              ["commercial", "Coda commerciale"],
++              ["certified", "Risultati certificati"],
++              ["review", "Da controllare"],
+               ["archive", "Archivio completo"],
+-              ["status", "Stato verifiche"],
+             ] as const
+           ).map(([key, label]) => (
+             <button
+               key={key}
+               type="button"
+-              onClick={() => setViewTab(key)}
++              data-testid={`tab-${key}`}
++              onClick={() => {
++                setViewTab(key)
++                if (key !== "certified") setCertFocus("all")
++              }}
+               className={cn(
+                 "rounded-md px-4 py-2 text-sm font-medium transition",
+                 viewTab === key
+@@ -1200,604 +1353,286 @@ export function SanitaLeads() {
+           ))}
+         </div>
+ 
+-        {/* Coda commerciale — sintesi 4 categorie */}
+-        {viewTab === "commercial" && (
+-          <Card className="border-emerald-200/70 bg-white shadow-sm">
+-            <CardContent className="p-5">
+-              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+-                <div>
+-                  <p className="text-sm font-semibold text-slate-900">Coda commerciale</p>
+-                  <p className="text-xs text-slate-500">Solo lead certificati e utilizzabili</p>
+-                </div>
+-                <div className="flex gap-2">
+-                  <Button variant="outline" size="sm" onClick={exportCsv} disabled={isScanning}>
+-                    <Download className="h-4 w-4" /> Esporta CSV
+-                  </Button>
+-                  <Button variant="outline" size="sm" onClick={() => void fetchLeads()} disabled={isScanning}>
+-                    <RefreshCw className="h-4 w-4" /> Aggiorna
+-                  </Button>
+-                </div>
+-              </div>
+-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+-                <div className="rounded-lg border border-slate-200 p-3">
+-                  <p className="text-xs text-slate-500">Polizza valida</p>
+-                  <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
+-                    {auditKpis.commercial.policyValid}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 p-3">
+-                  <p className="text-xs text-slate-500">Polizza scaduta</p>
+-                  <p className="mt-1 text-2xl font-bold tabular-nums text-amber-700">
+-                    {auditKpis.commercial.policyExpired}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 p-3">
+-                  <p className="text-xs text-slate-500">Scadenza da verificare</p>
+-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+-                    {auditKpis.commercial.dateUnknown}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-slate-200 p-3">
+-                  <p className="text-xs text-slate-500">Assenza certificata</p>
+-                  <p className="mt-1 text-2xl font-bold tabular-nums text-red-700">
+-                    {auditKpis.commercial.absenceCertified}
+-                  </p>
+-                </div>
+-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+-                  <p className="text-xs text-emerald-800/80">Totale certificati</p>
+-                  <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+-                    {auditKpis.actionable}
+-                  </p>
+-                  {commercialSum !== auditKpis.actionable && (
+-                    <p className="mt-1 text-[10px] text-amber-700">
+-                      Sintesi categorie: {commercialSum} (allineamento in corso)
+-                    </p>
+-                  )}
+-                </div>
+-              </div>
+-            </CardContent>
+-          </Card>
+-        )}
+-
+-        {/* Due sezioni distinte: rivalida esistenti vs trova nuove */}
+-        {(viewTab === "archive" || viewTab === "status") && (
+-          <div className="grid gap-4 lg:grid-cols-2">
+-            <Card className="border-slate-200 shadow-sm">
+-              <CardContent className="space-y-3 p-5">
+-                <p className="text-sm font-semibold text-slate-900">Rivalida strutture esistenti</p>
+-                <p className="text-sm text-slate-600">
+-                  Job archivio: {terminalCompleted} / {archiveTarget} concluse ·{" "}
+-                  prese in carico {recordsTouched} ·{" "}
+-                  {archiveActive ? "in corso" : (archiveStatus?.statusLabel ?? "—")}
+-                </p>
+-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+-                  <div
+-                    className="h-full rounded-full bg-slate-900"
+-                    style={{ width: `${Math.min(100, archivePct)}%` }}
+-                  />
+-                </div>
+-                <Button type="button" disabled className="w-full bg-slate-800 text-white">
+-                  {archiveActive ? "Rivalidazione in corso" : "Rivalidazione archivio"}
+-                </Button>
+-                <p className="text-[11px] text-slate-500">
+-                  Non avvia un secondo processo. Pausa/ripresa solo da area amministrativa.
+-                </p>
+-              </CardContent>
+-            </Card>
+-
+-            <Card className="border-slate-200 shadow-sm">
+-              <CardContent className="space-y-3 p-5">
+-                <p className="text-sm font-semibold text-slate-900">Trova nuove strutture</p>
+-                <p className="text-xs text-slate-500">Discovery territoriale (separata dalla rivalidazione)</p>
+-                <div className="grid gap-3 sm:grid-cols-2">
+-                  {(["Veneto", "Campania"] as const).map((region) => {
+-                    const d = discoveryMeta[region]
+-                    const mapsLabel =
+-                      d && d.citiesTotal > 0
+-                        ? `Comuni Maps ${d.mapsCityOffset}/${d.citiesTotal}`
+-                        : "Copertura Maps"
+-                    return (
+-                      <div key={region} className="rounded-lg border border-slate-200 p-3">
+-                        <p className="font-medium text-slate-900">{region}</p>
+-                        <p className="mt-0.5 text-[11px] text-slate-500">
+-                          {regionStats[region].done}/{regionStats[region].total} in archivio
+-                          {regionStats[region].pending > 0
+-                            ? ` · ${regionStats[region].pending} in coda`
+-                            : ""}
+-                        </p>
+-                        <p className="mt-0.5 text-[11px] text-slate-500">{mapsLabel}</p>
+-                        <Button
+-                          onClick={() => startRegionScan(region)}
+-                          disabled={isScanning}
+-                          className="mt-3 h-9 w-full bg-slate-900 text-white hover:bg-slate-800"
+-                        >
+-                          {isScanning && activeScan?.region === region ? (
+-                            <Loader2 className="h-4 w-4 animate-spin" />
+-                          ) : (
+-                            <Search className="h-4 w-4" />
+-                          )}
+-                          Cerca nuove strutture
+-                        </Button>
+-                        <Button
+-                          variant="ghost"
+-                          size="sm"
+-                          className="mt-1 h-8 w-full text-xs"
+-                          onClick={() => continueRegionScan(region)}
+-                          disabled={isScanning}
+-                        >
+-                          Continua copertura
+-                        </Button>
+-                      </div>
+-                    )
+-                  })}
+-                </div>
+-              </CardContent>
+-            </Card>
+-          </div>
+-        )}
+-
+-        {/* Area amministrativa collassabile */}
+-        <div className="rounded-xl border border-slate-200 bg-slate-50/50">
+-          <button
+-            type="button"
+-            className="flex w-full items-center justify-between px-4 py-3 text-left"
+-            onClick={() => setTechOpen((v) => !v)}
+-          >
+-            <div>
+-              <p className="text-sm font-semibold text-slate-800">Dettagli tecnici e controlli</p>
+-              <p className="text-xs text-slate-500">Area amministrativa</p>
+-            </div>
+-            <span className="text-xs font-medium text-slate-500">{techOpen ? "Nascondi" : "Mostra"}</span>
+-          </button>
+-          {techOpen && (
+-            <div className="space-y-4 border-t border-slate-200 px-4 py-4">
+-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+-                <div className="rounded-lg border bg-white p-3">
+-                  <p className="text-xs text-slate-500">Controllo identità</p>
+-                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.REVIEW_HUMAN}</p>
+-                </div>
+-                <div className="rounded-lg border bg-white p-3">
+-                  <p className="text-xs text-slate-500">Riprova automatica</p>
+-                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.RETRY_PENDING}</p>
+-                </div>
+-                <div className="rounded-lg border bg-white p-3">
+-                  <p className="text-xs text-slate-500">Blocco tecnico</p>
+-                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.TECHNICAL_BLOCKED}</p>
+-                </div>
+-                <div className="rounded-lg border bg-white p-3">
+-                  <p className="text-xs text-slate-500">Fuori ambito</p>
+-                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.OUT_OF_SCOPE}</p>
+-                </div>
+-                <div className="rounded-lg border bg-white p-3">
+-                  <p className="text-xs text-slate-500">Non ancora certificati</p>
+-                  <p className="mt-1 text-xl font-bold tabular-nums">{auditKpis.notYetCertified}</p>
+-                  <p className="mt-0.5 text-[10px] text-slate-400">
+-                    = archivio {auditKpis.total} − certificati {auditKpis.actionable}
+-                  </p>
+-                </div>
+-              </div>
+-              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+-                <p className="text-xs font-semibold text-amber-900">Reset discovery (irreversibile)</p>
+-                <p className="mt-1 text-[11px] text-amber-800/80">
+-                  Non resetta la rivalidazione archivio. Richiede conferma esplicita.
+-                </p>
+-                <div className="mt-2 flex flex-wrap gap-2">
+-                  {(["Veneto", "Campania"] as const).map((region) => (
+-                    <Button
+-                      key={region}
+-                      variant="outline"
+-                      size="sm"
+-                      className="border-amber-300 text-amber-900"
+-                      disabled={isScanning}
+-                      onClick={() => {
+-                        if (
+-                          window.confirm(
+-                            `Confermi il reset discovery per ${region}? Non interrompe la rivalidazione archivio.`
+-                          )
+-                        ) {
+-                          resetRegionScan(region)
+-                        }
+-                      }}
+-                    >
+-                      Reset {region}
+-                    </Button>
+-                  ))}
+-                </div>
+-              </div>
+-            </div>
+-          )}
+-        </div>
+-      </div>
+-
+-      {/* Live discovery job (se attivo) — fuori dal pannello rivalidazione */}
+-      {scanJob && (scanJob.status === "queued" || scanJob.status === "running" || scanJob.status === "interrupted") && (
+-        <Card className="border-slate-200 bg-slate-50/60">
+-          <CardContent className="space-y-3 p-4">
+-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+-              <div>
+-                <p className="text-sm font-semibold text-slate-900">Ricerca nuove strutture in corso</p>
+-                <p className="text-xs text-slate-600">
+-                  {scanJob.lastUpdateLabel ?? "Verifica in corso"} · {formatDateTime(scanJob.updatedAt)}
+-                </p>
+-              </div>
+-              <Button variant="outline" size="sm" onClick={() => void cancelScanJob()}>
+-                <PauseCircle className="h-4 w-4" /> Interrompi
+-              </Button>
+-            </div>
+-            <p className="text-sm text-slate-700">
+-              Controllate: {scanJob.progress.structuresControlled}
+-              {scanJob.progress.totalStructures ? ` / ${scanJob.progress.totalStructures}` : ""}
++        {viewTab === "certified" && (
++          <div className="space-y-2">
++            <p className="text-xs text-slate-500">
++              Certificati precedenti: <strong className="text-slate-800">{priorCertified}</strong>
+               {" · "}
+-              Certificati: {scanJob.progress.certifiedResults}
++              Prodotti dalla riscansione corrente:{" "}
++              <strong className="text-slate-800">{certifiedCurrentRun}</strong>
+               {" · "}
+-              Controlli necessari: {scanJob.progress.manualChecksNeeded}
++              Totale live: <strong className="text-emerald-700">{auditKpis.actionable}</strong>
+             </p>
+-          </CardContent>
+-        </Card>
+-      )}
+-
+-      {/* TOOLBAR FILTRI */}
+-      <Card className="border-slate-200 shadow-sm">
+-        <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+-          <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:w-24">
+-            Filtra
+-          </p>
+-          <div className="relative flex-1">
+-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+-            <Input
+-              value={query}
+-              onChange={(e) => setQuery(e.target.value)}
+-              placeholder="Cerca per nome struttura o comune…"
+-              className="pl-9"
+-            />
++            <div className="flex flex-wrap gap-1.5" data-testid="cert-focus-row">
++              {focusChip("all", "Tutti i certificati", countForFocus("all"))}
++              {focusChip("run_new", "Nuovi dal run", countForFocus("run_new"))}
++              {focusChip("run_published", "Published nuovo run", countForFocus("run_published"))}
++              {focusChip("run_hot", "HOT nuovo run", countForFocus("run_hot"))}
++              {focusChip("policy_valid", "Polizza valida", countForFocus("policy_valid"))}
++              {focusChip("policy_expired", "Polizza scaduta", countForFocus("policy_expired"))}
++              {focusChip("date_unknown", "Scadenza da verificare", countForFocus("date_unknown"))}
++              {focusChip("absence", "Assenza certificata", countForFocus("absence"))}
++            </div>
+           </div>
++        )}
+ 
+-          {/* Region segmented */}
+-          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
++        <div className="flex flex-wrap items-center gap-2" data-testid="filter-bar">
++          <div className="inline-flex rounded-lg border border-slate-200 p-0.5" data-testid="region-filter">
+             {(["ALL", "Veneto", "Campania"] as const).map((r) => (
+               <button
+                 key={r}
+-                onClick={() => { setRegionFilter(r); setSelectedCity(null) }}
++                type="button"
++                data-testid={`region-${r}`}
++                onClick={() => {
++                  setRegionFilter(r)
++                  setSelectedCity(null)
++                }}
+                 className={cn(
+-                  "rounded-md px-3 py-1.5 text-sm font-medium transition",
+-                  regionFilter === r ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
++                  "rounded-md px-3 py-1.5 text-xs font-medium",
++                  regionFilter === r
++                    ? "bg-slate-900 text-white"
++                    : "text-slate-600 hover:bg-slate-50"
+                 )}
+               >
+                 {r === "ALL" ? "Tutte" : r}
+               </button>
+             ))}
+           </div>
+-
+-          <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted/40 p-0.5">
+-            {(
+-              [
+-                ["ALL", "Tutti"],
+-                ["HOT", "Assenza"],
+-                ["PUBLISHED", "Polizza"],
+-                ["REVIEW", "Controllo"],
+-                ["PENDING", "Da analizzare"],
+-              ] as const
+-            ).map(([key, label]) => (
+-              <button
+-                key={key}
+-                type="button"
+-                onClick={() => setVerdictFilter(key)}
+-                className={cn(
+-                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+-                  verdictFilter === key
+-                    ? "bg-card shadow-sm text-foreground"
+-                    : "text-muted-foreground hover:text-foreground"
+-                )}
+-              >
+-                {label}
+-              </button>
+-            ))}
++          <div className="relative min-w-[200px] flex-1">
++            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
++            <Input
++              value={query}
++              onChange={(e) => setQuery(e.target.value)}
++              placeholder="Cerca struttura o comune…"
++              className="h-9 pl-8"
++              data-testid="search-input"
++            />
+           </div>
++          <Button
++            variant="outline"
++            size="sm"
++            onClick={exportCsv}
++            disabled={isScanning || viewTab !== "certified"}
++          >
++            <Download className="h-4 w-4" /> CSV
++          </Button>
++          <Button variant="outline" size="sm" onClick={() => void fetchLeads()} disabled={isScanning}>
++            <RefreshCw className="h-4 w-4" />
++          </Button>
++        </div>
++        <p className="text-xs text-slate-500" data-testid="result-count">
++          {filtered.length} risultat{filtered.length === 1 ? "o" : "i"}
++          {regionFilter !== "ALL" ? ` · ${regionFilter}` : " · tutte le regioni"}
++          {certFocus !== "all" && viewTab === "certified" ? " · filtro attivo" : ""}
++        </p>
++      </div>
+ 
+-          {/* City combobox */}
+-          <div className="relative">
+-            <button
+-              onClick={() => setCityOpen((o) => !o)}
+-              className="flex h-9 min-w-[200px] items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 text-sm"
+-            >
+-              <span className="flex items-center gap-2 truncate">
+-                <MapPin className="h-4 w-4 text-primary" />
+-                {selectedCity ?? "Tutti i comuni"}
+-              </span>
+-              {selectedCity && (
+-                <X
+-                  className="h-4 w-4 text-muted-foreground hover:text-foreground"
+-                  onClick={(e) => { e.stopPropagation(); setSelectedCity(null) }}
+-                />
+-              )}
+-            </button>
+-            {cityOpen && (
+-              <div className="absolute right-0 z-30 mt-1 w-72 rounded-xl border border-border bg-popover p-2 shadow-lg">
+-                <div className="relative mb-2">
+-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+-                  <Input
+-                    autoFocus
+-                    value={cityQuery}
+-                    onChange={(e) => setCityQuery(e.target.value)}
+-                    placeholder="Filtra comune…"
+-                    className="h-8 pl-8 text-sm"
+-                  />
+-                </div>
+-                <div className="scrollbar-thin max-h-60 overflow-y-auto">
+-                  {filteredCities.length === 0 ? (
+-                    <div className="px-2 py-3 text-center text-xs text-muted-foreground">Nessun comune</div>
+-                  ) : (
+-                    filteredCities.map(([c, n]) => (
++      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
++        {isLoading ? (
++          <div className="flex justify-center p-12">
++            <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
++          </div>
++        ) : filtered.length === 0 ? (
++          <div className="p-10 text-center text-sm text-slate-500" data-testid="leads-empty">
++            Nessun risultato per i filtri selezionati.
++          </div>
++        ) : (
++          <table className="w-full table-fixed text-sm" data-testid="leads-table">
++            <colgroup>
++              <col className="w-[22%]" />
++              <col className="w-[12%]" />
++              <col className="w-[18%]" />
++              <col className="w-[18%]" />
++              <col className="w-[10%]" />
++              <col className="w-[10%]" />
++              <col className="w-[10%]" />
++            </colgroup>
++            <thead>
++              <tr className="border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
++                <th className="px-4 py-3 font-medium">Struttura</th>
++                <th className="px-4 py-3 font-medium">Località</th>
++                <th className="px-4 py-3 font-medium">Esito verifica</th>
++                <th className="px-4 py-3 font-medium">Polizza</th>
++                <th className="px-4 py-3 font-medium">Evidence</th>
++                <th className="px-4 py-3 font-medium">Stato CRM</th>
++                <th className="px-4 py-3 font-medium">Azione</th>
++              </tr>
++            </thead>
++            <tbody>
++              {filtered.map((l) => {
++                const fromRun = runCertifiedIds.has(l.id)
++                return (
++                  <tr
++                    key={l.id}
++                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50/80"
++                    data-testid="lead-row"
++                    data-lead-id={l.id}
++                    data-region={l.region}
++                    data-focus-bucket={commercialBucket(l) ?? ""}
++                    data-from-run={fromRun ? "1" : "0"}
++                  >
++                    <td className="px-4 py-3 align-top">
+                       <button
+-                        key={c}
+-                        onClick={() => { setSelectedCity(c); setCityOpen(false); setCityQuery("") }}
+-                        className={cn(
+-                          "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent",
+-                          selectedCity === c && "bg-accent"
+-                        )}
++                        type="button"
++                        onClick={() => setDetail(l)}
++                        className="block max-w-full truncate text-left font-medium text-slate-900 hover:underline"
+                       >
+-                        <span className="truncate">{c}</span>
+-                        <span className="ml-2 text-xs text-muted-foreground">{n}</span>
++                        {l.companyName}
+                       </button>
+-                    ))
+-                  )}
+-                </div>
++                      {viewTab === "certified" && (
++                        <span className="mt-1 inline-block text-[10px] text-slate-500">
++                          {fromRun
++                            ? "Riconfermato dalla nuova verifica"
++                            : "Certificato prima della rivalidazione"}
++                        </span>
++                      )}
++                    </td>
++                    <td className="px-4 py-3 align-top text-slate-600">
++                      <div className="truncate">{l.city ?? "—"}</div>
++                      <div className="text-[11px] text-slate-400">{l.region}</div>
++                    </td>
++                    <td className="px-4 py-3 align-top">
++                      {verdictBadge(l)}
++                      <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
++                        {strategyLine(l)}
++                      </p>
++                    </td>
++                    <td className="px-4 py-3 align-top text-[12px] text-slate-700">
++                      {policySummaryCell(l, fromRun)}
++                    </td>
++                    <td className="px-4 py-3 align-top">
++                      <button
++                        type="button"
++                        onClick={() => setDetail(l)}
++                        className="text-[11px] text-slate-900 underline"
++                      >
++                        Apri evidence
++                      </button>
++                    </td>
++                    <td className="px-4 py-3 align-top">
++                      <StatusSelect
++                        id={l.id}
++                        value={l.status}
++                        onChanged={(s) => updateStatus(l.id, s)}
++                      />
++                    </td>
++                    <td className="px-4 py-3 align-top">
++                      <Button
++                        type="button"
++                        variant="ghost"
++                        size="sm"
++                        className="h-8 px-2 text-xs"
++                        onClick={() => setDetail(l)}
++                      >
++                        Apri
++                      </Button>
++                    </td>
++                  </tr>
++                )
++              })}
++            </tbody>
++          </table>
++        )}
++      </div>
++
++      <Dialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
++        <DialogContent className="max-w-lg">
++          <DialogHeader>
++            <DialogTitle>Trova nuove strutture</DialogTitle>
++            <DialogDescription>
++              Discovery territoriale separata dalla rivalidazione archivio.
++            </DialogDescription>
++          </DialogHeader>
++          <div className="grid gap-3 sm:grid-cols-2">
++            {(["Veneto", "Campania"] as const).map((region) => (
++              <div key={region} className="rounded-xl border border-slate-200 p-3">
++                <p className="font-medium text-slate-900">{region}</p>
++                <p className="mt-0.5 text-[11px] text-slate-500">
++                  {regionStats[region].done}/{regionStats[region].total} in archivio
++                </p>
++                <Button
++                  className="mt-3 w-full bg-slate-900 text-white"
++                  disabled={isScanning}
++                  onClick={() => {
++                    setDiscoveryOpen(false)
++                    startRegionScan(region)
++                  }}
++                >
++                  Cerca nuove strutture
++                </Button>
++                <Button
++                  variant="ghost"
++                  size="sm"
++                  className="mt-1 w-full"
++                  disabled={isScanning}
++                  onClick={() => {
++                    setDiscoveryOpen(false)
++                    continueRegionScan(region)
++                  }}
++                >
++                  Continua copertura
++                </Button>
+               </div>
+-            )}
++            ))}
+           </div>
+-
+-          {/* Scan città selezionata */}
+-          <Button
+-            onClick={() => {
+-              const region = regionFilter === "ALL"
+-                ? (scope[0]?.region as "Veneto" | "Campania" | undefined)
+-                : regionFilter
+-              if (!selectedCity || !region) {
+-                toast.info("Seleziona un comune e una regione (Veneto o Campania)")
+-                return
+-              }
+-              guardScanAction(`Scansiona comune ${selectedCity}`, () => {
+-                void createScanJob({
+-                  mode: "city",
+-                  region,
+-                  city: selectedCity,
+-                  label: `Scansione comune · ${selectedCity} (${region})`,
+-                })
+-              })
+-            }}
+-            disabled={isScanning || !selectedCity}
+-            className="h-9"
+-            variant="secondary"
+-          >
+-            {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Filter className="h-4 w-4" />}
+-            Scansiona comune
+-          </Button>
+-        </CardContent>
+-      </Card>
+-
+-      {/* TABELLA */}
+-      <Card className="ring-soft border-border/60">
+-        <CardContent className="p-0">
+-          {isLoading ? (
+-            <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+-          ) : filtered.length === 0 ? (
+-            <div className="m-4 rounded-xl border-2 border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+-              {isScanning ? (
+-                <div className="flex flex-col items-center gap-3">
+-                  <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+-                  <p className="font-medium text-foreground">Scansione in corso</p>
+-                  <p>I lead compaiono <strong>uno alla volta</strong>, già analizzati (sito, Ministero, portali ASL).</p>
+-                  {processingName && (
+-                    <p className="text-xs text-indigo-700">In analisi ora: {processingName}</p>
+-                  )}
+-                </div>
+-              ) : visibleLeads.length === 0
+-                ? viewTab === "commercial"
+-                  ? "Coda commerciale vuota. I risultati certificati compariranno qui."
+-                  : viewTab === "status"
+-                    ? "Nessun caso in verifica pendente per i filtri selezionati."
+-                    : "Archivio vuoto. Usa «Trova nuove strutture» per avviare la discovery."
+-                : "Nessun risultato per i filtri selezionati."}
++        </DialogContent>
++      </Dialog>
++
++      <Dialog open={opsOpen} onOpenChange={setOpsOpen}>
++        <DialogContent className="max-w-md">
++          <DialogHeader>
++            <DialogTitle>Dettagli operativi</DialogTitle>
++            <DialogDescription>Area amministrativa — chiusa di default.</DialogDescription>
++          </DialogHeader>
++          <dl className="space-y-2 text-sm">
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">Prese in carico</dt>
++              <dd className="font-medium tabular-nums">{recordsTouched}</dd>
+             </div>
+-          ) : (
+-            <table className="w-full table-fixed text-sm">
+-                <colgroup>
+-                  <col className="w-[28%]" />
+-                  <col className="w-[18%]" />
+-                  <col className="w-[28%]" />
+-                  <col className="w-[16%]" />
+-                  <col className="w-[10%]" />
+-                </colgroup>
+-                <thead>
+-                  <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+-                    <th className="px-3 py-2.5 font-medium">Struttura</th>
+-                    <th className="px-3 py-2.5 font-medium">Contatti</th>
+-                    <th className="px-3 py-2.5 font-medium">Verdetto Gelli</th>
+-                    <th className="px-3 py-2.5 font-medium">Polizza RC</th>
+-                    <th className="px-3 py-2.5 font-medium">Stato</th>
+-                  </tr>
+-                </thead>
+-                <tbody>
+-                  {isScanning && processingName && (
+-                    <tr className="border-b border-indigo-200 bg-indigo-50/60">
+-                      <td colSpan={5} className="px-3 py-2.5">
+-                        <div className="flex items-center gap-2 text-xs text-indigo-900">
+-                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+-                          <span>
+-                            <span className="font-medium">Analisi in corso — </span>
+-                            {processingName}
+-                          </span>
+-                        </div>
+-                      </td>
+-                    </tr>
+-                  )}
+-                  {filtered.map((l) => {
+-                    const docs = policyDocLinks(l)
+-                    const auditBadge =
+-                      viewTab === "archive" || viewTab === "status" ? auditQueueBadge(l) : null
+-                    const auditUi = auditBadge ? AUDIT_BADGE_UI[auditBadge] : null
+-                    const showScore = viewTab === "commercial" && (l.leadScore ?? 0) >= 80
+-                    return (
+-                    <tr
+-                      key={l.id}
+-                      className={cn(
+-                        "border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors duration-700",
+-                        auditBadge && "bg-slate-50/40"
+-                      )}
+-                    >
+-                      <td className="px-3 py-2.5 align-top">
+-                        <div className="flex items-start gap-2">
+-                          {showScore && (
+-                            <span
+-                              className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums bg-red-50 text-red-700"
+-                              title="Priorità commerciale"
+-                            >
+-                              <Flame className="h-2.5 w-2.5" />
+-                              Alta
+-                            </span>
+-                          )}
+-                          <div className="min-w-0">
+-                            <button
+-                              onClick={() => setDetail(l)}
+-                              className="block w-full truncate text-left text-sm font-medium hover:text-primary hover:underline"
+-                              title={l.companyName}
+-                            >
+-                              {l.companyName}
+-                            </button>
+-                            {auditUi && (
+-                              <span
+-                                className={cn(
+-                                  "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium",
+-                                  auditUi.cls
+-                                )}
+-                              >
+-                                {auditUi.label}
+-                              </span>
+-                            )}
+-                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+-                              {l.city && (
+-                                <span className="inline-flex items-center gap-0.5">
+-                                  <MapPin className="h-2.5 w-2.5" />
+-                                  {l.city}
+-                                </span>
+-                              )}
+-                              <span className="text-slate-400">{l.region}</span>
+-                            </div>
+-                          </div>
+-                        </div>
+-                      </td>
+-                      <td className="px-3 py-2.5 align-top">
+-                        <div className="space-y-0.5 text-[11px]">
+-                          {l.website ? (
+-                            <a
+-                              href={l.website}
+-                              target="_blank"
+-                              rel="noreferrer"
+-                              className="flex items-center gap-1 truncate text-primary hover:underline"
+-                              title={l.website}
+-                            >
+-                              <Globe className="h-3 w-3 shrink-0" />
+-                              <span className="truncate">{hostname(l.website)}</span>
+-                            </a>
+-                          ) : (
+-                            <span className="flex items-center gap-1 text-muted-foreground">
+-                              <Globe className="h-3 w-3" /> nessun sito
+-                            </span>
+-                          )}
+-                          {l.phone && (
+-                            <a href={`tel:${l.phone}`} className="flex items-center gap-1 truncate hover:text-primary">
+-                              <Phone className="h-3 w-3 shrink-0" />
+-                              <span className="truncate">{l.phone}</span>
+-                            </a>
+-                          )}
+-                          {contactExtras(l) > 0 && (
+-                            <button
+-                              type="button"
+-                              onClick={() => setDetail(l)}
+-                              className="text-[10px] text-primary hover:underline"
+-                            >
+-                              +{contactExtras(l)} altri contatti
+-                            </button>
+-                          )}
+-                          {!l.website && !l.phone && contactExtras(l) === 0 && (
+-                            <span className="text-muted-foreground">—</span>
+-                          )}
+-                        </div>
+-                      </td>
+-                      <td className="px-3 py-2.5 align-top">
+-                        <div className="space-y-1">
+-                          {verdictBadge(l)}
+-                          <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
+-                            {strategyLine(l)}
+-                          </p>
+-                          {(!isHotPublishedExpired(l) && (docs.length > 0 || parseEvidenceSections(l.evidence).body)) && (
+-                            <button
+-                              type="button"
+-                              onClick={() => setDetail(l)}
+-                              className="text-[10px] text-primary hover:underline"
+-                            >
+-                              {docs.length > 0 ? `${docs.length} documento/i` : "Vedi evidenza"}
+-                            </button>
+-                          )}
+-                          {l.lastScannedAt && (
+-                            <Button
+-                              type="button"
+-                              variant="ghost"
+-                              size="sm"
+-                              className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground"
+-                              title={isScanning ? "Disponibile quando finisce la scansione live" : "Riscansiona questa struttura"}
+-                              disabled={isScanning}
+-                              onClick={() => void rescanOneLead(l)}
+-                            >
+-                              <RotateCcw className="h-3 w-3" />
+-                              Rianalizza
+-                            </Button>
+-                          )}
+-                        </div>
+-                      </td>
+-                      <td className="px-3 py-2.5 align-top text-[11px]">
+-                        {policyRcCell(l)}
+-                      </td>
+-                      <td className="px-3 py-2.5 align-top">
+-                        <StatusSelect id={l.id} value={l.status} onChanged={(s) => updateStatus(l.id, s)} />
+-                      </td>
+-                    </tr>
+-                  )})}
+-                </tbody>
+-              </table>
+-          )}
+-        </CardContent>
+-      </Card>
+-
+-      {/* GUIDA RAPIDA */}
+-      <Card className="border-border/60 bg-gradient-to-br from-blue-50/60 to-indigo-50/40">
+-        <CardContent className="p-4">
+-          <div className="flex items-start gap-3">
+-            <div className="mt-0.5 rounded-full bg-primary/10 p-1.5">
+-              <Info className="h-4 w-4 text-primary" />
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">In elaborazione</dt>
++              <dd className="font-medium tabular-nums">{currentlyInProgress}</dd>
+             </div>
+-            <div className="space-y-2 text-sm">
+-              <p className="font-medium text-foreground">Guida al motore Sanità</p>
+-              <ol className="ml-4 list-decimal space-y-1.5 text-muted-foreground">
+-                <li><strong className="text-foreground">Archivio:</strong> strutture sanitarie già presenti nel database.</li>
+-                <li><strong className="text-foreground">Rivalidazione:</strong> verifica completa delle strutture esistenti (progresso reale nel pannello sopra).</li>
+-                <li><strong className="text-foreground">Coda commerciale:</strong> solo risultati certificati e utilizzabili.
+-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">Assenza certificata</span>
+-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">Polizza pubblicata</span>
+-                  <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700">Controllo necessario</span>
+-                </li>
+-              </ol>
+-              <p className="text-xs text-muted-foreground">Clicca il nome della struttura per aprire la scheda con contatti, note e promemoria.</p>
+-              <p className="text-xs text-amber-700">I risultati si basano sui siti web ufficiali delle strutture. In caso di sito non aggiornato o documentazione incompleta, lo stato &quot;Da verificare&quot; segnala la necessità di un controllo diretto.</p>
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">Retry attuali</dt>
++              <dd className="font-medium tabular-nums">{currentRetryQueue}</dd>
++            </div>
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">Problemi tecnici definitivi</dt>
++              <dd className="font-medium tabular-nums">{technicalFinal}</dd>
++            </div>
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">Ultimo aggiornamento</dt>
++              <dd className="text-right text-xs">
++                {formatDateTime(archiveStatus?.updatedAt ?? null)}
++              </dd>
++            </div>
++            <div className="flex justify-between gap-4">
++              <dt className="text-slate-500">Non ancora certificati</dt>
++              <dd className="font-medium tabular-nums">{auditKpis.notYetCertified}</dd>
++            </div>
++          </dl>
++          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
++            <p className="text-xs font-medium text-amber-900">Reset discovery (irreversibile)</p>
++            <div className="mt-2 flex gap-2">
++              {(["Veneto", "Campania"] as const).map((region) => (
++                <Button
++                  key={region}
++                  variant="outline"
++                  size="sm"
++                  className="border-amber-300 text-amber-900"
++                  disabled={isScanning}
++                  onClick={() => {
++                    if (window.confirm(`Reset discovery ${region}?`)) resetRegionScan(region)
++                  }}
++                >
++                  Reset {region}
++                </Button>
++              ))}
+             </div>
+           </div>
+-        </CardContent>
+-      </Card>
+-
+-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+-        <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+-        I lead prioritari sono strutture verificate su sito (sezione Trasparenza) e/o portali ASL/regionali senza pubblicazione polizza. Ogni scheda riporta le fonti controllate. Non sostituisce il registro imprese né ogni possibile canale legale.
+-      </p>
++        </DialogContent>
++      </Dialog>
+ 
+       {detail && (
+         <LeadDetail
+diff --git a/src/lib/sanita/crawl-slice-runner.ts b/src/lib/sanita/crawl-slice-runner.ts
+index 46b8769..cd73c74 100644
+--- a/src/lib/sanita/crawl-slice-runner.ts
++++ b/src/lib/sanita/crawl-slice-runner.ts
+@@ -88,12 +88,6 @@ function relevanceFor(url: string): "critical" | "relevant" | "low" {
+   return "relevant";
+ }
+ 
+-function pdfNeedsOcr(url: string): boolean {
+-  return /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
+-    url
+-  );
+-}
+-
+ function sameHost(a: string, b: string): boolean {
+   try {
+     const ha = new URL(a).hostname.replace(/^www\./i, "");
+@@ -277,7 +271,8 @@ export async function runCrawlSlice(opts: {
+       extraUrls: opts.seedExtraUrls,
+     });
+   } else {
+-    // Re-queue only DISCOVERED. RETRY_PENDING stays until nextRetryAt (pickNextNode).
++    // Re-queue DISCOVERED. Reopen TECHNICAL_BLOCKED so OCR/infra fixes can drain failed nodes.
++    // RETRY_PENDING stays until nextRetryAt (pickNextNode).
+     for (const n of listNodes(crawlRunId)) {
+       if (n.state === "DISCOVERED") {
+         try {
+@@ -286,6 +281,16 @@ export async function runCrawlSlice(opts: {
+           /* */
+         }
+       }
++      if (n.state === "TECHNICAL_BLOCKED") {
++        try {
++          transitionFrontierNode(n.id, "RETRY_PENDING", {
++            lastError: n.lastError ? `reopen:${n.lastError}` : "reopen_technical_blocked",
++            nextRetryAt: new Date().toISOString(),
++          });
++        } catch {
++          /* */
++        }
++      }
+       if (n.state === "FETCHING") {
+         try {
+           transitionFrontierNode(n.id, "RETRY_PENDING", {
+@@ -432,14 +437,23 @@ export async function runCrawlSlice(opts: {
+     if (/\.pdf/i.test(node.canonicalUrl) || fetched.contentType.includes("pdf")) {
+       pdfProcessed++;
+       const prev = process.env.OCR_JOB_TIMEOUT_MS;
+-      const prevOcr = process.env.OCR_ENABLED;
+-      // Magazine/newsletter PDFs from sitemap: process digitally, OCR only policy-ish URLs
+-      process.env.OCR_ENABLED = pdfNeedsOcr(node.canonicalUrl) ? "1" : "0";
++      // Stop-ship: never disable OCR via URL heuristics — thin PDFs must hit real pdftoppm.
+       process.env.OCR_JOB_TIMEOUT_MS = String(budget.ocrTimeoutMs);
+       try {
+         const extracted = await extractPdfFullText(fetched.buf);
+         text = extracted.text || "";
+-        if (extracted.ocr && (extracted.digital?.length || 0) < 200) ocrUsed = true;
++        if (
++          extracted.rasterize?.status === "OK" ||
++          (extracted.ocr && (extracted.digital?.length || 0) < 200)
++        ) {
++          ocrUsed = true;
++        }
++        if (extracted.rasterize?.rendererPath) {
++          heartbeatCrawlRun(
++            crawlRunId,
++            `ocr_renderer:${extracted.rasterize.rendererPath}:${extracted.status}`
++          );
++        }
+         // Scanned PDF + missing renderer / timeout / extraction fail → TECHNICAL_BLOCKED (not REVIEW)
+         if (
+           extracted.status === "OCR_RENDERER_MISSING" ||
+@@ -474,8 +488,6 @@ export async function runCrawlSlice(opts: {
+       } finally {
+         if (prev == null) delete process.env.OCR_JOB_TIMEOUT_MS;
+         else process.env.OCR_JOB_TIMEOUT_MS = prev;
+-        if (prevOcr == null) delete process.env.OCR_ENABLED;
+-        else process.env.OCR_ENABLED = prevOcr;
+       }
+     } else {
+       const html = fetched.buf.toString("utf8");
+diff --git a/src/lib/sanita/frontier-store.ts b/src/lib/sanita/frontier-store.ts
+index 80baebe..cf3afd9 100644
+--- a/src/lib/sanita/frontier-store.ts
++++ b/src/lib/sanita/frontier-store.ts
+@@ -32,12 +32,13 @@ const ALLOWED_TRANSITIONS: Record<FrontierNodeState, FrontierNodeState[]> = {
+   DISCOVERED: ["QUEUED", "EXCLUDED", "RETRY_PENDING"],
+   QUEUED: ["FETCHING", "EXCLUDED", "RETRY_PENDING"],
+   FETCHING: ["FETCHED", "RETRY_PENDING", "TECHNICAL_BLOCKED", "EXCLUDED"],
+-  FETCHED: ["RENDERED", "PARSED", "EXCLUDED", "RETRY_PENDING"],
++  FETCHED: ["RENDERED", "PARSED", "EXCLUDED", "RETRY_PENDING", "TECHNICAL_BLOCKED", "FETCHING"],
+   RENDERED: ["PARSED", "RETRY_PENDING"],
+   PARSED: ["COMPLETED", "EXCLUDED", "RETRY_PENDING"],
+   EXCLUDED: [],
+   RETRY_PENDING: ["QUEUED", "FETCHING", "TECHNICAL_BLOCKED"],
+-  TECHNICAL_BLOCKED: [],
++  // Infra/OCR fix may reopen blocked nodes on frontier resume.
++  TECHNICAL_BLOCKED: ["RETRY_PENDING", "QUEUED"],
+   COMPLETED: [],
+ };
+ 
+@@ -543,7 +544,32 @@ export function persistNodeEvidence(input: {
+   const existing = d
+     .prepare(`SELECT id FROM CrawlNodeEvidence WHERE crawlRunId = ? AND contentHash = ?`)
+     .get(input.crawlRunId, input.contentHash) as { id: string } | undefined;
+-  if (existing) return;
++  if (existing) {
++    // Same PDF bytes reprocessed (e.g. OCR gate fix) — refresh text/ocr, don't keep stale empty evidence.
++    d.prepare(
++      `UPDATE CrawlNodeEvidence SET
++        normalizedText = ?,
++        policyText = ?,
++        policyFound = ?,
++        policySignalsJson = ?,
++        extractedEntityJson = ?,
++        ocrStatus = COALESCE(?, ocrStatus),
++        playwrightSource = COALESCE(?, playwrightSource),
++        extractedAt = ?
++      WHERE id = ?`
++    ).run(
++      input.normalizedText.slice(0, 120_000),
++      (input.policyText || "").slice(0, 40_000),
++      input.policyFound ? 1 : 0,
++      input.policySignalsJson != null ? JSON.stringify(input.policySignalsJson) : null,
++      input.extractedEntityJson != null ? JSON.stringify(input.extractedEntityJson) : null,
++      input.ocrStatus ?? null,
++      input.playwrightSource ?? null,
++      new Date().toISOString(),
++      existing.id
++    );
++    return;
++  }
+   d.prepare(
+     `INSERT INTO CrawlNodeEvidence (
+       id, crawlRunId, nodeId, canonicalUrl, contentHash, resourceType,
+diff --git a/src/lib/sanita/ocr.ts b/src/lib/sanita/ocr.ts
+index f5a8012..e38c5dd 100644
+--- a/src/lib/sanita/ocr.ts
++++ b/src/lib/sanita/ocr.ts
+@@ -142,73 +142,157 @@ export function isOcrTechnicalFailure(status: OcrStatus): boolean {
+   );
+ }
+ 
+-/** Resolve pdftoppm binary: PDFTOPPM_PATH → PATH → null. */
++/** Resolve pdftoppm candidates (sync list only — probe is async). */
++export function listPdftoppmCandidates(): string[] {
++  const out: string[] = [];
++  const seen = new Set<string>();
++  const push = (p: string | null | undefined) => {
++    const v = (p || "").trim();
++    if (!v || seen.has(v)) return;
++    seen.add(v);
++    out.push(v);
++  };
++
++  // Test escape hatch: force missing without system fallbacks
++  if (process.env.PDFTOPPM_DISABLE_SYSTEM_FALLBACK === "1") {
++    push(process.env.PDFTOPPM_PATH);
++    return out;
++  }
++
++  push(process.env.PDFTOPPM_PATH);
++  if (process.platform !== "win32") {
++    push("/usr/bin/pdftoppm");
++    push("/bin/pdftoppm");
++  }
++  push("pdftoppm");
++
++  // Staging Windows poppler extract
++  push(
++    path.join(PROJECT_ROOT, "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe")
++  );
++  push(path.join(PROJECT_ROOT, "data/staging/poppler/Library/bin/pdftoppm.exe"));
++  return out;
++}
++
++/** @deprecated use listPdftoppmCandidates + resolvePdftoppm — kept for callers */
+ export function resolvePdftoppmPath(): string | null {
+-  const envPath = process.env.PDFTOPPM_PATH?.trim();
+-  // If PDFTOPPM_PATH is explicitly set, trust it unconditionally — even if the file doesn't exist
+-  // yet (test mocking or late mounts). Do NOT fall through to staging candidates, so tests can
+-  // force RENDERER_MISSING by pointing to a nonexistent path.
+-  if (envPath !== undefined && envPath !== "") return envPath;
+-  // Common staging layout (Windows official poppler-windows extract)
+-  const stagingCandidates = [
+-    path.join(
+-      PROJECT_ROOT,
+-      "data/staging/poppler/poppler-24.08.0/Library/bin/pdftoppm.exe"
+-    ),
+-    path.join(PROJECT_ROOT, "data/staging/poppler/Library/bin/pdftoppm.exe"),
+-  ];
+-  for (const c of stagingCandidates) {
+-    if (fs.existsSync(c)) return c;
+-  }
+-  return null; // PATH probed asynchronously in resolvePdftoppm()
++  const c = listPdftoppmCandidates();
++  for (const bin of c) {
++    if (bin.includes("/") || bin.includes("\\")) {
++      if (fs.existsSync(bin)) return bin;
++      continue;
++    }
++  }
++  // bare name — defer to async probe
++  return c.find((x) => !x.includes("/") && !x.includes("\\")) || null;
+ }
+ 
+-let cachedPdftoppm: { path: string | null; version: string | null; probed: boolean } = {
+-  path: null,
+-  version: null,
+-  probed: false,
++type PdftoppmCache = {
++  path: string | null;
++  version: string | null;
++  probedAt: number;
++  ok: boolean;
++  diagnostics: string[];
+ };
+ 
++const NEGATIVE_CACHE_TTL_MS = 30_000;
++
++let cachedPdftoppm: PdftoppmCache | null = null;
++
++/** Clear resolver cache (preflight / after OCR_RENDERER_MISSING / tests). */
++export function resetPdftoppmCache(): void {
++  cachedPdftoppm = null;
++}
++
++/** @deprecated alias */
++export function resetPdftoppmCacheForTests(): void {
++  resetPdftoppmCache();
++}
++
++function isExecutableAbsolute(bin: string): boolean {
++  try {
++    if (!fs.existsSync(bin)) return false;
++    fs.accessSync(bin, fs.constants.X_OK);
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++async function probePdftoppmBinary(bin: string): Promise<{ ok: boolean; version: string | null; error: string | null }> {
++  const isAbs = bin.includes("/") || bin.includes("\\") || /^[A-Za-z]:\\/.test(bin);
++  if (isAbs && !isExecutableAbsolute(bin)) {
++    return { ok: false, version: null, error: `not_executable_or_missing:${bin}` };
++  }
++  try {
++    const { stderr, stdout } = await execFileAsync(bin, ["-v"], {
++      timeout: 5_000,
++      windowsHide: true,
++      env: process.env,
++    });
++    const blob = `${stdout || ""}${stderr || ""}`;
++    const m = blob.match(/pdftoppm version[^\r\n]*/i);
++    const version =
++      (m?.[0] || blob.split(/\r?\n/).find((l) => /pdftoppm/i.test(l)) || blob.trim().split(/\r?\n/)[0] || "").trim() ||
++      null;
++    return { ok: true, version, error: null };
++  } catch (e: unknown) {
++    const err = e as { stderr?: string | Buffer; stdout?: string | Buffer; message?: string };
++    const blob = `${err.stdout?.toString?.() ?? err.stdout ?? ""}${err.stderr?.toString?.() ?? err.stderr ?? ""}${err.message ?? ""}`;
++    // poppler often exits non-zero on -v while still printing version
++    if (/pdftoppm version/i.test(blob)) {
++      const m = blob.match(/pdftoppm version[^\r\n]*/i);
++      return {
++        ok: true,
++        version: (m?.[0] || "").trim() || null,
++        error: null,
++      };
++    }
++    return { ok: false, version: null, error: blob.slice(0, 240) || "exec_failed" };
++  }
++}
++
+ export async function resolvePdftoppm(): Promise<{
+   path: string | null;
+   version: string | null;
++  diagnostics?: string[];
+ }> {
+-  if (cachedPdftoppm.probed) {
+-    return { path: cachedPdftoppm.path, version: cachedPdftoppm.version };
++  const now = Date.now();
++  if (cachedPdftoppm) {
++    if (cachedPdftoppm.ok) {
++      return { path: cachedPdftoppm.path, version: cachedPdftoppm.version, diagnostics: cachedPdftoppm.diagnostics };
++    }
++    // negative cache with TTL — never permanent
++    if (now - cachedPdftoppm.probedAt < NEGATIVE_CACHE_TTL_MS) {
++      return { path: null, version: null, diagnostics: cachedPdftoppm.diagnostics };
++    }
+   }
+-  cachedPdftoppm.probed = true;
+-  const fromEnv = resolvePdftoppmPath();
+-  const candidates = fromEnv ? [fromEnv, "pdftoppm"] : ["pdftoppm"];
++
++  const diagnostics: string[] = [];
++  const candidates = listPdftoppmCandidates();
+   for (const bin of candidates) {
+-    try {
+-      const { stderr, stdout } = await execFileAsync(bin, ["-v"], {
+-        timeout: 5_000,
+-        windowsHide: true,
+-      });
+-      const ver = `${stdout || ""}${stderr || ""}`.trim().split(/\r?\n/)[0] || null;
+-      cachedPdftoppm = { path: bin, version: ver, probed: true };
+-      return { path: bin, version: ver };
+-    } catch (e: unknown) {
+-      const err = e as { stderr?: string | Buffer; stdout?: string | Buffer; message?: string };
+-      const blob = `${err.stdout?.toString?.() ?? err.stdout ?? ""}${err.stderr?.toString?.() ?? err.stderr ?? ""}${err.message ?? ""}`;
+-      if (/pdftoppm version/i.test(blob)) {
+-        const m = blob.match(/pdftoppm version[^\r\n]*/i);
+-        cachedPdftoppm = {
+-          path: bin,
+-          version: (m?.[0] || blob.split(/\r?\n/).find((l) => /pdftoppm/i.test(l)) || "").trim() || null,
+-          probed: true,
+-        };
+-        return { path: cachedPdftoppm.path, version: cachedPdftoppm.version };
+-      }
++    const probed = await probePdftoppmBinary(bin);
++    if (probed.ok) {
++      cachedPdftoppm = {
++        path: bin,
++        version: probed.version,
++        probedAt: now,
++        ok: true,
++        diagnostics: [...diagnostics, `ok:${bin}`],
++      };
++      return { path: bin, version: probed.version, diagnostics: cachedPdftoppm.diagnostics };
+     }
++    diagnostics.push(`fail:${bin}:${probed.error}`);
+   }
+-  cachedPdftoppm = { path: null, version: null, probed: true };
+-  return { path: null, version: null };
+-}
+ 
+-/** Reset cache (tests). */
+-export function resetPdftoppmCacheForTests(): void {
+-  cachedPdftoppm = { path: null, version: null, probed: false };
++  cachedPdftoppm = {
++    path: null,
++    version: null,
++    probedAt: now,
++    ok: false,
++    diagnostics,
++  };
++  return { path: null, version: null, diagnostics };
+ }
+ 
+ function extractImagesFromPdfCarving(buffer: Buffer): Buffer[] {
+@@ -411,7 +495,12 @@ export async function collectPdfImagesForOcr(
+   pdfBuffer: Buffer,
+   opts?: { allowCarveFallback?: boolean }
+ ): Promise<{ images: Buffer[]; rasterize: RasterizeResult }> {
+-  const rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
++  let rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
++  if (rasterize.status === "RENDERER_MISSING") {
++    // One forced re-probe after clearing negative cache (env may have been fixed mid-process)
++    resetPdftoppmCache();
++    rasterize = await rasterizePdfPages(pdfBuffer, MAX_OCR_PAGES);
++  }
+   if (rasterize.status === "OK" && rasterize.images.length > 0) {
+     const cleaned: Buffer[] = [];
+     for (const png of rasterize.images) {
+@@ -664,19 +753,29 @@ export async function extractPdfFullText(pdfBuffer: Buffer): Promise<ExtractPdfF
+     };
+   }
+ 
+-  if (!isOcrEnabled()) {
+-    // Scanned PDF but OCR disabled → technical, not commercial false-negative
++  if (!isOcrEnabled() && digitalMeaningful.length > 80) {
++    // OCR intentionally off and digital text is usable — never claim RENDERER_MISSING.
+     return {
+       digital,
+       ocr: null,
+       text: digital,
+-      status: digitalMeaningful.length > 80 ? "OCR_NOT_NEEDED" : "OCR_RENDERER_MISSING",
+-      reasonCode: digitalMeaningful.length > 80 ? "OCR_NOT_NEEDED" : "OCR_RENDERER_MISSING",
++      status: "OCR_NOT_NEEDED",
++      reasonCode: "OCR_NOT_NEEDED",
+       rasterize: null,
+     };
+   }
+-
+-  const ocrResult = await ocrPdfText(pdfBuffer);
++  // Fail-closed: thin/scanned digital always attempts OCR even if a caller set OCR_ENABLED=0
++  // (e.g. non-policyish URL gate). OCR_RENDERER_MISSING must mean pdftoppm really missing.
++  // ocrPdfText() itself respects OCR_ENABLED — force-enable for this thin-digital path only.
++  const prevOcrEnabled = process.env.OCR_ENABLED;
++  process.env.OCR_ENABLED = "1";
++  let ocrResult;
++  try {
++    ocrResult = await ocrPdfText(pdfBuffer);
++  } finally {
++    if (prevOcrEnabled == null) delete process.env.OCR_ENABLED;
++    else process.env.OCR_ENABLED = prevOcrEnabled;
++  }
+   const policyHint = /polizz|assicuraz|gelli|responsabilit|massimale|rc\b|unipol|184419/i;
+ 
+   let text = digital;

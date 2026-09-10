@@ -1,0 +1,29 @@
+{
+  "jobId": "273eb323-29aa-4615-aa99-57b6c106a871",
+  "mode": "single",
+  "status": "queued",
+  "targetKey": "single:cmqp9r0kg0002xk2835txrrlw",
+  "region": "Campania",
+  "city": null,
+  "leadId": "cmqp9r0kg0002xk2835txrrlw",
+  "createdAt": "2026-07-21T10:10:16.882Z",
+  "updatedAt": "2026-07-21T10:18:21.422Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T10:18:21.422Z",
+  "lastUpdateLabel": "Interruzione richiesta",
+  "resumable": true,
+  "cancelRequested": true,
+  "pid": null,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": null,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": null,
+    "currentMessage": "Interruzione richiesta. Il job si fermera' in sicurezza.",
+    "currentStructure": null
+  },
+  "errorMessage": null
+}

@@ -1,0 +1,40 @@
+{
+  "verdict": "NON PRONTO",
+  "stoppedAt": "2026-07-21T20:19:48Z",
+  "gracefulStop": {
+    "giorgio-revalidate": "inactive",
+    "inProgressAfterOrphanRequeue": 0,
+    "processedPreserved": 85,
+    "baseline117": "not modified",
+    "applyLive": 0,
+    "workerSha256": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071"
+  },
+  "primaryRootCause": "Orchestrator auto-promoted RETRY_PENDING to TECHNICAL_BLOCKED after MAX_RETRY_ATTEMPTS (5). 8/12 last errors were LEAD_WALL_TIMEOUT_1800000ms (30min crawl/lead wall). TECHNICAL_BLOCKED was counted as a concluded verification — product-illegal.",
+  "patch": {
+    "files": [
+      "scripts/production-revalidate-sanita-v3.mjs",
+      "scripts/revalidate-checkpoint-v3.mjs",
+      "src/app/api/sanita/archive-revalidation/route.ts"
+    ],
+    "change": "Never promote RETRY_EXHAUSTED → TECHNICAL_BLOCKED; keep operational retryQueue; TECHNICAL_BLOCKED removed from commercial TERMINAL_STATES; UI terminalCompleted excludes TECHNICAL_BLOCKED",
+    "workerUntouched": true,
+    "deployedTo": "/opt/leadsniper-revalidate/app/scripts/",
+    "selfCheck": "scripts/test-stopship-no-tech-terminal.mjs PASS"
+  },
+  "demote": {
+    "techDemotedToRetry": 12,
+    "terminalAfter": 11,
+    "retryAfter": 21,
+    "frontierPreserved": true
+  },
+  "corpus12": {
+    "status": "RUNNING",
+    "wallMs": 3600000,
+    "concurrency": 1,
+    "systemd877": "NOT restarted",
+    "log": "/opt/leadsniper-revalidate/logs/stopship-corpus12.log",
+    "gate": "PASS only if ≥11/12 commercial/semantic terminals, false HOT/PUB=0"
+  },
+  "canary30": "NOT STARTED — blocked until corpus12 gate",
+  "resume877": "FORBIDDEN until corpus12 + canary30 PASS"
+}

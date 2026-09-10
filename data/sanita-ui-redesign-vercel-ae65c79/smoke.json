@@ -1,0 +1,36 @@
+{
+  "base": "https://giorgio-software.vercel.app",
+  "hasArchivioStrutture": true,
+  "hasRivalidazioneArchivio": true,
+  "hasCodaCommerciale": true,
+  "hasArchivioCompleto": true,
+  "hasStatoVerifiche": true,
+  "noInRivalidazione908": true,
+  "noHOTChip": true,
+  "noLEGACY": true,
+  "noADMIN": true,
+  "noShadow": true,
+  "has919": true,
+  "has877": true,
+  "has11": true,
+  "commercialTabsDefault": true,
+  "archiveApi": {
+    "status": 200,
+    "json": {
+      "success": true,
+      "available": true,
+      "active": true,
+      "statusLabel": "Verifica in corso",
+      "processed": 71,
+      "targetTotal": 877,
+      "percent": 8.1,
+      "updatedAt": "2026-07-21T18:11:25.240Z",
+      "certifiedResults": 0,
+      "checksNeeded": 4,
+      "technicalPending": 66,
+      "absenceFound": 1,
+      "terminal": 16
+    }
+  },
+  "consoleErrors": []
+}

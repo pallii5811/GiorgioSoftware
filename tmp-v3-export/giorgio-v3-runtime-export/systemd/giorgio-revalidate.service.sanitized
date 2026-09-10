@@ -1,0 +1,35 @@
+[Unit]
+Description=Giorgio Sanita shadow revalidation v3 (isolated workers)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/leadsniper-revalidate/app
+Environment=DATABASE_URL=REDACTED
+Environment=SCAN_ENGINE_LOCAL=1
+Environment=OCR_ENABLED=1
+Environment=POLICY_EXHAUSTIVE=1
+Environment=SCAN_FAST=0
+Environment=STAGING_MODE=true
+Environment=DISABLE_LIVE_DB=true
+Environment=DISABLE_EMAILS=true
+Environment=REVALIDATE_CONCURRENCY=2
+Environment=REVALIDATE_DUAL_HOT=1
+Environment=REVALIDATE_CHECKPOINT=/opt/leadsniper-revalidate/data/revalidation/checkpoint.json
+Environment=TESSDATA_PREFIX=/opt/leadsniper-revalidate/app/.tesseract-cache
+Environment=FRONTIER_DB_PATH=/opt/leadsniper-revalidate/data/revalidation/frontiers/boot.sqlite
+Environment=PDFTOPPM_PATH=/usr/bin/pdftoppm
+Environment=GIT_HEAD_FILE=/opt/leadsniper-revalidate/app/RELEASE_SHA
+TimeoutStopSec=900
+KillMode=mixed
+KillSignal=SIGTERM
+ExecStart=/bin/bash -c 'export GIT_HEAD=$(cat RELEASE_SHA); export RELEASE_SHA=$GIT_HEAD; exec npx tsx scripts/production-revalidate-sanita-v3.mjs'
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/leadsniper-revalidate/logs/systemd-revalidate.log
+StandardError=append:/opt/leadsniper-revalidate/logs/systemd-revalidate.log
+Nice=5
+MemoryMax=6G
+
+[Install]
+WantedBy=multi-user.target

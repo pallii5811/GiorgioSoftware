@@ -1,0 +1,89 @@
+{
+ "at": "2026-07-22T14:39:40.327Z",
+ "base": "http://168.119.253.47:3000",
+ "failed": 0,
+ "skipped": 0,
+ "results": [
+  {
+   "name": "default tab = Nuovi risultati del run",
+   "ok": true,
+   "detail": "tab-run-results"
+  },
+  {
+   "name": "una sola card sopra i tab (nessuna griglia box)",
+   "ok": true,
+   "detail": "panels=1 extra=0"
+  },
+  {
+   "name": "region default ALL",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "Tutte resta ALL dopo 3+ cicli polling",
+   "ok": true,
+   "detail": "region=ALL url=http://168.119.253.47:3000/sanita"
+  },
+  {
+   "name": "Campania mostra solo Campania",
+   "ok": true,
+   "detail": "rows=553 bad=0"
+  },
+  {
+   "name": "Campania resta Campania dopo 2 cicli polling",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "ritorno a Tutte ripristina l'insieme",
+   "ok": true,
+   "detail": "all=919 back=919"
+  },
+  {
+   "name": "Polizza valida solo valide",
+   "ok": true,
+   "detail": "rows=1 bad=0"
+  },
+  {
+   "name": "Polizza scaduta solo scadute",
+   "ok": true,
+   "detail": "rows=15 bad=0"
+  },
+  {
+   "name": "Scadenza sconosciuta solo corrispondenti",
+   "ok": true,
+   "detail": "rows=112 bad=0"
+  },
+  {
+   "name": "HOT solo HOT",
+   "ok": true,
+   "detail": "rows=502 bad=0"
+  },
+  {
+   "name": "tab Nuovi risultati del run: righe = risultati shadow API",
+   "ok": true,
+   "detail": "api=12 dom=12"
+  },
+  {
+   "name": "count mostrato = count API = righe DOM (tab run)",
+   "ok": true,
+   "detail": "shown=12 dom=12 apiTotal=12"
+  },
+  {
+   "name": "tab Da controllare: solo review, count = API",
+   "ok": true,
+   "detail": "api=11 dom=11"
+  },
+  {
+   "name": "refresh conserva i filtri (URLSearchParams)",
+   "ok": true,
+   "detail": "http://168.119.253.47:3000/sanita?tab=archive&region=Campania&outcome=policy_expired&q=villa"
+  },
+  {
+   "name": "nessun errore console",
+   "ok": true,
+   "detail": ""
+  }
+ ],
+ "consoleErrors": []
+}

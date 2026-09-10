@@ -1,0 +1,99 @@
+{
+ "capturedAt": "2026-07-21T22:50:16.509Z",
+ "git": {
+  "head": "96ee9803cb312dd2327082cad2b1ebbd61b8220e",
+  "branch": "main",
+  "uncommittedFiles": [
+   "package.json",
+   "scripts/preflight-ocr.mjs",
+   "scripts/production-revalidate-sanita-v3.mjs",
+   "scripts/revalidate-checkpoint-v3.mjs",
+   "scripts/test-sanita-ui-playwright-preview.mjs",
+   "src/app/api/sanita/archive-revalidation/route.ts",
+   "src/components/sanita-leads.tsx",
+   "src/lib/sanita/crawl-slice-runner.ts",
+   "src/lib/sanita/frontier-store.ts",
+   "src/lib/sanita/ocr.ts"
+  ]
+ },
+ "server": {
+  "host": "168.119.253.47",
+  "app": "/opt/leadsniper-revalidate/app",
+  "releaseSha": "eb2988a335e01c2723167f1ba79fe85da244f981",
+  "service": "giorgio-revalidate.service",
+  "serviceState": "inactive since 2026-07-21T20:19:45Z",
+  "lockFree": true
+ },
+ "runtimeHashes": {
+  "scripts/production-revalidate-sanita-worker.mjs": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071",
+  "src/lib/sanita/ocr.ts": "7755c5bca2b3a14569e53be7531e886117a66bc6e880e83aa7d97e4a0848cdc8",
+  "src/lib/sanita/frontier-store.ts": "7ac997823b99f5b2f0bf23f3d5c3f025729c8d7513706dbbe5adab49e13e6609",
+  "src/lib/sanita/crawl-slice-runner.ts": "79dfacb9af7a67bc5b3933b0124473195f4e56588e06c4305f8c103ab063fc63",
+  "scripts/production-revalidate-sanita-v3.mjs": "c822af87b16c5a4984926b11924170b323ae92be07ddd2b728db8168c9b5977d",
+  "scripts/preflight-ocr.mjs": "14bd17cb78298f17fc4d85585f992ecd4a7093f8bf483d9d7080c200ebea9de7",
+  "scripts/revalidate-checkpoint-v3.mjs": "2f470988c0e3ceda8179c78236a48ee7042a3add75a17401c87bfa4e492ed270"
+ },
+ "localMatchesServer": true,
+ "dataHashes": {
+  "checkpointJson": "d48e9834832ad321e8bfa081605db74876856d9f11e0b3d59ac80976ce16f129",
+  "shadowDb": "587045bbc752efd55a6c82037c9bde6d6d2b57077a8f7b0169b985beb836b0ef",
+  "shadowDbBytes": 2007040
+ },
+ "checkpoint": {
+  "version": 3,
+  "terminal": 11,
+  "retryQueue": 21,
+  "inProgress": 0,
+  "attempts": 32,
+  "updatedAt": "2026-07-21T22:17:12.438Z",
+  "stats": {
+   "processed": 89,
+   "terminal": 11,
+   "hot": 2,
+   "pub": 0,
+   "review": 9,
+   "retry": 78,
+   "tech": 0,
+   "outOfScope": 0,
+   "errors": 1
+  }
+ },
+ "environment": {
+  "PDFTOPPM_PATH": "/usr/bin/pdftoppm",
+  "pdftoppmVersion": "24.02.0",
+  "OCR_ENABLED": "1",
+  "REVALIDATE_CONCURRENCY": "2",
+  "PER_HOST_CONCURRENCY": "1",
+  "REVALIDATE_LEAD_WALL_MS": "1800000",
+  "CRAWL_RUN_MAX_WALL_CLOCK_MS": "1800000",
+  "applyLive": 0,
+  "discovery": "off"
+ },
+ "disk": {
+  "freeGb": 121,
+  "ifree": 9455602
+ },
+ "memory": {
+  "totalMb": 7745,
+  "availableMb": 6920
+ },
+ "corpus12Target": 877,
+ "baseline117": {
+  "shaFile": "data/baseline-published-legacy-SHA256SUMS.txt",
+  "status": "untouched"
+ },
+ "gitBranch": "k3/stopship-complete-engine-20260722",
+ "freezeCommits": {
+  "ocr": "ed5978d",
+  "orchestrator": "822cb20"
+ },
+ "lineEndingNote": "Repo blobs LF (core.autocrlf), runtime files CRLF (scp da Windows). Contenuto IDENTICAL_MODULO_CR verificato su 6/6 file patchati. Deploy futuri: normalizzare LF.",
+ "gitLfHashes": {
+  "ocr.ts": "4243973c7623805a1bffb97d7e3c6cadb8522840d793a2b5fa11e59e946cdc2c",
+  "frontier-store.ts": "e7942611091a2c1959ab456b4c52843376f3711aba3c5abedc65e887ba802e8a",
+  "crawl-slice-runner.ts": "84ceee7e0a69ae9b2a190c10c43754138f234c7746bb88ee2c086a1a4159bc28",
+  "production-revalidate-sanita-v3.mjs": "625109db64e54ca2c0e61328409709315ae7eced2a07b1b2bcbb00f1582977fb",
+  "preflight-ocr.mjs": "8149ba1b98573df02a2df2ac0fce11823e85a4b43fdeaa0ed09c07945d5119f7",
+  "revalidate-checkpoint-v3.mjs": "c09e9825c1e870efaee2ff31c4e86fd788aecc699137f30921a46b5c5cf44f48"
+ }
+}

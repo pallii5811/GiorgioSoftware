@@ -1,0 +1,325 @@
+{
+  "terminal": {
+    "cmqklex5c00b1108e02wl0eqd": {
+      "finishedAt": "2026-07-20T19:50:27.609Z",
+      "processingState": "HOT_VERIFIED",
+      "newVerdict": "HOT",
+      "reasonCode": "HOT_VERIFIED"
+    },
+    "cmqkld5sa00ad108e4xkgdy4f": {
+      "finishedAt": "2026-07-20T22:10:54.113Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqkld5t200au108eefkj9viq": {
+      "finishedAt": "2026-07-20T22:50:16.635Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqkld5s2009y108ejvgl7m92": {
+      "finishedAt": "2026-07-20T23:00:19.873Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmql4qrih0010c9w7x74d84gt": {
+      "finishedAt": "2026-07-20T23:09:20.858Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmql4tcyl0018c9w7sblf35p9": {
+      "finishedAt": "2026-07-21T18:46:36.263Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqm88ttq000ajc3mjw49n5sf": {
+      "finishedAt": "2026-07-21T18:50:04.207Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqm8besw000kjc3mfv53cd5m": {
+      "finishedAt": "2026-07-21T18:54:46.972Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": "REVIEW",
+      "reasonCode": "REVIEW_HUMAN"
+    },
+    "cmqm8besz000ljc3miz0ueg1x": {
+      "finishedAt": "2026-07-21T19:03:01.416Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqma47nx000d9g5cz2hmax7i": {
+      "finishedAt": "2026-07-21T19:27:58.197Z",
+      "processingState": "REVIEW_HUMAN",
+      "newVerdict": null,
+      "reasonCode": "IDENTITY_MISMATCH"
+    },
+    "cmqma6d8e000q9g5crb0tkxag": {
+      "finishedAt": "2026-07-21T19:34:58.980Z",
+      "processingState": "HOT_VERIFIED",
+      "newVerdict": "HOT",
+      "reasonCode": "HOT_VERIFIED"
+    }
+  },
+  "retryQueue": {
+    "cmqklex5f00b4108ebmk6b16f": {
+      "attempts": 4,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "CRAWL_CAP",
+      "nextRetryAt": "2026-07-21T21:30:46.180Z",
+      "lastRunId": "reval-p1-cmqklex5f00b4108ebmk6b16f-1784587541751",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5f00b4108ebmk6b16f-1784587541751.sqlite",
+      "firstSeenAt": "2026-07-21T17:30:46.180Z",
+      "lastAttemptAt": "2026-07-21T17:30:46.180Z"
+    },
+    "cmql4d390000oc9w70lelcqnp": {
+      "attempts": 4,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "RETRY_PENDING",
+      "nextRetryAt": "2026-07-21T21:59:35.138Z",
+      "lastRunId": "reval-p1-cmql4d390000oc9w70lelcqnp-1784591136478",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmql4d390000oc9w70lelcqnp-1784591136478.sqlite",
+      "firstSeenAt": "2026-07-21T17:59:35.138Z",
+      "lastAttemptAt": "2026-07-21T17:59:35.138Z"
+    },
+    "cmql4d38x000mc9w72hq8efcr": {
+      "attempts": 4,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "CRAWL_CAP",
+      "nextRetryAt": "2026-07-21T22:07:10.054Z",
+      "lastRunId": "reval-p1-cmql4d38x000mc9w72hq8efcr-1784579576557",
+      "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql4d38x000mc9w72hq8efcr-1784579576557.sqlite",
+      "firstSeenAt": "2026-07-21T18:07:10.054Z",
+      "lastAttemptAt": "2026-07-21T18:07:10.054Z"
+    },
+    "cmql4d392000pc9w7usrn62m5": {
+      "attempts": 4,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "CRAWL_CAP",
+      "nextRetryAt": "2026-07-21T22:11:25.237Z",
+      "lastRunId": "reval-p1-cmql4d392000pc9w7usrn62m5-1784579758138",
+      "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql4d392000pc9w7usrn62m5-1784579758138.sqlite",
+      "firstSeenAt": "2026-07-21T18:11:25.237Z",
+      "lastAttemptAt": "2026-07-21T18:11:25.237Z"
+    },
+    "cmql4qrim0014c9w7cyzl5p2c": {
+      "attempts": 2,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "FRONTIER_INCOMPLETE",
+      "nextRetryAt": "2026-07-21T20:19:43.082Z",
+      "lastRunId": "reval-p1-cmql4qrim0014c9w7cyzl5p2c-1784659286712",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmql4qrim0014c9w7cyzl5p2c-1784659286712.sqlite",
+      "firstSeenAt": "2026-07-21T19:19:43.082Z",
+      "lastAttemptAt": "2026-07-21T19:19:43.082Z"
+    },
+    "cmqmaf01b001c9g5csd0tpcao": {
+      "attempts": 1,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "LEAD_WALL_TIMEOUT_1800000ms",
+      "nextRetryAt": "2026-07-21T20:35:41.721Z",
+      "lastRunId": "reval-p1-cmqmaf01b001c9g5csd0tpcao-1784662540186",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqmaf01b001c9g5csd0tpcao-1784662540186.sqlite",
+      "firstSeenAt": "2026-07-21T20:05:41.721Z",
+      "lastAttemptAt": "2026-07-21T20:05:41.721Z"
+    },
+    "cmqma47ng000c9g5cw85q6myn": {
+      "attempts": 2,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "SITEMAP_UNRESOLVED",
+      "nextRetryAt": "2026-07-21T21:08:50.727Z",
+      "lastRunId": "reval-p1-cmqma47ng000c9g5cw85q6myn-1784660581518",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqma47ng000c9g5cw85q6myn-1784660581518.sqlite",
+      "firstSeenAt": "2026-07-21T20:08:50.727Z",
+      "lastAttemptAt": "2026-07-21T20:08:50.727Z"
+    },
+    "cmqma7vmf000v9g5cz4zmmmy9": {
+      "attempts": 2,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "RETRY_PENDING",
+      "nextRetryAt": "2026-07-21T21:12:31.939Z",
+      "lastRunId": "reval-p1-cmqma7vmf000v9g5cz4zmmmy9-1784662498985",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqma7vmf000v9g5cz4zmmmy9-1784662498985.sqlite",
+      "firstSeenAt": "2026-07-21T20:12:31.939Z",
+      "lastAttemptAt": "2026-07-21T20:12:31.939Z"
+    },
+    "cmqmaf01p001f9g5cyfpgl1bv": {
+      "startedAt": "2026-07-21T20:12:31.942Z",
+      "runId": "reval-p1-cmqmaf01p001f9g5cyfpgl1bv-1784664751942",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqmaf01p001f9g5cyfpgl1bv-1784664751942.sqlite",
+      "pass": "p1",
+      "resumed": false,
+      "requeuedAt": "2026-07-21T20:20:51.231079+00:00",
+      "requeueReason": "orphan_after_sigterm_graceful_stop",
+      "attempts": 0
+    },
+    "cmqkld5rx009p108edj6t9krw": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_6",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5rx009p108edj6t9krw-1784585646000.sqlite",
+      "firstSeenAt": "2026-07-20T22:44:07.519Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 6
+    },
+    "cmqkld5t300av108e5rrr47s9": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t300av108e5rrr47s9-1784581423685.sqlite",
+      "firstSeenAt": "2026-07-21T00:36:46.694Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqkld5s3009z108e1yj01zqy": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_6",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s3009z108e1yj01zqy-1784586128238.sqlite",
+      "firstSeenAt": "2026-07-21T00:36:46.941Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 6
+    },
+    "cmqkld5s0009u108eghihpoxi": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_6",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s0009u108eghihpoxi-1784585270080.sqlite",
+      "firstSeenAt": "2026-07-21T17:29:32.250Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 6
+    },
+    "cmqkld5s300a0108e8p1p3xxg": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_6",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5s300a0108e8p1p3xxg-1784587280824.sqlite",
+      "firstSeenAt": "2026-07-21T17:29:32.265Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 6
+    },
+    "cmqklex5e00b3108e2zcdos1w": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5e00b3108e2zcdos1w-1784587447524.sqlite",
+      "firstSeenAt": "2026-07-21T17:59:33.689Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqklex5g00b6108ejom1shk0": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqklex5g00b6108ejom1shk0-1784587608509.sqlite",
+      "firstSeenAt": "2026-07-21T18:00:47.670Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqkn3ghj0002xnfpr553khla": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkn3ghj0002xnfpr553khla-1784585646009.sqlite",
+      "firstSeenAt": "2026-07-21T18:04:56.830Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqkld5sa00af108epednu868": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5sa00af108epednu868-1784586986414",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5sa00af108epednu868-1784586986414.sqlite",
+      "firstSeenAt": "2026-07-21T18:06:03.264Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqkld5t000ao108esg4xv094": {
+      "attempts": 0,
+      "lastReason": "DEMOTED_FROM_TECHNICAL_BLOCKED",
+      "lastError": "RETRY_EXHAUSTED_5",
+      "nextRetryAt": "2026-07-21T20:26:48.699743+00:00",
+      "lastRunId": "reval-p1-cmqkld5t000ao108esg4xv094-1784586005359",
+      "frontierPath": "/opt/leadsniper-revalidate/data/revalidation/frontiers/reval-p1-cmqkld5t000ao108esg4xv094-1784586005359.sqlite",
+      "firstSeenAt": "2026-07-21T18:41:26.708Z",
+      "lastAttemptAt": "2026-07-21T20:26:48.699743+00:00",
+      "demotedAt": "2026-07-21T20:26:48.699743+00:00",
+      "operational": true,
+      "priorAttemptsBeforeDemote": 5
+    },
+    "cmqkld5s700a8108eti0nofjv": {
+      "attempts": 6,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "SITEMAP_UNRESOLVED",
+      "nextRetryAt": "2026-07-21T22:44:28.674Z",
+      "lastRunId": "reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297",
+      "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmqkld5s700a8108eti0nofjv-1784574907297.sqlite",
+      "firstSeenAt": "2026-07-21T22:12:28.674Z",
+      "lastAttemptAt": "2026-07-21T22:12:28.674Z",
+      "operational": true
+    },
+    "cmql46eia000ac9w78xh0rxdl": {
+      "attempts": 3,
+      "lastReason": "RETRY_PENDING",
+      "lastError": "FRONTIER_INCOMPLETE",
+      "nextRetryAt": "2026-07-21T22:20:12.419Z",
+      "lastRunId": "reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121",
+      "frontierPath": "/opt/leadsniper-revalidate/app/data/revalidation/frontiers/reval-p1-cmql46eia000ac9w78xh0rxdl-1784579490121.sqlite",
+      "firstSeenAt": "2026-07-21T22:16:12.419Z",
+      "lastAttemptAt": "2026-07-21T22:16:12.419Z",
+      "operational": true
+    }
+  },
+  "stats": {
+    "processed": 89,
+    "terminal": 11,
+    "hot": 2,
+    "pub": 0,
+    "review": 9,
+    "retry": 78,
+    "tech": 0,
+    "outOfScope": 0,
+    "errors": 1
+  }
+}

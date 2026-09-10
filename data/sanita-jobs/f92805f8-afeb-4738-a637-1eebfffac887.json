@@ -1,0 +1,29 @@
+{
+  "jobId": "f92805f8-afeb-4738-a637-1eebfffac887",
+  "mode": "single",
+  "status": "completed",
+  "targetKey": "single:cmqp9r0kg0002xk2835txrrlw",
+  "region": "Campania",
+  "city": null,
+  "leadId": "cmqp9r0kg0002xk2835txrrlw",
+  "createdAt": "2026-07-21T10:33:38.293Z",
+  "updatedAt": "2026-07-21T10:36:31.830Z",
+  "startedAt": "2026-07-21T10:35:02.570Z",
+  "finishedAt": "2026-07-21T10:36:31.829Z",
+  "lastHeartbeatAt": "2026-07-21T10:36:31.830Z",
+  "lastUpdateLabel": "Completato",
+  "resumable": false,
+  "cancelRequested": false,
+  "pid": null,
+  "progress": {
+    "structuresControlled": 1,
+    "totalStructures": 1,
+    "certifiedResults": 1,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": 100,
+    "currentMessage": "Controllo completato.",
+    "currentStructure": "Centro Masi Dilab s.c.a.r.l"
+  },
+  "errorMessage": null
+}

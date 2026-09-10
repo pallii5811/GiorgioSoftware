@@ -1,0 +1,29 @@
+{
+  "commit": "fe8b677a2cb4372d6f117c8534d473a51d40913b",
+  "files": {
+    "scripts/production-revalidate-sanita-v3.mjs": {
+      "sha256": "0e08bca2cb974e6b0b96ae8c25163c81b1fe8575c37c748a8b26eaf32ec16aad",
+      "bytes": 23142
+    },
+    "scripts/production-revalidate-sanita-worker.mjs": {
+      "sha256": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071",
+      "bytes": 11097
+    },
+    "scripts/revalidate-checkpoint-v3.mjs": {
+      "sha256": "84f436003f121c273c15b9120432147b3b18e6cb008b9671cf2ad55e9d2f0d1d",
+      "bytes": 7042
+    },
+    "src/lib/sanita/canonical-published-terminal.ts": {
+      "sha256": "830cbee71f1ce6378f0a23158f4a1f93a62ecef94db1edf32ab80cc86d6c1976",
+      "bytes": 4929
+    },
+    "src/lib/sanita/crawl-slice-runner.ts": {
+      "sha256": "d06fbefbd20018acefdbedbc8b5521e37b08a52498f180da32c3d311eb7b2c95",
+      "bytes": 23791
+    },
+    "src/lib/sanita/scan-engine.ts": {
+      "sha256": "88b6cdffddc8250c95b960f54acebf4d944f8849ad606ff26b8e84296e6d180c",
+      "bytes": 57731
+    }
+  }
+}

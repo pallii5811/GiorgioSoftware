@@ -1,0 +1,172 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "fetch-mock-installed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "default-tab-certified",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "no-status-tab",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "panel-progress",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "region-tutte-selected",
+      "pass": true,
+      "detail": "Tutte"
+    },
+    {
+      "name": "region-not-campania-when-tutte",
+      "pass": true,
+      "detail": "Tutte"
+    },
+    {
+      "name": "region-campania",
+      "pass": true,
+      "detail": "Campania"
+    },
+    {
+      "name": "region-campania-rows-only",
+      "pass": true,
+      "detail": [
+        "Campania",
+        "Campania",
+        "Campania"
+      ]
+    },
+    {
+      "name": "region-back-to-tutte",
+      "pass": true,
+      "detail": "Tutte"
+    },
+    {
+      "name": "expired-count-match",
+      "pass": true,
+      "detail": {
+        "rows": 1,
+        "label": 1,
+        "chip": 1
+      }
+    },
+    {
+      "name": "expired-only",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "date-unknown-count-match",
+      "pass": true,
+      "detail": {
+        "rows": 1,
+        "chip": 1
+      }
+    },
+    {
+      "name": "published-run-count",
+      "pass": true,
+      "detail": {
+        "rows": 1,
+        "chip": 1,
+        "pubIds": [
+          "pub-run"
+        ]
+      }
+    },
+    {
+      "name": "published-run-id",
+      "pass": true,
+      "detail": [
+        "pub-run"
+      ]
+    },
+    {
+      "name": "hot-run-count",
+      "pass": true,
+      "detail": {
+        "rows": 1,
+        "chip": 1,
+        "hotIds": [
+          "hot-run"
+        ]
+      }
+    },
+    {
+      "name": "hot-run-id",
+      "pass": true,
+      "detail": [
+        "hot-run"
+      ]
+    },
+    {
+      "name": "refresh-preserves-url",
+      "pass": true,
+      "detail": "http://127.0.0.1:3040/sanita?tab=certified&region=Campania&focus=policy_expired"
+    },
+    {
+      "name": "refresh-preserves-region",
+      "pass": true,
+      "detail": "Campania"
+    },
+    {
+      "name": "refresh-preserves-focus",
+      "pass": true,
+      "detail": "rounded-md px-2.5 py-1 text-xs transition bg-slate-900 text-white"
+    },
+    {
+      "name": "focus-change-keeps-region",
+      "pass": true,
+      "detail": "Campania"
+    },
+    {
+      "name": "tab-change-keeps-tutte",
+      "pass": true,
+      "detail": "Tutte"
+    },
+    {
+      "name": "no-console-errors",
+      "pass": true,
+      "detail": []
+    }
+  ],
+  "consoleErrors": [],
+  "screenshots": [
+    "data\\sanita-structural-ui\\published-nuovo-run-1440.png",
+    "data\\sanita-structural-ui\\published-nuovo-run-1920.png",
+    "data\\sanita-structural-ui\\hot-nuovo-run-1440.png",
+    "data\\sanita-structural-ui\\hot-nuovo-run-1920.png",
+    "data\\sanita-structural-ui\\risultati-certificati-1440.png",
+    "data\\sanita-structural-ui\\risultati-certificati-1920.png",
+    "data\\sanita-structural-ui\\desktop-1440.png",
+    "data\\sanita-structural-ui\\desktop-1920.png"
+  ],
+  "counts": {
+    "policy_expired": {
+      "chip": 1,
+      "rows": 1
+    },
+    "date_unknown": {
+      "chip": 1,
+      "rows": 1
+    },
+    "run_published": {
+      "chip": 1,
+      "rows": 1
+    },
+    "run_hot": {
+      "chip": 1,
+      "rows": 1
+    }
+  },
+  "filterDemoFrames": "data\\sanita-structural-ui\\filter-demo-frames"
+}

@@ -1,0 +1,32 @@
+{
+  "jobId": "j2",
+  "mode": "region",
+  "status": "running",
+  "targetKey": "region:Campania",
+  "region": "Campania",
+  "city": null,
+  "leadId": null,
+  "targetTotal": null,
+  "namespace": null,
+  "forceRescan": false,
+  "createdAt": "2026-07-21T13:51:21.095Z",
+  "updatedAt": "2026-07-21T13:51:21.098Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T13:51:21.098Z",
+  "lastUpdateLabel": "In attesa",
+  "resumable": true,
+  "cancelRequested": false,
+  "pid": null,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": null,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": null,
+    "currentMessage": "Job in coda.",
+    "currentStructure": null
+  },
+  "errorMessage": null
+}

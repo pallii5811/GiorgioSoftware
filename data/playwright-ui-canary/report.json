@@ -1,0 +1,24 @@
+{
+  "jobId": "94d4baa9-0574-4648-b364-2a488cf8adcb",
+  "leadId": "cmqkld5rt009n108es4nx3g1j",
+  "leadName": "Casa Di Cura 'Villa Fiorita' S.p.A.",
+  "durationMs": 24793,
+  "finalStatus": "completed",
+  "certifiedResults": 1,
+  "scannedBefore": "2026-07-21T14:33:19.772Z",
+  "scannedAfter": "2026-07-21T14:40:33.088Z",
+  "evidenceChanged": true,
+  "crmBefore": {
+    "status": "NEW",
+    "notes": ""
+  },
+  "crmAfter": {
+    "status": "NEW",
+    "notes": ""
+  },
+  "crmPreserved": true,
+  "actionableBefore": 4,
+  "actionableAfter": 4,
+  "applyAuditExists": false,
+  "pass": false
+}

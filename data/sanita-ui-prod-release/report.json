@@ -1,0 +1,135 @@
+{
+  "base": "https://giorgio-software.vercel.app",
+  "startedAt": "2026-07-29T18:54:08.675Z",
+  "checks": {
+    "four_tabs": {
+      "pass": true,
+      "detail": "[\"Nuovi risultati\",\"Tutti i certificati\",\"In lavorazione\",\"Archivio completo\"]"
+    },
+    "no_coda_commerciale": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "no_stato_verifiche": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "expected_tabs": {
+      "pass": true,
+      "detail": "Nuovi risultati|Tutti i certificati|In lavorazione|Archivio completo"
+    },
+    "legacy_labeled": {
+      "pass": true,
+      "detail": "Legacy commerciali0"
+    },
+    "all_after_20s": {
+      "pass": true,
+      "detail": "ALL"
+    },
+    "all_after_tab_change": {
+      "pass": true,
+      "detail": "ALL"
+    },
+    "click_completed_opens_run": {
+      "pass": true,
+      "detail": "aria=true url=https://giorgio-software.vercel.app/sanita?tab=run"
+    },
+    "url_no_campania": {
+      "pass": true,
+      "detail": "https://giorgio-software.vercel.app/sanita?tab=run"
+    },
+    "run_rows_visible": {
+      "pass": true,
+      "detail": "rows=55 count=55 risultati"
+    },
+    "run_rows_are_current_engine": {
+      "pass": true,
+      "detail": "Scansione territorio,Scansione territorio,Scansione territorio,Nuovo motore,Nuovo motore"
+    },
+    "filter_policy_valid_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=policy_valid"
+    },
+    "filter_policy_valid": {
+      "pass": true,
+      "detail": "n=0"
+    },
+    "filter_policy_expired_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=policy_expired"
+    },
+    "filter_policy_expired": {
+      "pass": true,
+      "detail": "n=1"
+    },
+    "filter_date_unknown_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=date_unknown"
+    },
+    "filter_date_unknown": {
+      "pass": true,
+      "detail": "n=0"
+    },
+    "filter_self_insurance_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=self_insurance"
+    },
+    "filter_self_insurance": {
+      "pass": true,
+      "detail": "n=0"
+    },
+    "filter_hot_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=hot"
+    },
+    "filter_hot": {
+      "pass": true,
+      "detail": "n=2"
+    },
+    "filter_review_keeps_region": {
+      "pass": true,
+      "detail": "region=Calabria url=https://giorgio-software.vercel.app/sanita?tab=run&region=Calabria&outcome=review"
+    },
+    "filter_review": {
+      "pass": true,
+      "detail": "n=0"
+    },
+    "self_insurance_malzoni_or_pini": {
+      "pass": true,
+      "detail": "Casa Di Cura Malzoni Villa Platani Spa | Clinica Mediterranea S.p.A. | Casa Di Cura San Paolo | Casa di Cura 'Andrea Grimaldi' | Casa di cura Maria Rosaria Pompei | Opera della Provvidenza S. Antonio | Clinica Sant'Anna"
+    },
+    "working_tab": {
+      "pass": true,
+      "detail": "https://giorgio-software.vercel.app/sanita?tab=review&outcome=self_insurance"
+    },
+    "archive_reval_column": {
+      "pass": true,
+      "detail": null
+    },
+    "counter_reconciliation": {
+      "pass": true,
+      "detail": "sum=52 terminal=52 cert=52 SI=7 review=0"
+    },
+    "scope_run_api": {
+      "pass": true,
+      "detail": "n=52"
+    },
+    "scope_working_api": {
+      "pass": true,
+      "detail": "n=500"
+    }
+  },
+  "errors": [],
+  "api": {
+    "terminalCompleted": 52,
+    "certifiedCurrentRun": 52,
+    "selfInsurance": 7,
+    "reviewCurrent": 0,
+    "otherNonCommercialTerminal": 0,
+    "technicalBlockedFinal": 0,
+    "runResults": 52,
+    "workingResults": 500
+  },
+  "finishedAt": "2026-07-29T18:55:22.554Z",
+  "failed": 0
+}

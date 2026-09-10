@@ -1,0 +1,19 @@
+﻿{
+  "live": {
+    "header": "Archivio: 919 | Verifiche concluse: 23/877 | Lead certificati: 11",
+    "panel": "terminalCompleted=23 published=0 hot=2 review=9 techFinal=12 touched=82 inProgress=1 retry=7",
+    "hotChipEqRows": true,
+    "hotRows": 2,
+    "publishedRows": 0
+  },
+  "worker": {
+    "sha256": "f8843a46bfb1b3734116306216ee3d3bf52171fb2a45fb27f3331c9175acf071",
+    "untouched": true,
+    "revalidate": "active"
+  },
+  "e2eMock": "data/sanita-structural-ui/report.json PASS 22/22",
+  "gif": "data/sanita-structural-ui/filtri-demo.gif",
+  "screenshotsLive": "data/sanita-structural-live/",
+  "screenshotsMock": "data/sanita-structural-ui/",
+  "vercel": "not pushed — needs commit+push for Vercel; Hetzner blue UI deployed"
+}

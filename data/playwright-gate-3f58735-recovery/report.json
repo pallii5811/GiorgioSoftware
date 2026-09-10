@@ -1,0 +1,59 @@
+{
+  "baseUrl": "https://giorgio-software-oupxdgzu6-simonedrop21-8016s-projects.vercel.app",
+  "vercelShareUrl": "https://giorgio-software-oupxdgzu6-simonedrop21-8016s-projects.vercel.app/?_vercel_share=zovDjhLLIaLoX5GrWZ6WFjeAvvZg1J5b",
+  "expectSha": "3f5873532119a81b7477e3ec458e414e242f41e6",
+  "recoveryJobId": "88854d1b-f589-42f9-8114-9eb915020e0d",
+  "recovery": {
+    "apiJobId": "88854d1b-f589-42f9-8114-9eb915020e0d",
+    "pass": true
+  },
+  "browserClose": {
+    "skipped": true,
+    "pass": true
+  },
+  "cancel": {
+    "skipped": true,
+    "pass": true
+  },
+  "positive": {
+    "skipped": true,
+    "pass": true
+  },
+  "negative": {
+    "skipped": true,
+    "pass": true
+  },
+  "networkLog": [
+    "GET /api/sanita?includePending=1&includeAll=1",
+    "GET /api/sanita/jobs?limit=1",
+    "GET /api/sanita/jobs/5ddea8f4-2647-4827-9a62-88177e7e9089",
+    "GET /api/sanita?includePending=1&includeAll=1",
+    "GET /api/sanita/jobs/88854d1b-f589-42f9-8114-9eb915020e0d",
+    "GET /api/sanita/jobs/5ddea8f4-2647-4827-9a62-88177e7e9089",
+    "GET /api/sanita?includePending=1&includeAll=1",
+    "GET /api/sanita/jobs?limit=1",
+    "GET /api/sanita/jobs/5ddea8f4-2647-4827-9a62-88177e7e9089",
+    "GET /api/sanita/jobs/88854d1b-f589-42f9-8114-9eb915020e0d",
+    "GET /api/sanita?includePending=1&includeAll=1"
+  ],
+  "legacyRouteHits": 0,
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pass": true,
+  "hetznerPre": {
+    "releaseSha": "3f5873532119a81b7477e3ec458e414e242f41e6",
+    "auditExists": false,
+    "audit": null,
+    "lockExists": false,
+    "lock": null,
+    "zombieCount": 1
+  },
+  "hetznerPost": {
+    "releaseSha": "3f5873532119a81b7477e3ec458e414e242f41e6",
+    "auditExists": false,
+    "audit": null,
+    "lockExists": false,
+    "lock": null,
+    "zombieCount": 0
+  }
+}

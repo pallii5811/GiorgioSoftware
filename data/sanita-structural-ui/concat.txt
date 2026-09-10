@@ -1,0 +1,15 @@
+file filter-demo-frames/01-tutte.png
+duration 1
+file filter-demo-frames/02-campania.png
+duration 1
+file filter-demo-frames/03-tutte.png
+duration 1
+file filter-demo-frames/04-expired.png
+duration 1
+file filter-demo-frames/05-date-unknown.png
+duration 1
+file filter-demo-frames/06-pub-run.png
+duration 1
+file filter-demo-frames/07-hot-run.png
+duration 1
+file filter-demo-frames/07-hot-run.png

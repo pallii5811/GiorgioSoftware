@@ -1,0 +1,45 @@
+{
+  "base": "http://168.119.253.47:3000",
+  "api": {
+    "terminalCompleted": 23,
+    "targetTotal": 877,
+    "published": 0,
+    "hot": 2,
+    "reviewCurrent": 9,
+    "technicalBlockedFinal": 12,
+    "recordsTouched": 82,
+    "currentlyInProgress": 1,
+    "currentRetryQueue": 7,
+    "terminalIdsHot": 2,
+    "terminalIdsPublished": 0
+  },
+  "sanitaMeta": {
+    "dbTotal": 919,
+    "actionableCount": 11
+  },
+  "ui": {
+    "header": "Verifica polizze sanitarie\n\nIndividua strutture con polizza pubblicata, scaduta o assente.\n\nTrova nuove strutture\nDettagli operativi\n\nArchivio: 0|Verifiche concluse: 0 / 877|Lead certificati disponibili: 0",
+    "panel": "Rivalidazione archivio\n\n— · 0 di 877 concluse · 0%\n\nRivalidazione archivio\n\nPublished certificati: 0·HOT verificati: 0·Da controllare: 0·Problemi tecnici definitivi: 0\n\n0 strutture prese in carico · 0 in elaborazione · 0 in riprova automatica",
+    "runPublishedRows": 0,
+    "runPublishedEmpty": false,
+    "runHotRows": 0,
+    "runHotChip": 0,
+    "regionTutteActive": true
+  },
+  "countsMatch": {
+    "hotChipEqRows": true,
+    "hotChipEqApi": false,
+    "publishedRowsEqApi": true
+  },
+  "consoleErrors": [],
+  "shots": [
+    "data\\sanita-structural-live\\desktop-1440.png",
+    "data\\sanita-structural-live\\desktop-1920.png",
+    "data\\sanita-structural-live\\risultati-certificati-1440.png",
+    "data\\sanita-structural-live\\risultati-certificati-1920.png",
+    "data\\sanita-structural-live\\published-nuovo-run-1440.png",
+    "data\\sanita-structural-live\\published-nuovo-run-1920.png",
+    "data\\sanita-structural-live\\hot-nuovo-run-1440.png",
+    "data\\sanita-structural-live\\hot-nuovo-run-1920.png"
+  ]
+}

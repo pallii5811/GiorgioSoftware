@@ -1,0 +1,165 @@
+{
+  "generatedAt": "2026-07-20T20:41:48.404694+00:00",
+  "checkpoint": {
+    "version": 3,
+    "terminal": 2,
+    "retryQueue": 17,
+    "inProgress": 3,
+    "stats": {
+      "processed": 35,
+      "terminal": 2,
+      "hot": 1,
+      "pub": 0,
+      "review": 0,
+      "retry": 33,
+      "tech": 1,
+      "outOfScope": 0,
+      "errors": 0
+    },
+    "testedCodeSha": "eb2988a335e01c2723167f1ba79fe85da244f981",
+    "updatedAt": "2026-07-20T20:38:19.961Z"
+  },
+  "attemptSampleSize": 17,
+  "categories": {
+    "ocr_crash": {
+      "count": 16,
+      "pct": 94.1,
+      "hosts": [
+        "cliniccenter.eu",
+        "polidiagnosticosantachiara.it",
+        "www.clinicacardiomed.com",
+        "www.domusmedicacaserta.it",
+        "www.fisiomedica-agropoli.it",
+        "www.hermitagecapodimonte.it",
+        "www.istitutoclinicomediterraneo.it",
+        "www.laboratorionuovaalba.it",
+        "www.mariabruna.com",
+        "www.montesano.it",
+        "www.pinetagrande.it",
+        "www.radiosurgerymalzoni.it",
+        "www.studiofisioterapiaequilibrio.it",
+        "www.villaangela.it",
+        "www.villachiarugi.it",
+        "www.villadellemagnolie.it"
+      ],
+      "wallMs_avg": 643093,
+      "attempts_avg": 2.06
+    },
+    "frontier_incomplete": {
+      "count": 1,
+      "pct": 5.9,
+      "hosts": [
+        "cardioprogress.it"
+      ],
+      "wallMs_avg": 23,
+      "attempts_avg": 1.0
+    }
+  },
+  "retryHygiene": {
+    "missing_nextRetryAt": 0,
+    "missing_reason": 0,
+    "due_now": 2,
+    "future": 15,
+    "duplicates": 0,
+    "samples": [
+      {
+        "id": "cmqkld5rx009p108edj6t9krw",
+        "attempts": 2,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T20:37:42.560Z"
+      },
+      {
+        "id": "cmqkld5sa00ad108e4xkgdy4f",
+        "attempts": 2,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T21:07:39.847Z"
+      },
+      {
+        "id": "cmqkn3ghj0002xnfpr553khla",
+        "attempts": 1,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T20:39:00.694Z"
+      },
+      {
+        "id": "cmqkld5t300av108e5rrr47s9",
+        "attempts": 1,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T20:43:51.823Z"
+      },
+      {
+        "id": "cmqkld5t000ao108esg4xv094",
+        "attempts": 2,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T21:15:57.843Z"
+      },
+      {
+        "id": "cmqkld5s3009z108e1yj01zqy",
+        "attempts": 3,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T22:16:27.251Z"
+      },
+      {
+        "id": "cmqkld5s0009u108eghihpoxi",
+        "attempts": 3,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T22:18:23.729Z"
+      },
+      {
+        "id": "cmqkld5sa00af108epednu868",
+        "attempts": 2,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T21:22:59.476Z"
+      },
+      {
+        "id": "cmqkld5s300a0108e8p1p3xxg",
+        "attempts": 3,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T22:24:10.013Z"
+      },
+      {
+        "id": "cmqklex5e00b3108e2zcdos1w",
+        "attempts": 2,
+        "lastReason": "RETRY_PENDING",
+        "lastError": "RETRY_PENDING",
+        "nextRetryAt": "2026-07-20T21:25:32.466Z"
+      }
+    ]
+  },
+  "terminals": [
+    {
+      "id": "cmqkld5s700a8108eti0nofjv",
+      "processingState": "TECHNICAL_BLOCKED",
+      "hasPass2": false,
+      "dualDisagreement": false,
+      "reasonCode": "TECHNICAL_BLOCKED"
+    },
+    {
+      "id": "cmqklex5c00b1108e02wl0eqd",
+      "processingState": "HOT_VERIFIED",
+      "hasPass2": true,
+      "dualDisagreement": false,
+      "reasonCode": "HOT_VERIFIED"
+    }
+  ],
+  "host": {
+    "loadavg": [
+      "0.62",
+      "0.80",
+      "0.81"
+    ],
+    "mem_kb": {
+      "MemTotal:": 7931596,
+      "MemFree:": 1594772,
+      "MemAvailable:": 6149376
+    }
+  }
+}

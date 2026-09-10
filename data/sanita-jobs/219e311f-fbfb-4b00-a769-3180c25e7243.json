@@ -1,0 +1,29 @@
+{
+  "jobId": "219e311f-fbfb-4b00-a769-3180c25e7243",
+  "mode": "single",
+  "status": "running",
+  "targetKey": "single:cmqo1yoic0016aa3vw5yq3h51",
+  "region": "Campania",
+  "city": null,
+  "leadId": "cmqo1yoic0016aa3vw5yq3h51",
+  "createdAt": "2026-07-21T10:35:17.555Z",
+  "updatedAt": "2026-07-21T10:35:23.442Z",
+  "startedAt": "2026-07-21T10:35:22.570Z",
+  "finishedAt": null,
+  "lastHeartbeatAt": "2026-07-21T10:35:23.442Z",
+  "lastUpdateLabel": "Interruzione richiesta",
+  "resumable": true,
+  "cancelRequested": true,
+  "pid": 19556,
+  "progress": {
+    "structuresControlled": 0,
+    "totalStructures": 1,
+    "certifiedResults": 0,
+    "autoVerificationsPending": 0,
+    "manualChecksNeeded": 0,
+    "percent": 0,
+    "currentMessage": "Interruzione richiesta. Il job si fermera' in sicurezza.",
+    "currentStructure": "Centro di Riabilitazione De Nicola S.r.l."
+  },
+  "errorMessage": null
+}

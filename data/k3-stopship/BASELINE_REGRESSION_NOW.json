@@ -1,0 +1,90 @@
+{
+  "ts": "2026-07-23T04:17:41.599718+00:00",
+  "baseline": {
+    "path": "/opt/leadsniper/backups/published-legacy-baseline-20260721T155725Z/published-legacy-baseline.json",
+    "count": 117
+  },
+  "live": {
+    "checked": 117,
+    "missing": [],
+    "missingCount": 0,
+    "states": {
+      "PUB": 106,
+      "PUBLISHED_DATE_UNKNOWN": 6,
+      "PUBLISHED_EXPIRED": 4,
+      "PUBLISHED_CURRENT": 1
+    },
+    "regressions": [],
+    "regressionCount": 0
+  },
+  "shadow_vs_baseline": {
+    "baselineInTerminal": 4,
+    "baselineDemotedOrRetryOrReview": [],
+    "demotedCount": 0,
+    "note": "applyLive=0: shadow demotion must NOT mutate live"
+  },
+  "retry": {
+    "count": 18,
+    "errors": [
+      [
+        "CRAWL_CAP",
+        5
+      ],
+      [
+        "LEAD_WALL_TIMEOUT_1800000ms",
+        3
+      ],
+      [
+        "FRONTIER_INCOMPLETE",
+        3
+      ],
+      [
+        "WORKER_SIGTERM",
+        2
+      ],
+      [
+        "RETRY_PENDING",
+        2
+      ],
+      [
+        "SITEMAP_UNRESOLVED",
+        2
+      ],
+      [
+        "PDF_UNPROCESSED",
+        1
+      ]
+    ],
+    "terminal": 25,
+    "inProgress": [
+      "cmqkld5s0009u108eghihpoxi"
+    ],
+    "updatedAt": "2026-07-23T04:10:48.825Z"
+  },
+  "crawl_cap_samples": [
+    {
+      "id": "cmql4d38x000mc9w72hq8efcr",
+      "company": "Domus Medica Casal di Principe srl Dir Sanitario Dr Fellone Fkt,Osteopatia,Posturologia,Medicina Estetica e Vascolare",
+      "markers": [
+        "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 10 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=10,f=0,pdf=0,ocr=0,n=40] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 02:58] [STATE:RETRY_PENDING]"
+      ],
+      "tail": "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 10 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=10,f=0,pdf=0,ocr=0,n=40] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 02:58] [STATE:RETRY_PENDING]"
+    },
+    {
+      "id": "cmql4d392000pc9w7usrn62m5",
+      "company": "Casa Anziani Cameo ONLUS Aversa Campania- Gruppo Appartamento",
+      "markers": [
+        "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 2 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=2,f=0,pdf=0,ocr=0,n=40] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 02:58] [STATE:RETRY_PENDING]"
+      ],
+      "tail": "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 2 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=2,f=0,pdf=0,ocr=0,n=40] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 02:58] [STATE:RETRY_PENDING]"
+    },
+    {
+      "id": "cmqklex5e00b3108e2zcdos1w",
+      "company": "Istituto Polidiagnostico S.Chiara Della D.R.Ssa Rosetta Di Buono & C.",
+      "markers": [
+        "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 529 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=529,f=0,pdf=0,ocr=0,n=50] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 03:07] [STATE:RETRY_PENDING]"
+      ],
+      "tail": "HOT bloccato (canEmitHot): Crawl incompleto: coda HTML non esaurita; 529 URL rilevanti irrisolti; cap URL raggiunto (≠ crawl completo); cap tempo raggiunto; link rilevanti non tutti processati.. Assenza polizza certificata: sito corretto, Trasparenza visitata, tutti i PDF analizzati. [EV_V:2 VD_V:2 LEGACY:CURRENT] [WATERFALL:20/20:RESOLVED_CANDIDATE] [IDENTITY:OFFICIAL_CONFIRMED] [CRAWL_COMPLETE:false] [FRONTIER:OPEN,p=529,f=0,pdf=0,ocr=0,n=50] [STATE:RETRY_PENDING] [BV:NONE] [VS:REVALIDATION_PENDING] — [FONTI: retry tecnico] [Verifica: 2026-07-23 03:07] [STATE:RETRY_PENDING]"
+    }
+  ]
+}

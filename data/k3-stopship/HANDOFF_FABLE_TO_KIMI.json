@@ -1,0 +1,97 @@
+{
+  "handoffAt": "2026-07-22T17:36:00.000Z",
+  "from": "Cursor/Fable",
+  "to": "Kimi K3",
+  "branch": "k3/stopship-complete-engine-20260722",
+  "commit": "106f4e6",
+  "commitMessage": "feat(ui): pulsanti operativi rivalidazione (avvia/pausa/riprendi/riprova) + runner 877/micro-canary",
+  "localModifiedFiles": [
+    "src/app/api/sanita/route.ts",
+    "src/components/sanita-leads.tsx",
+    "src/lib/sanita/audit-queue-badge.ts",
+    "src/lib/sanita/job-watchdog.ts",
+    "src/lib/sanita/published-subtype.ts",
+    "src/lib/sanita/verdict.ts"
+  ],
+  "untrackedFiles": [
+    "RELEASE_SHA",
+    "UI_PRESENTATION_STAMP",
+    "backups/",
+    "data/evidence-archive/",
+    "data/sanita-jobs/",
+    "scripts/snapshot-published-legacy-baseline.mjs",
+    "shadow/",
+    "src/app/api/sanita/archive-revalidation/control/",
+    "tmp-query-leads.cjs"
+  ],
+  "processes": {
+    "revalidate": "k3-rc08-retest.mjs PID 3750564 + v3 child PID 3750595 + worker PID 3750637",
+    "ui": "pm2 leadsniper-ui online"
+  },
+  "checkpoint": {
+    "path": "/opt/leadsniper-revalidate/data/revalidation/checkpoint.json",
+    "terminal": 13,
+    "retry": 19,
+    "inProgress": 0,
+    "version": 3,
+    "updatedAt": "2026-07-22T10:12:22.481Z"
+  },
+  "rc08": {
+    "retestResults": "MICRO_CANARY_RC08_RETEST.json",
+    "verdict": "NON PASS",
+    "completedCommercial": 0,
+    "falseHot": 0,
+    "falsePub": 0,
+    "unjustifiedReview": 3,
+    "ocrRendererMissing": 0,
+    "leads": [
+      {
+        "leadId": "cmqkld5rk009b108ekvol7g87",
+        "company": "Casa Di Cura Montevergine",
+        "processingState": "REVIEW_HUMAN",
+        "reasonCode": "REVIEW_HUMAN",
+        "expectedEvidence": "PDF first-party OBBLIGO-DI-ASSICURAZIONE.pdf con polizza Generali 450289527 validità 20/04/2025-20/04/2026",
+        "evidenceAcquired": "PDF letto, testo polizza presente, identity OFFICIAL_CONFIRMED",
+        "failedGate": "PUBLISHED gate: attribuzione entità mancante",
+        "rootCause": "Patch RC-08 firstPartyPolicyDoc presente in Git ma NON deployata sul motore revalidate in /opt/leadsniper-revalidate/app/src/lib/sanita/entity-fingerprint.ts",
+        "patchRequired": "Deploy di entity-fingerprint.ts e can-emit-published.ts sul motore, rebuild, retest"
+      },
+      {
+        "leadId": "cmql4qrif000yc9w74e0tmpqt",
+        "company": "Centro Medico Residenza Sanitaria Assistenziale Villa Felice S.R.L.",
+        "processingState": "REVIEW_HUMAN",
+        "reasonCode": "REVIEW_HUMAN",
+        "expectedEvidence": "PDF first-party Parm-CentroMedicoVillaFelice-2026-.pdf",
+        "evidenceAcquired": "PDF letto, scadenza riconosciuta, identity OFFICIAL_CONFIRMED",
+        "failedGate": "PUBLISHED gate: attribuzione entità mancante",
+        "rootCause": "Patch RC-08 firstPartyPolicyDoc non deployata sul motore",
+        "patchRequired": "Deploy entity-fingerprint.ts + can-emit-published.ts, rebuild, retest"
+      },
+      {
+        "leadId": "cmql4d399000uc9w7yzw2dgac",
+        "company": "Casa di Cura 'Andrea Grimaldi'",
+        "processingState": "REVIEW_HUMAN",
+        "reasonCode": "IDENTITY_MISMATCH",
+        "expectedEvidence": "PDF first-party all-ms-6-parm-x-anno-2025-clinica.pdf",
+        "evidenceAcquired": "PDF letto ma sito indica Firenze invece di Scala (lead)",
+        "failedGate": "Contaminazione critica identità (città mismatch)",
+        "rootCause": "Mismatch città sito vs lead: verificare se URL corretto o lead omonimo",
+        "patchRequired": "Audit manuale: se URL errato, correggere lead; se struttura Firenze, REVIEW_HUMAN è legittimo"
+      }
+    ]
+  },
+  "runtime": {
+    "uiDeploy": "http://168.119.253.47:3000/sanita",
+    "uiCommit": "106f4e6",
+    "revalidateEngine": "/opt/leadsniper-revalidate/app",
+    "revalidateEngineSha": "to verify after deploy",
+    "pdftoppmPath": "/usr/bin/pdftoppm",
+    "applyLive": 0,
+    "discovery": "off"
+  },
+  "blockerCodes": {
+    "cmqkld5rk009b108ekvol7g87": "RC-08_PATCH_NOT_DEPLOYED",
+    "cmql4qrif000yc9w74e0tmpqt": "RC-08_PATCH_NOT_DEPLOYED",
+    "cmql4d399000uc9w7yzw2dgac": "IDENTITY_CITY_MISMATCH_FIRENZE_VS_SCALA"
+  }
+}
