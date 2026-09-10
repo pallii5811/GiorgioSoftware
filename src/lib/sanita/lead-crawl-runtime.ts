@@ -3,7 +3,9 @@
  * crawlSite (monolithic) must NOT be used on this path.
  */
 import { parseEvidenceSections } from "@/lib/sanita/audit";
+import { dirname, resolve } from "node:path";
 import type { CrawlResult } from "@/lib/sanita/crawler";
+import { countPendingPotentiallyNewerPolicyDocuments } from "@/lib/sanita/policy-version-selection";
 import { deriveCrawlComplete, type CrawlCompleteness } from "@/lib/evidence/contract";
 import {
   openFrontierStore,
@@ -14,12 +16,14 @@ import {
   defaultFrontierDbPath,
   getCrawlRun,
   aggregatePersistedEvidence,
+  finalizeExhaustedCrawlRunAfterIdentity,
 } from "@/lib/sanita/frontier-store";
 import {
   runCrawlUntilSettled,
   seedCrawlFrontier,
   type CrawlSliceResult,
 } from "@/lib/sanita/crawl-slice-runner";
+import type { CrawlBudgetConfig } from "@/lib/sanita/crawl-budget";
 import { discoverAndProcessSitemaps } from "@/lib/sanita/sitemap-pipeline";
 import { analyzePolicy } from "@/lib/sanita/detector";
 import type { PlaywrightMode } from "@/lib/sanita/playwright-adaptive";
@@ -31,6 +35,33 @@ export function resolveProductFrontierPath(): string {
     process.env.SANITA_RUN_ID ||
     (process.env.SHADOW_MODE === "true" || process.env.SHADOW_MODE === "1" ? "shadow" : "product");
   return defaultFrontierDbPath(runId);
+}
+
+function registrableDomain(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    const parts = host.split(".").filter(Boolean);
+    if (parts.length < 2) return host || null;
+    return parts.slice(-2).join(".");
+  } catch {
+    return null;
+  }
+}
+
+function hostScopedRunId(runId: string, website: string): string {
+  const host = registrableDomain(website) ?? new URL(website).hostname.toLowerCase();
+  return `${runId}-site-${host.replace(/[^a-z0-9.-]/gi, "_")}`;
+}
+
+function crawlRunContainsCompletedForeignSite(crawlRunId: string, website: string): boolean {
+  const expected = registrableDomain(website);
+  if (!expected) return false;
+  return listNodes(crawlRunId).some(
+    (node) =>
+      node.state === "COMPLETED" &&
+      (node.discoverySource === "seed" || node.discoverySource === "seed_guess") &&
+      registrableDomain(node.canonicalUrl) !== expected
+  );
 }
 
 function historicalDocUrls(evidence: string | null | undefined): string[] {
@@ -51,6 +82,9 @@ function aggregateCrawlResult(
   const policyText = persisted.policyText || final.policyText || "";
   const policyUrl = persisted.policyUrl || final.policyUrl;
   const policyFoundPersisted = persisted.policyFound || final.policyFound;
+  const pendingNewerPolicyDocuments = policyFoundPersisted
+    ? countPendingPotentiallyNewerPolicyDocuments(nodes, policyUrl)
+    : 0;
   const foundRelevant = completed.some((u) =>
     /trasparen|polizz|assicur|amministraz|gelli|rischio|document/i.test(u)
   );
@@ -87,9 +121,14 @@ function aggregateCrawlResult(
     policyExhaustive: pdfsQueued === 0 || pdfsRead >= pdfsQueued,
     policyPdfsQueued: pdfsQueued,
     policyPdfsRead: pdfsRead,
-    needsOcrReview: Boolean(final.ocrUsed && !policyFoundPersisted),
+    needsOcrReview:
+      completeness.criticalOcrDoubts > 0 ||
+      completeness.unreadableRelevantDocuments > 0,
     policyPdfAnalysis: policyFoundPersisted ? analysis : null,
-    policyPdfUrl: policyUrl,
+    policyPdfUrl:
+      policyUrl && /\.pdf(?:$|[?#])/i.test(policyUrl) ? policyUrl : null,
+    policySourceUrl: policyUrl,
+    pendingNewerPolicyDocuments,
     emails: [],
     pec: null,
     phones: [],
@@ -125,22 +164,45 @@ export async function crawlLeadViaSlices(opts: {
   scopeVerified?: boolean;
   /** When true, never reuse the active FRONTIER_DB_PATH (alt-TLD / side crawls). */
   isolateFrontier?: boolean;
+  /** Optional bounded budget for supplemental crawls such as alternate TLD checks. */
+  budget?: Partial<CrawlBudgetConfig>;
 }): Promise<LeadCrawlRuntimeResult> {
-  const runId = opts.runId || process.env.SHADOW_RUN_ID || `analyze-${opts.leadId}`;
+  let runId = opts.runId || process.env.SHADOW_RUN_ID || `analyze-${opts.leadId}`;
   const prevFrontier = process.env.FRONTIER_DB_PATH;
+  const isTerritorySideCrawl =
+    Boolean(process.env.NATIONAL_DISCOVERY_JOB_ID) &&
+    Boolean(prevFrontier?.trim()) &&
+    (opts.isolateFrontier || (opts.runId && opts.runId !== process.env.SHADOW_RUN_ID));
   const frontierPath =
     opts.isolateFrontier || (opts.runId && opts.runId !== process.env.SHADOW_RUN_ID)
-      ? defaultFrontierDbPath(runId)
+      ? isTerritorySideCrawl
+        ? resolve(
+            dirname(prevFrontier!),
+            `${process.env.NATIONAL_DISCOVERY_JOB_ID!.replace(/[^a-zA-Z0-9._-]/g, "_")}-${runId.replace(/[^a-zA-Z0-9._-]/g, "_")}.sqlite`
+          )
+        : defaultFrontierDbPath(runId)
       : resolveProductFrontierPath();
   openFrontierStore(frontierPath);
   process.env.FRONTIER_DB_PATH = frontierPath;
 
   try {
-  const { crawlRunId } = createCrawlRun({
+  let { crawlRunId } = createCrawlRun({
     leadId: opts.leadId,
     runId,
     workerId: "scan-engine-slices",
   });
+
+  // Se Maps/ricerca ha corretto il sito ufficiale, non aggregare mai pagine già
+  // completate sul vecchio dominio omonimo. Mantiene la vecchia frontiera per
+  // audit e apre una frontiera separata, persistente, per il nuovo sito.
+  if (crawlRunContainsCompletedForeignSite(crawlRunId, opts.website)) {
+    runId = hostScopedRunId(runId, opts.website);
+    ({ crawlRunId } = createCrawlRun({
+      leadId: opts.leadId,
+      runId,
+      workerId: "scan-engine-slices",
+    }));
+  }
 
   if (!getCrawlRun(crawlRunId)) {
     throw new Error("CrawlRun missing before fetch");
@@ -161,7 +223,12 @@ export async function crawlLeadViaSlices(opts: {
     seedExtraUrls: historicalDocUrls(opts.evidence),
     discoverLinks: opts.discoverLinks ?? true,
     enablePlaywright: pwMode,
-    maxSlices: opts.maxSlices ?? 24,
+    budget: opts.budget,
+    maxSlices:
+      opts.maxSlices ??
+      (process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1"
+        ? Math.max(1, Number(process.env.CRAWL_MAX_SLICES_PER_LEAD || 5))
+        : 24),
   });
 
   if (opts.identityVerified != null || opts.scopeVerified != null) {
@@ -201,7 +268,7 @@ export function applyIdentityToCrawlRun(
   flags: { identityVerified: boolean; scopeVerified: boolean }
 ): CrawlCompleteness {
   setCrawlRunFlags(crawlRunId, flags);
-  return deriveCrawlCompleteness(crawlRunId);
+  return finalizeExhaustedCrawlRunAfterIdentity(crawlRunId);
 }
 
 export function emptyCompleteness(): CrawlCompleteness {

@@ -16,7 +16,28 @@ const CSV_URL =
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
-const REGION_NAME: Record<Region, string> = { Veneto: "VENETO", Campania: "CAMPANIA" };
+const REGION_NAME: Record<Region, string> = {
+  Abruzzo: "ABRUZZO",
+  Basilicata: "BASILICATA",
+  Calabria: "CALABRIA",
+  Campania: "CAMPANIA",
+  "Emilia-Romagna": "EMILIA ROMAGNA",
+  "Friuli-Venezia Giulia": "FRIULI VENEZIA GIULIA",
+  Lazio: "LAZIO",
+  Liguria: "LIGURIA",
+  Lombardia: "LOMBARDIA",
+  Marche: "MARCHE",
+  Molise: "MOLISE",
+  Piemonte: "PIEMONTE",
+  Puglia: "PUGLIA",
+  Sardegna: "SARDEGNA",
+  Sicilia: "SICILIA",
+  Toscana: "TOSCANA",
+  "Trentino-Alto Adige": "TRENTINO ALTO ADIGE",
+  Umbria: "UMBRIA",
+  "Valle d'Aosta": "VALLE D'AOSTA",
+  Veneto: "VENETO",
+};
 
 export interface SaluteFacility {
   code: string;

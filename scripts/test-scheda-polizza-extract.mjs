@@ -41,11 +41,36 @@ function checkFixture(label, text) {
 checkFixture("table-anon", SCHEDA_POLIZZA_FIXTURE_ANON);
 checkFixture("scade24-anon", SCHEDA_POLIZZA_FIXTURE_SCADE24);
 
+const saraDuration = `
+  Sara Assicurazioni Spa Responsabilita Civile Rischi Diversi RCT RCO
+  Contraente SANTA CHIARA MARTIGNANO SRL
+  Durata e dati assicurativi
+  Decorrenza dalle ore 24:00 del 15/03/2026 alle ore 24:00 del 16/07/2027
+`;
+const sara = analyzePolicy(saraDuration);
+assert.equal(ymd(extractSchedaPolizzaFields(saraDuration).decorrenza), "2026-03-15");
+assert.equal(ymd(extractSchedaPolizzaFields(saraDuration).expiry), "2027-07-16");
+assert.equal(ymd(sara.expiry), "2027-07-16");
+assert.equal(sara.company, "Sara Assicurazioni");
+
+const italianaTable = `
+  TAL IAN A COMPAGNIA ITALIANA DI PREVIDENZA, ASSICURAZIONI E RIASSICURAZIONI S.p.A.
+  RESPONSABILITA CIVILE RCT RCO CONTRAENTE CASA DI CURA VILLA VERDE
+  NUMERO DI POLIZZA 2024/07/6328654
+  DECORRENZA CONTRATTO SCADENZA CONTRATTO DATA PRIMA SCADENZA
+  g 31 /m 12 |a 2024 |g 31 /m 12 |a 2025 g 31 /m 12 |a 2025
+  N. POLIZZA DELEGATARIA
+`;
+const italiana = analyzePolicy(italianaTable);
+assert.equal(ymd(italiana.expiry), "2025-12-31");
+assert.equal(italiana.policyNumber, "2024/07/6328654");
+assert.equal(italiana.company, "Italiana Assicurazioni");
+
 console.log(
   JSON.stringify({
     suite: "scheda-polizza-extract",
     exitCode: 0,
-    pass: 2,
+    pass: 4,
     gate: {
       expiry: "2025-12-31",
       number: "RCI00010002744",

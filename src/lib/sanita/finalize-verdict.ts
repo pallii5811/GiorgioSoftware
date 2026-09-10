@@ -8,6 +8,7 @@ import {
   MIN_PAGES_FOR_HOT,
 } from "@/lib/sanita/can-emit-hot";
 import type { IdentityStatus } from "@/lib/sanita/identity-evidence";
+import type { CrawlFrontierLedger } from "@/lib/sanita/crawl-frontier-ledger";
 import type { Verdict } from "@/lib/sanita/verdict";
 
 export { MIN_PAGES_FOR_HOT };
@@ -24,6 +25,10 @@ export type FinalizeVerdictInput = {
   policyExhaustive?: boolean;
   needsOcrReview?: boolean;
   crawlCompleteness?: CrawlCompleteness | null;
+  /** Persisted frontier run used to prove exhaustive site coverage in production. */
+  crawlRunId?: string | null;
+  requirePersistedCompleteness?: boolean;
+  frontier?: CrawlFrontierLedger | null;
   identityStatus?: IdentityStatus | "UNKNOWN" | null;
   category?: string | null;
 };
@@ -59,6 +64,9 @@ export function finalizeVerdict(input: FinalizeVerdictInput): {
     policyExhaustive: input.policyExhaustive === true,
     needsOcrReview: Boolean(input.needsOcrReview),
     crawlCompleteness: input.crawlCompleteness ?? null,
+    crawlRunId: input.crawlRunId ?? null,
+    requirePersistedCompleteness: input.requirePersistedCompleteness,
+    frontier: input.frontier,
     identityStatus: input.identityStatus ?? "UNKNOWN",
     category: input.category,
   };

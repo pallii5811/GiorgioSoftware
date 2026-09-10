@@ -38,6 +38,10 @@ export type ScanStreamInput = {
   region: Region;
   forceDiscovery?: boolean;
   continueAnalysis?: boolean;
+  /** Discovery già eseguita dal runner territoriale: analizza soltanto la coda del comune. */
+  skipDiscovery?: boolean;
+  /** Nei round di continuazione non ripetere il dedupe dell'intera regione. */
+  skipDedupe?: boolean;
   /**
    * Demo cliente: azzera analisi nel DB (mantiene le schede struttura), riscopre Maps,
    * rianalizza tutto — la UI riceve un lead SSE alla volta.
@@ -108,6 +112,8 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
     region,
     forceDiscovery = false,
     continueAnalysis = false,
+    skipDiscovery = false,
+    skipDedupe = false,
     liveRescan = false,
     freshScan = false,
     fixMissingWebsites = false,
@@ -124,7 +130,7 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
 
   try {
   // Dedup solo all'avvio (non «Continua»): evita che 15→12 durante scansione live.
-  if (!continueAnalysis && !liveRescan) {
+  if (!continueAnalysis && !liveRescan && !skipDedupe) {
     const deduped = await dedupeRegionByWebsite(region);
     if (deduped > 0) {
       emit("progress", {
@@ -178,6 +184,7 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
   });
   // Continua Campania: deve ancora scoprire comuni Maps se l'offset non è completo.
   const runDiscovery =
+    !skipDiscovery &&
     needMoreMapsCities &&
     (freshScan || forceDiscovery || continueAnalysis || existingCount === 0);
 
@@ -347,7 +354,7 @@ export async function runStreamingScan(input: ScanStreamInput, emit: ScanStreamE
       take: SCAN_STREAM_CONCURRENCY,
     });
     if (batch.length === 0) {
-      if (mapsDiscoveryComplete) break;
+      if (mapsDiscoveryComplete || skipDiscovery) break;
       continue;
     }
 

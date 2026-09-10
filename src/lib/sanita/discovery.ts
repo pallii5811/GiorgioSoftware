@@ -1,7 +1,12 @@
 import { externalFetch } from "@/lib/http";
 import { normalizeOfficialWebsite } from "@/lib/sanita/website";
+import {
+  REGION_BBOX,
+  REGION_ISO,
+  type ItalianRegion,
+} from "@/lib/sanita/italy-regions";
 
-export type Region = "Veneto" | "Campania";
+export type Region = ItalianRegion;
 
 export interface Facility {
   osmId: string;
@@ -14,12 +19,6 @@ export interface Facility {
   lat: number | null;
   lon: number | null;
 }
-
-// Codici ISO 3166-2 delle regioni italiane
-const REGION_ISO: Record<Region, string> = {
-  Veneto: "IT-34",
-  Campania: "IT-72",
-};
 
 // Mirror Overpass (il principale a volte risponde 406; usiamo fallback)
 const OVERPASS_ENDPOINTS = [
@@ -161,11 +160,6 @@ interface OverpassResponse {
 }
 
 // Bounding box [south, west, north, east] — fallback se la query per area ISO fallisce
-const REGION_BBOX: Record<Region, [number, number, number, number]> = {
-  Veneto: [44.75, 10.65, 46.75, 13.15],
-  Campania: [39.85, 13.75, 41.55, 15.85],
-};
-
 function classify(tags: Record<string, string>): string {
   if (tags["social_facility"] === "nursing_home" || tags["amenity"] === "nursing_home")
     return "RSA / Casa di riposo";

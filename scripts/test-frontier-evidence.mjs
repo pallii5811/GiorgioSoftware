@@ -144,6 +144,152 @@ function freshRun() {
   ok(/trasparenza/i.test(agg.pagesText), "aggregate_reads_persisted_evidence");
 }
 
+// stale detector evidence must never contaminate the current node content
+{
+  const { crawlRunId } = freshRun();
+  const node = upsertFrontierNode({
+    crawlRunId,
+    canonicalUrl: "https://clinic.example/contatti",
+    discoverySource: "html-link",
+    resourceType: "html",
+    relevance: "low",
+  });
+  const staleHash = createHash("sha256").update("stale AXA").digest("hex");
+  persistNodeEvidence({
+    crawlRunId,
+    nodeId: node.id,
+    canonicalUrl: "https://clinic.example/contatti",
+    contentHash: staleHash,
+    resourceType: "html",
+    normalizedText: "AXA 01/01/2022 - 05/03/2023",
+    policyText: "AXA 01/01/2022 - 05/03/2023",
+    policyFound: true,
+    policySignalsJson: { company: "AXA", expiry: "2023-03-05T00:00:00.000Z" },
+  });
+  const currentHash = createHash("sha256").update("current contact").digest("hex");
+  persistNodeEvidence({
+    crawlRunId,
+    nodeId: node.id,
+    canonicalUrl: "https://clinic.example/contatti",
+    contentHash: currentHash,
+    resourceType: "html",
+    normalizedText: "Contatti e orari della clinica",
+    policyFound: false,
+    policySignalsJson: { candidateDetectorVersion: "policy-candidate-v14" },
+  });
+  const agg = aggregatePersistedEvidence(crawlRunId);
+  ok(
+    !agg.policyFound && !/AXA/.test(agg.pagesText),
+    "aggregate_ignores_stale_policy_evidence_for_previous_node_hash"
+  );
+}
+
+// strongest concrete policy source wins over a weaker generic positive
+{
+  const { crawlRunId } = freshRun();
+  const contact = upsertFrontierNode({
+    crawlRunId,
+    canonicalUrl: "https://clinic.example/contatti",
+    discoverySource: "html-link",
+    resourceType: "html",
+    relevance: "low",
+  });
+  persistNodeEvidence({
+    crawlRunId,
+    nodeId: contact.id,
+    canonicalUrl: "https://clinic.example/contatti",
+    contentHash: createHash("sha256").update("weak").digest("hex"),
+    resourceType: "html",
+    normalizedText: "Polizza assicurativa con AXA",
+    policyText: "Polizza assicurativa con AXA",
+    policyFound: true,
+    policySignalsJson: { company: "AXA" },
+  });
+  const transparency = upsertFrontierNode({
+    crawlRunId,
+    canonicalUrl: "https://clinic.example/amministrazione-trasparente",
+    discoverySource: "html-link",
+    resourceType: "html",
+    relevance: "critical",
+  });
+  const exact =
+    "POLIZZA ASSICURATIVA VILLA CINZIA AMTRUST RCH00020000239 SCAD. 04/11/2026";
+  persistNodeEvidence({
+    crawlRunId,
+    nodeId: transparency.id,
+    canonicalUrl: "https://clinic.example/amministrazione-trasparente",
+    contentHash: createHash("sha256").update(exact).digest("hex"),
+    resourceType: "html",
+    normalizedText: exact,
+    policyText: exact,
+    policyFound: true,
+    policySignalsJson: {
+      company: "AmTrust",
+      policyNumber: "RCH00020000239",
+      expiry: "2026-11-04T00:00:00.000Z",
+    },
+  });
+  const agg = aggregatePersistedEvidence(crawlRunId);
+  ok(
+    agg.policyFound &&
+      /amministrazione-trasparente/.test(agg.policyUrl || "") &&
+      /RCH00020000239/.test(agg.policyText),
+    "aggregate_selects_strongest_concrete_policy_source"
+  );
+}
+
+// newest versioned policy wins even when an older policy was persisted first
+{
+  const { crawlRunId } = freshRun();
+  for (const policy of [
+    {
+      year: 2023,
+      company: "Reale Mutua",
+      number: "OLD-2023",
+      expiry: "2023-12-31T00:00:00.000Z",
+    },
+    {
+      year: 2025,
+      company: "Italian Assicurazioni",
+      number: "2024/07/6328654",
+      expiry: "2025-12-31T00:00:00.000Z",
+    },
+  ]) {
+    const url = `https://clinic.example/Polizza-RCT-RCO-${policy.year}.pdf`;
+    const text = `Polizza RCT RCO ${policy.company} ${policy.number} scadenza ${policy.expiry}`;
+    const node = upsertFrontierNode({
+      crawlRunId,
+      canonicalUrl: url,
+      discoverySource: "html-link",
+      resourceType: "pdf",
+      relevance: "critical",
+    });
+    persistNodeEvidence({
+      crawlRunId,
+      nodeId: node.id,
+      canonicalUrl: url,
+      contentHash: createHash("sha256").update(text).digest("hex"),
+      resourceType: "pdf",
+      normalizedText: text,
+      policyText: text,
+      policyFound: true,
+      policySignalsJson: {
+        company: policy.company,
+        policyNumber: policy.number,
+        expiry: policy.expiry,
+      },
+    });
+  }
+  const agg = aggregatePersistedEvidence(crawlRunId);
+  ok(
+    agg.policyFound &&
+      /2025\.pdf/.test(agg.policyUrl || "") &&
+      /Italian Assicurazioni/.test(agg.policyText) &&
+      /6328654/.test(agg.policyText),
+    "aggregate_selects_newest_versioned_policy"
+  );
+}
+
 // duplicate_content_hash_is_not_duplicated
 {
   const { crawlRunId } = freshRun();

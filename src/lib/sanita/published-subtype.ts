@@ -71,6 +71,24 @@ export function stampPublishedSubtype(body: string, subtype: PublishedSubtype): 
   return `${formatPublishedSubtypeToken(subtype)} ${cleaned}`.trim();
 }
 
+/**
+ * Le date di scadenza estratte dai documenti sono normalmente date civili
+ * (senza orario): la copertura resta quindi valida fino alla fine del giorno.
+ * Una data non interpretabile non viene mai trasformata in "scaduta".
+ */
+export function policyExpiryHasPassed(
+  value: Date | string | null | undefined,
+  now: Date | string = new Date()
+): boolean {
+  if (!value) return false;
+  const expiry = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  const reference = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+  if (Number.isNaN(expiry.getTime()) || Number.isNaN(reference.getTime())) return false;
+
+  expiry.setUTCHours(23, 59, 59, 999);
+  return expiry.getTime() < reference.getTime();
+}
+
 export function derivePublishedSubtype(input: {
   policyObsolete?: boolean | null;
   policyExpiry?: Date | string | null;
@@ -81,7 +99,14 @@ export function derivePublishedSubtype(input: {
   selfInsurance?: boolean | null;
   staleDocument?: boolean | null;
   evidenceBody?: string | null;
+  now?: Date | string;
 }): PublishedSubtype {
+  const hasConcretePolicy = Boolean(
+    input.policyCompany?.trim() ||
+      input.policyNumber?.trim() ||
+      input.policyMassimale?.trim() ||
+      input.policyExpiry
+  );
   // Autoassicurazione esplicita ≠ misura analoga generica (Malzoni PARS 2026).
   if (input.selfInsurance) return "SELF_INSURANCE_VERIFIED";
   if (
@@ -92,16 +117,27 @@ export function derivePublishedSubtype(input: {
   ) {
     return "SELF_INSURANCE_VERIFIED";
   }
-  if (input.analogousMeasure) return "PUBLISHED_ANALOGOUS_MEASURE";
+  if (input.analogousMeasure && !hasConcretePolicy) {
+    return "PUBLISHED_ANALOGOUS_MEASURE";
+  }
   if (input.staleDocument) return "PUBLISHED_STALE_DOCUMENT";
-  if (input.policyObsolete) return "PUBLISHED_EXPIRED";
+  if (
+    input.policyObsolete ||
+    policyExpiryHasPassed(input.policyExpiry, input.now ?? new Date())
+  ) {
+    return "PUBLISHED_EXPIRED";
+  }
   if (
     input.evidenceBody &&
     /scaduta\s+da\s+\d+|policyObsolete|non aggiornata/i.test(input.evidenceBody)
   ) {
     return "PUBLISHED_EXPIRED";
   }
-  if (input.evidenceBody && /misura\s+analoga/i.test(input.evidenceBody)) {
+  if (
+    !hasConcretePolicy &&
+    input.evidenceBody &&
+    /misura\s+analoga/i.test(input.evidenceBody)
+  ) {
     return "PUBLISHED_ANALOGOUS_MEASURE";
   }
   const hasCompany = Boolean(input.policyCompany?.trim());

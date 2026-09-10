@@ -29,7 +29,10 @@ import {
   MIN_PAGES_FOR_HOT,
 } from "@/lib/sanita/can-emit-hot";
 import type { IdentityStatus } from "@/lib/sanita/identity-evidence";
-import { deriveCrawlCompleteness } from "@/lib/sanita/frontier-store";
+import {
+  deriveCrawlCompleteness,
+  deriveExhaustiveSiteCoverage,
+} from "@/lib/sanita/frontier-store";
 
 export const IDENTITY_CONFIDENCE_GATE = 0.8;
 
@@ -228,8 +231,17 @@ export function evaluateLeadCompletion(input: LeadCompletionInput): LeadCompleti
   if (input.websiteReachable == null && input.website?.trim()) {
     hotReasons.push("raggiungibilità sito sconosciuta");
   }
-  if (input.pagesVisited < MIN_PAGES_FOR_HOT) {
+  const strictCoverage =
+    process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1" && input.crawlRunId
+      ? deriveExhaustiveSiteCoverage(input.crawlRunId)
+      : null;
+  if (!strictCoverage?.ok && input.pagesVisited < MIN_PAGES_FOR_HOT) {
     hotReasons.push(`pagine insufficienti (${input.pagesVisited}/${MIN_PAGES_FOR_HOT})`);
+  }
+  if (process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1" && !strictCoverage?.ok) {
+    hotReasons.push(
+      `copertura sito non certificata (${strictCoverage?.reasons.join(",") || "run assente"})`
+    );
   }
   if (input.needsOcrReview) hotReasons.push("OCR critico incerto / PDF illeggibile");
   if (input.policyExhaustive !== true) hotReasons.push("crawl non esaustivo");

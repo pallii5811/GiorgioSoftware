@@ -1,7 +1,7 @@
 /** Validazione e normalizzazione URL sito istituzionale. */
 
 const BLOCKED_HOST =
-  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\.|poliambulatorio\.com|clinicamedicalcenter\.com|^felice\.com$|^delta\.it$|^salus\.com$|^salus\.it$|^quiete\.it$|^siti\.it$|^food\.it$|navigarefacile\.it|^telefono\.it$|^telefono\.com$|^sale\.it$|^oasi\.com$|^srls\.com$|^suap\.com$|^roccarainola\.com$|^clinicamedica\.it$|^morcone\.com$|^gallomatese\.com$|^villafiori\.it$|\.comune\.|aslnapoli|aslnapo|grupposandonato|retesolidale|servizionline\.i|fedcp\.org|studiomedicoprivato/i;
+  /facebook|instagram|linkedin|youtube|twitter|google\.|support\.google|wikipedia|paginegialle|paginesi\.it|pagineinformazioni|tripadvisor|dati\.salute|tavily|booking\.|trip\.com|carabinieri\.it|governo\.it$|doctolib|miodottore|dottori\.it|idoctors|paginemediche|paginebianche|prontopro|trustpilot|cylex|misterimprese|virgilio\.it|yelp\.|poliambulatorio\.com|clinicamedicalcenter\.com|^nike\.com$|^felice\.com$|^delta\.it$|^salus\.com$|^salus\.it$|^quiete\.it$|^siti\.it$|^food\.it$|navigarefacile\.it|^telefono\.it$|^telefono\.com$|^sale\.it$|^oasi\.com$|^srls\.com$|^suap\.com$|^roccarainola\.com$|^clinicamedica\.it$|^morcone\.com$|^gallomatese\.com$|^villafiori\.it$|\.comune\.|aslnapoli|aslnapo|grupposandonato|retesolidale|servizionline\.i|fedcp\.org|studiomedicoprivato/i;
 
 /** Host di parking / marketplace domini — non sono siti istituzionali. */
 const PARKED_HOST =

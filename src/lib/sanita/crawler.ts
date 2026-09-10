@@ -42,6 +42,10 @@ export interface CrawlResult {
   policyPdfAnalysis: PolicyAnalysis | null;
   /** URL del PDF che ha certificato la polizza (se trovata in PDF). */
   policyPdfUrl: string | null;
+  /** URL esatto della risorsa che ha certificato la polizza, HTML o PDF. */
+  policySourceUrl?: string | null;
+  /** Versioni di polizza potenzialmente piu recenti ancora da leggere. */
+  pendingNewerPolicyDocuments?: number;
   emails: string[];
   pec: string | null;
   phones: string[];

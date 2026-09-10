@@ -28,7 +28,7 @@ process.env.NATIONAL_DISCOVERY_JOB_ID ||= jobId;
 
 const frontierDir =
   process.env.NATIONAL_DISCOVERY_FRONTIER_DIR ||
-  join("/tmp", "leadsniper-national-discovery-frontier");
+  join("/var", "lib", "leadsniper", "frontiers");
 mkdirSync(frontierDir, { recursive: true });
 const territoryFrontierPath = join(frontierDir, `${jobId}.sqlite`);
 process.env.FRONTIER_DB_PATH = territoryFrontierPath;
@@ -127,6 +127,9 @@ function retryPriority(lead) {
   ) {
     return 0;
   }
+  if (/identity:mismatch|probabile sito errato|dominio parcheggiato/.test(evidence)) {
+    return 3;
+  }
   if (
     lead.website &&
     /crawl incompleto|pdf non processat|timeout analisi|ocr|technical/.test(evidence)
@@ -134,11 +137,26 @@ function retryPriority(lead) {
     return 1;
   }
   if (lead.website) return 2;
-  return 3;
+  return 4;
+}
+
+function estimatedFrontierSize(lead) {
+  const match = /\[FRONTIER:[^\]]*\bn=(\d+)/i.exec(
+    String(lead.evidence || "")
+  );
+  const size = Number(match?.[1]);
+  return Number.isFinite(size) && size >= 0 ? size : Number.MAX_SAFE_INTEGER;
 }
 
 function isAutomaticallyRetryable(lead) {
   const state = readProcessingState(lead.evidence);
+  const evidence = String(lead.evidence || "");
+  if (
+    lead.website &&
+    /frontier store refuses live production paths/i.test(evidence)
+  ) {
+    return true;
+  }
   if (
     state === "RETRY_PENDING" ||
     state === "CRAWL_RUNNING" ||
@@ -146,12 +164,37 @@ function isAutomaticallyRetryable(lead) {
   ) {
     return Boolean(lead.website);
   }
-  if (state === "REVIEW_HUMAN") return false;
+  if (state === "REVIEW_HUMAN") {
+    if (!lead.website) {
+      return /sito ufficiale non individuato automaticamente/i.test(evidence);
+    }
+    return (
+      /\[CRAWL_COMPLETE:false\]/i.test(evidence) &&
+      (/\[FRONTIER:OPEN,p=[1-9]\d*/i.test(evidence) ||
+        /database or disk is full|errore crawl|identity:mismatch/i.test(evidence))
+    );
+  }
   return Boolean(
     lead.website &&
-      /crawl incompleto|pdf non processat|timeout analisi|ocr|technical|interrupted/i.test(
-        String(lead.evidence || "")
+      /crawl incompleto|pdf non processat|timeout analisi|ocr|technical|interrupted|database or disk is full/i.test(
+        evidence
       )
+  );
+}
+
+function automaticRetryLimit(lead, configuredMaximum) {
+  if (!lead.website) return Math.min(configuredMaximum, 3);
+  const evidence = String(lead.evidence || "");
+  if (/identity:mismatch|dominio parcheggiato|sito errato/i.test(evidence)) {
+    return Math.min(configuredMaximum, 3);
+  }
+  return configuredMaximum;
+}
+
+function requiresFreshWebsiteResolution(lead) {
+  if (!lead.website) return true;
+  return /identity:mismatch|dominio parcheggiato|sito errato/i.test(
+    String(lead.evidence || "")
   );
 }
 
@@ -179,6 +222,7 @@ function resumableEvidence(evidence) {
 let archiveWasActive = false;
 let lastAutomaticStallRecoveryAt = 0;
 let activeProcessingLeadId = null;
+const runnerStartedAtMs = Date.now();
 
 function readFrontierProgress() {
   if (!existsSync(territoryFrontierPath)) return null;
@@ -194,17 +238,24 @@ function readFrontierProgress() {
                    WHERE n.crawlRunId = r.id
                      AND n.state <> 'QUEUED'
                 ) AS lastNodeProgressAt
-           FROM CrawlRun r`;
+           FROM CrawlRun r
+          WHERE r.heartbeatAt >= ?`;
     const order = `
           ORDER BY CASE WHEN r.state = 'RUNNING' THEN 0 WHEN r.state = 'PAUSED' THEN 1 ELSE 2 END,
                    r.heartbeatAt DESC
           LIMIT 1`;
-    const row = activeProcessingLeadId
-      ? db.prepare(`${select} WHERE r.leadId = ? ${order}`).get(activeProcessingLeadId)
-      : db.prepare(`${select} ${order}`).get();
-    if (!row && activeProcessingLeadId) {
+    // La callback dello stream non garantisce processingId su ogni cambio lead.
+    // Il DB della frontiera e la fonte autorevole: scegli sempre il run RUNNING
+    // con heartbeat piu recente, altrimenti un lead precedente rimasto RUNNING
+    // fa apparire ferma la UI e puo attivare un recupero browser non necessario.
+    // Il file frontier sopravvive ai riavvii intenzionalmente. Non mostrare però
+    // run storici rimasti RUNNING/PAUSED: un dominio poi corretto (es. nike.com)
+    // potrebbe altrimenti contaminare per ore la telemetria del nuovo processo.
+    const currentRunnerCutoff = new Date(runnerStartedAtMs).toISOString();
+    const row = db.prepare(`${select} ${order}`).get(currentRunnerCutoff);
+    if (!row) {
       return {
-        frontierLeadId: activeProcessingLeadId,
+        frontierLeadId: activeProcessingLeadId || "",
         frontierState: "STARTING",
         frontierCheckpoint: "Preparazione scansione sito",
         frontierCompleted: 0,
@@ -215,7 +266,7 @@ function readFrontierProgress() {
         frontierStalled: false,
       };
     }
-    if (!row) return null;
+    if (row.leadId) activeProcessingLeadId = String(row.leadId);
     const heartbeatAt = String(row.heartbeatAt || "");
     // CrawlRun heartbeatAt cambia sui checkpoint reali (fetch, OCR, Playwright);
     // durante OCR/Playwright i nodi possono restare invariati.
@@ -229,6 +280,9 @@ function readFrontierProgress() {
     const stalledForMs = lastProgressAt
       ? Math.max(0, Date.now() - Date.parse(lastProgressAt))
       : 0;
+    const progressBelongsToCurrentRunner = progressTimes.some(
+      (value) => value >= runnerStartedAtMs
+    );
     return {
       frontierLeadId: String(row.leadId || ""),
       frontierState: String(row.state || ""),
@@ -239,7 +293,14 @@ function readFrontierProgress() {
         Number(row.totalPending || 0) + Number(row.totalRetryPending || 0),
       frontierFailed: Number(row.totalFailed || 0),
       frontierLastProgressAt: lastProgressAt || null,
-      frontierStalled: stalledForMs >= 8 * 60_000,
+      // PAUSED è un checkpoint volontario tra slice, non un blocco. Solo un
+      // run realmente RUNNING senza heartbeat deve attivare il watchdog;
+      // altrimenti il recupero chiude OCR/browser mentre il runner sta già
+      // lavorando sul comune successivo.
+      frontierStalled:
+        String(row.state || "") === "RUNNING" &&
+        progressBelongsToCurrentRunner &&
+        stalledForMs >= 8 * 60_000,
     };
   } finally {
     db.close();
@@ -291,6 +352,15 @@ function update(patch) {
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const DISCOVERY_MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.TERRITORY_DISCOVERY_MAX_ATTEMPTS || 3)
+);
+const DISCOVERY_RETRY_DELAY_MS = Math.max(
+  0,
+  Number(process.env.TERRITORY_DISCOVERY_RETRY_DELAY_MS || 2_000)
+);
 
 function archiveEngineActive() {
   if (process.platform === "win32") return false;
@@ -359,6 +429,8 @@ async function run() {
     pid: process.pid,
     status: "queued",
     startedAt: initial.startedAt || new Date().toISOString(),
+    finishedAt: null,
+    errorMessage: null,
   });
 
   await reserveProtectedCapacity();
@@ -407,7 +479,7 @@ async function run() {
       },
     });
 
-    const result = await discoverRegionFromMaps(job.region, {
+    let result = await discoverRegionFromMaps(job.region, {
       deadline: Date.now() + Number(process.env.NATIONAL_DISCOVERY_CITY_MS || 140_000),
       cityOffset: index,
       maxCities: 1,
@@ -415,21 +487,78 @@ async function run() {
       includeMinSalute: index === 0,
       minSaluteMunicipality: job.municipality,
     });
-    candidatesFound += result.mapsDiscovered + result.saluteAdded;
+    let cityCandidatesFound = result.mapsDiscovered + result.saluteAdded;
 
-    if (result.mapsCityOffset <= index) {
+    // Google Maps puo restituire occasionalmente una pagina vuota anche per un
+    // comune importante. Un singolo giro vuoto non deve annullare l'intero job:
+    // ricrea la sessione browser e riprova prima di dichiarare la discovery non
+    // affidabile. Min. Salute viene importato solo al primo giro (upsert idempotente,
+    // ma non deve gonfiare il contatore dei candidati).
+    for (
+      let attempt = 2;
+      result.mapsCityOffset <= index && attempt <= DISCOVERY_MAX_ATTEMPTS;
+      attempt++
+    ) {
       update({
-        status: "incomplete",
-        pid: null,
-        finishedAt: new Date().toISOString(),
-        errorMessage: `Ricerca non completata per ${city}: nessun avanzamento affidabile.`,
+        status: "running",
         progress: {
-          candidatesFound,
           currentMunicipality: city,
-          message: "Ricerca sospesa in sicurezza: nessuna classificazione incerta e stata prodotta.",
+          message: `Fonte di ricerca temporaneamente vuota a ${city}: nuovo tentativo ${attempt}/${DISCOVERY_MAX_ATTEMPTS}.`,
         },
       });
-      return;
+      await closeMapsBrowserPool().catch(() => {});
+      await delay(DISCOVERY_RETRY_DELAY_MS * (attempt - 1));
+      const retryResult = await discoverRegionFromMaps(job.region, {
+        deadline: Date.now() + Number(process.env.NATIONAL_DISCOVERY_CITY_MS || 140_000),
+        cityOffset: index,
+        maxCities: 1,
+        cities: selectedCities,
+        includeMinSalute: false,
+        minSaluteMunicipality: job.municipality,
+      });
+      cityCandidatesFound = Math.max(
+        cityCandidatesFound,
+        retryResult.mapsDiscovered + retryResult.saluteAdded
+      );
+      result = retryResult;
+    }
+    candidatesFound += cityCandidatesFound;
+
+    if (result.mapsCityOffset <= index) {
+      const existingTerritoryTotal = await prisma.lead.count({
+        where: {
+          type: "HEALTHCARE",
+          region: job.region,
+          city,
+        },
+      });
+      if (existingTerritoryTotal > 0) {
+        update({
+          status: "running",
+          progress: {
+            municipalitiesCompleted: index + 1,
+            candidatesFound,
+            structuresFound: existingTerritoryTotal,
+            currentMunicipality: city,
+            message:
+              `Fonte discovery momentaneamente indisponibile: certificazione delle ` +
+              `${existingTerritoryTotal} strutture gia acquisite a ${city}.`,
+          },
+        });
+      } else {
+        update({
+          status: "incomplete",
+          pid: null,
+          finishedAt: new Date().toISOString(),
+          errorMessage: `Ricerca non completata per ${city}: nessun avanzamento affidabile.`,
+          progress: {
+            candidatesFound,
+            currentMunicipality: city,
+            message: "Ricerca sospesa in sicurezza: nessuna classificazione incerta e stata prodotta.",
+          },
+        });
+        return;
+      }
     }
 
     const currentTotal = await prisma.lead.count({
@@ -495,6 +624,27 @@ async function run() {
         });
       }
     );
+
+    // Una regione completa alterna discovery e certificazione comune per
+    // comune. Mantieni i contatori UI allineati ai risultati già persistiti:
+    // attendere la fine di tutti i comuni farebbe apparire falsamente zero.
+    const progressiveLeads = await prisma.lead.findMany({
+      where: {
+        type: "HEALTHCARE",
+        region: job.region,
+        ...(job.municipality ? { city: job.municipality } : {}),
+      },
+      select: { evidence: true, lastScannedAt: true },
+    });
+    update({
+      progress: {
+        structuresScanned: progressiveLeads.filter((lead) => lead.lastScannedAt).length,
+        certifiedResults: progressiveLeads.filter((lead) => {
+          const state = readProcessingState(lead.evidence);
+          return isCertifiedState(state) && state !== "OUT_OF_SCOPE";
+        }).length,
+      },
+    });
   }
 
   const afterTotal = await prisma.lead.count({
@@ -531,6 +681,7 @@ async function run() {
   });
 
   while (true) {
+    let forceFreshResolution = false;
     const current = readJob();
     if (!current || current.cancelRequested) {
       await finishCancelled();
@@ -559,7 +710,7 @@ async function run() {
       (lead) => !lead.lastScannedAt && !neverAttemptedIds.has(lead.id)
     );
 
-    // Un riavvio puÃ² lasciare lastScannedAt nullo su un caso giÃ  avviato.
+    // Un riavvio può lasciare lastScannedAt nullo su un caso già avviato.
     // Lo parcheggiamo prima dello stream, altrimenti verrebbe scambiato per
     // un nuovo lead e sottrarrebbe continuamente spazio ai candidati migliori.
     if (interruptedWithoutTimestamp.length > 0) {
@@ -575,17 +726,20 @@ async function run() {
       );
       const maxAutomaticRetries = Math.max(
         1,
-        Number(process.env.TERRITORY_MAX_AUTOMATIC_RETRIES || 1)
+        Number(process.env.TERRITORY_MAX_AUTOMATIC_RETRIES || 12)
       );
       const retryableUnresolved = completedButUnresolved.filter(
         (lead) =>
           isAutomaticallyRetryable(lead) &&
-          (retryAttempts.get(lead.id) || 0) < maxAutomaticRetries
+          (retryAttempts.get(lead.id) || 0) <
+            automaticRetryLimit(lead, maxAutomaticRetries)
       );
       if (retryableUnresolved.length === 0) {
         structuresScanned = attemptedIds.size;
         update({
-          status: "incomplete",
+          // Tutte le strutture sono state prese in carico e i casi non sicuri
+          // restano esplicitamente non pubblicati: il job e concluso, non annullato.
+          status: "completed",
           pid: null,
           finishedAt: new Date().toISOString(),
           progress: {
@@ -597,7 +751,7 @@ async function run() {
             unresolvedResults: unresolved.length,
             currentMunicipality: null,
             message:
-              `Scansione conclusa: ${certifiedResults} risultati certificati; ` +
+              `Scansione automatica completata: ${certifiedResults} risultati certificati; ` +
               `${unresolved.length} casi non pubblicati perche le fonti non consentono un esito sicuro.`,
           },
         });
@@ -605,15 +759,23 @@ async function run() {
       }
       const retryBatchSize = Math.max(
         1,
-        Number(process.env.TERRITORY_RETRY_BATCH || process.env.SCAN_STREAM_CONCURRENCY || 3)
+        // Un sito enorme non deve trattenere per ore il risultato di un lead
+        // quasi concluso. I primi tentativi discovery restano concorrenti; i
+        // completamenti automatici vengono invece chiusi in ordine di priorita.
+        Number(process.env.TERRITORY_RETRY_BATCH || 1)
       );
       const selectedForRetry = [...retryableUnresolved]
         .sort((a, b) => {
           const attemptsDiff =
             (retryAttempts.get(a.id) || 0) - (retryAttempts.get(b.id) || 0);
-          return attemptsDiff || retryPriority(a) - retryPriority(b);
+          return (
+            attemptsDiff ||
+            retryPriority(a) - retryPriority(b) ||
+            estimatedFrontierSize(a) - estimatedFrontierSize(b)
+          );
         })
         .slice(0, retryBatchSize);
+      forceFreshResolution = selectedForRetry.some(requiresFreshWebsiteResolution);
       for (const lead of selectedForRetry) {
         attemptedIds.add(lead.id);
         retryAttempts.set(lead.id, (retryAttempts.get(lead.id) || 0) + 1);
@@ -630,7 +792,9 @@ async function run() {
     structuresScanned = attemptedIds.size;
     continuationRound++;
     process.env.REVALIDATE_RETRY_STRATEGY =
-      continuationRound % 4 === 0
+      forceFreshResolution
+        ? "fresh"
+        : continuationRound % 4 === 0
         ? "rediscover"
         : continuationRound % 6 === 0
           ? "fresh"

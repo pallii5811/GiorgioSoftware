@@ -1338,9 +1338,14 @@ const exportCsv = () => {
                       : discoveryJob.status === "running"
                         ? "Scansione in corso"
                         : discoveryJob.status === "completed"
-                          ? "Completata"
-                          : discoveryJob.status === "incomplete"
-                            ? "Sospesa in sicurezza"
+                           ? "Completata"
+                           : discoveryJob.status === "incomplete"
+                             ? discoveryJob.progress.municipalitiesCompleted >=
+                                 discoveryJob.progress.municipalitiesTotal &&
+                               (discoveryJob.progress.structuresScanned ?? 0) >=
+                                 (discoveryJob.progress.structuresFound ?? 0)
+                               ? "Completata con riserve"
+                               : "Sospesa: fonte non disponibile"
                             : discoveryJob.status === "failed"
                               ? "Interrotta"
                               : discoveryJob.status === "cancelled"

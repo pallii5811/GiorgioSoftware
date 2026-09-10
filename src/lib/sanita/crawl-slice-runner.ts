@@ -30,11 +30,35 @@ import {
   countRetryPendingMissingNextRetryAt,
   repairOrphanRetryPending,
   reclassifySpuriousRelevance,
+  prepareFrontierForExhaustiveCoverage,
 } from "@/lib/sanita/frontier-store";
-import { extractPdfFullText } from "@/lib/sanita/ocr";
-import { analyzePolicy } from "@/lib/sanita/detector";
+import {
+  analyzeImageVisualContent,
+  extractImageText,
+  extractPdfFullText,
+} from "@/lib/sanita/ocr";
+import { analyzePolicy, detectPolicyCandidate } from "@/lib/sanita/detector";
 import { shouldActivatePlaywright, type PlaywrightMode } from "@/lib/sanita/playwright-adaptive";
 import { classifyUrlRelevance } from "@/lib/sanita/crawl-relevance";
+import { comparePolicyDocumentRecency } from "@/lib/sanita/policy-version-selection";
+import { extractOfficeDocumentText } from "@/lib/sanita/office-document";
+import {
+  discoverResourcesFromHtml,
+  discoverResourcesFromText,
+  extractVisibleTextFromHtml,
+  isClearlyDecorativeImageUrl,
+  isClearlyCommercialProductImageUrl,
+  isClearlyPatientConventionLogoUrl,
+  isCrawlScopeResource,
+  isGeneratedRuntimeRequestUrl,
+  isPolicyLikeResourceUrl,
+  isSameSiteResource,
+  originalImageUrlForThumbnail,
+  resourceTypeForContentType,
+  resourceTypeForUrl,
+  shouldFollowExternalResource,
+  type SiteResourceType,
+} from "@/lib/sanita/site-resource";
 
 const TRANSPARENCY_SEEDS = [
   "/",
@@ -81,6 +105,30 @@ export type CrawlSliceResult = {
   completenessComplete: boolean;
   wallMs: number;
 };
+
+function boundedPolicyEvidenceText(
+  text: string,
+  policyNumber?: string | null,
+  company?: string | null
+): string {
+  const lower = text.toLowerCase();
+  const anchors = [
+    policyNumber,
+    company,
+    "polizza assicurativa",
+    "responsabilità civile",
+    "responsabilita civile",
+    "copertura assicurativa",
+  ].filter((value): value is string => Boolean(value?.trim()));
+  let index = -1;
+  for (const anchor of anchors) {
+    index = lower.indexOf(anchor.toLowerCase());
+    if (index >= 0) break;
+  }
+  if (index < 0) return text.slice(0, 40_000);
+  const start = Math.max(0, index - 2_000);
+  return text.slice(start, start + 40_000);
+}
 
 function relevanceFor(
   url: string,
@@ -145,15 +193,17 @@ function enqueue(
   crawlRunId: string,
   url: string,
   parent: string | null,
-  source: string
+  source: string,
+  resourceType?: SiteResourceType
 ): boolean {
   try {
+    if (isGeneratedRuntimeRequestUrl(url)) return false;
     const { created } = upsertFrontierNode({
       crawlRunId,
       canonicalUrl: url,
       parentUrl: parent,
       discoverySource: source,
-      resourceType: /\.pdf/i.test(url) ? "pdf" : "html",
+      resourceType: resourceType ?? resourceTypeForUrl(url),
       relevance: relevanceFor(url, source),
     });
     return created;
@@ -169,7 +219,9 @@ function pickNextNode(
 ): {
   id: string;
   canonicalUrl: string;
+  parentUrl: string | null;
   resourceType: string;
+  relevance: string;
   state: string;
   retryCount: number;
   nextRetryAt: string | null;
@@ -179,7 +231,6 @@ function pickNextNode(
   const ready = nodes.filter((n) => {
     if (opts?.pdfOnly && !(n.resourceType === "pdf" || /\.pdf/i.test(n.canonicalUrl))) return false;
     if (n.state === "DISCOVERED" || n.state === "QUEUED") return true;
-    if (n.state === "FETCHING" || n.state === "FETCHED") return true; // crash/resume mid-OCR
     if (n.state === "RETRY_PENDING") {
       if (!n.nextRetryAt) return false;
       const due = Date.parse(n.nextRetryAt);
@@ -189,17 +240,29 @@ function pickNextNode(
   });
   // Prefer policy docs first; all PDFs before generic HTML so documents are not starved.
   ready.sort((a, b) => {
-    const score = (u: string) => {
+    const score = (node: (typeof ready)[number]) => {
+      const u = node.canonicalUrl;
       const policyish =
         /trasparen|polizz|assicur|amministraz|gelli|rischio|rc[to]\b|parm|pars|massimale|copertura|note-legali/i.test(
           u
         );
-      if (policyish && /\.pdf/i.test(u)) return 0;
-      if (/\.pdf/i.test(u)) return 1;
-      if (policyish) return 2;
-      return 3;
+      const isDocument =
+        /^(?:pdf|document|office|image)$/i.test(node.resourceType) ||
+        /\.pdf(?:$|[?#])/i.test(u);
+      const relevance =
+        node.relevance === "critical" ? 0 : node.relevance === "relevant" ? 1 : 2;
+      if (policyish && isDocument) return [0, relevance];
+      if (policyish) return [1, relevance];
+      if (isDocument) return [2, relevance];
+      return [3, relevance];
     };
-    return score(a.canonicalUrl) - score(b.canonicalUrl);
+    const sa = score(a);
+    const sb = score(b);
+    return (
+      sa[0] - sb[0] ||
+      sa[1] - sb[1] ||
+      comparePolicyDocumentRecency(a, b)
+    );
   });
   return ready[0] ?? null;
 }
@@ -213,13 +276,36 @@ async function fetchResource(
   url: string,
   budget: CrawlBudgetConfig
 ): Promise<{ ok: boolean; status: number; buf: Buffer; contentType: string; error?: string }> {
-  const isPdf = /\.pdf/i.test(url);
+  const isDocument = /^(?:pdf|office|image)$/.test(resourceTypeForUrl(url));
+  const maxBytes = Math.max(
+    1_000_000,
+    Number(process.env.CRAWL_MAX_RESOURCE_BYTES || 80 * 1024 * 1024)
+  );
   try {
     const res = await externalFetch(url, {
-      timeoutMs: isPdf ? budget.pdfFetchTimeoutMs : budget.httpRequestTimeoutMs,
+      timeoutMs: isDocument ? budget.pdfFetchTimeoutMs : budget.httpRequestTimeoutMs,
       redirect: "follow",
     });
+    const declaredLength = Number(res.headers.get("content-length") || 0);
+    if (declaredLength > maxBytes) {
+      return {
+        ok: false,
+        status: res.status,
+        buf: Buffer.alloc(0),
+        contentType: res.headers.get("content-type") || "",
+        error: `RESOURCE_TOO_LARGE:${declaredLength}`,
+      };
+    }
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > maxBytes) {
+      return {
+        ok: false,
+        status: res.status,
+        buf: Buffer.alloc(0),
+        contentType: res.headers.get("content-type") || "",
+        error: `RESOURCE_TOO_LARGE:${buf.length}`,
+      };
+    }
     return {
       ok: res.ok,
       status: res.status,
@@ -237,20 +323,49 @@ async function fetchResource(
   }
 }
 
-function discoverLinks(html: string, baseUrl: string, crawlRunId: string): number {
+function discoverLinks(
+  html: string,
+  pageUrl: string,
+  website: string,
+  crawlRunId: string
+): number {
   let n = 0;
-  const $ = cheerio.load(html);
-  $("a[href]").each((_, el) => {
-    const href = $(el).attr("href");
-    if (!href) return;
-    try {
-      const abs = new URL(href, baseUrl).toString();
-      if (!sameHost(abs, baseUrl)) return;
-      if (enqueue(crawlRunId, abs, baseUrl, "html-link")) n++;
-    } catch {
-      /* */
+  for (const resource of discoverResourcesFromHtml(html, pageUrl, website)) {
+    if (
+      enqueue(
+        crawlRunId,
+        resource.url,
+        pageUrl,
+        resource.discoverySource,
+        resource.resourceType
+      )
+    ) {
+      n++;
     }
-  });
+  }
+  return n;
+}
+
+function discoverTextResources(
+  text: string,
+  resourceUrl: string,
+  website: string,
+  crawlRunId: string
+): number {
+  let n = 0;
+  for (const resource of discoverResourcesFromText(text, resourceUrl, website)) {
+    if (
+      enqueue(
+        crawlRunId,
+        resource.url,
+        resourceUrl,
+        resource.discoverySource,
+        resource.resourceType
+      )
+    ) {
+      n++;
+    }
+  }
   return n;
 }
 
@@ -306,6 +421,27 @@ export async function runCrawlSlice(opts: {
     runId: opts.runId,
     workerId: opts.workerId ?? "slice-runner",
   });
+  const exhaustiveSite = process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1";
+  const renderEveryHtml =
+    exhaustiveSite && process.env.CRAWL_RENDER_EVERY_HTML === "1";
+  // A wall-clock boundary checkpoints a resumable run; it is not a permanent
+  // property of the frontier. Clear it when a new slice resumes the same graph.
+  if (resumed) {
+    const htmlUrlCap = Number(process.env.CRAWL_HTML_URL_CAP || 100);
+    setCrawlRunFlags(crawlRunId, {
+      timeCapReached: false,
+      ocrDoubts: 0,
+      // Il runner territoriale esaustivo usa cap=0: un vecchio checkpoint con
+      // urlCapReached=1 non deve rendere la frontiera impossibile da chiudere.
+      ...(htmlUrlCap === 0 ? { urlCapReached: false } : {}),
+    });
+    if (exhaustiveSite) {
+      const reopened = prepareFrontierForExhaustiveCoverage(crawlRunId);
+      if (reopened > 0) {
+        heartbeatCrawlRun(crawlRunId, `exhaustive_reopened:${reopened}`);
+      }
+    }
+  }
 
   if (!resumed || listNodes(crawlRunId).length === 0) {
     seedCrawlFrontier({
@@ -314,9 +450,29 @@ export async function runCrawlSlice(opts: {
       extraUrls: opts.seedExtraUrls,
     });
   } else {
-    // Re-queue DISCOVERED. Reopen TECHNICAL_BLOCKED so OCR/infra fixes can drain failed nodes.
+    // Re-queue interrupted discovery. TECHNICAL_BLOCKED has already exhausted
+    // its bounded retry budget and remains fail-closed; reopening it on every
+    // resume creates permanent OCR/fetch loops. A deliberate recertification
+    // migration can still reopen a node explicitly.
     // RETRY_PENDING stays until nextRetryAt (pickNextNode).
     for (const n of listNodes(crawlRunId)) {
+      if (n.state === "FETCHING" || n.state === "FETCHED") {
+        // Solo l'avvio/resume puo recuperare un nodo interrotto. pickNextNode
+        // non seleziona stati gia in lavorazione: con piu slice concorrenti
+        // farlo produrrebbe OCR duplicati sullo stesso file e retry illimitati.
+        try {
+          transitionFrontierNode(n.id, "RETRY_PENDING", {
+            nextRetryAt: new Date().toISOString(),
+            lastError:
+              n.state === "FETCHING"
+                ? "INTERRUPTED_FETCH_RESUME"
+                : "INTERRUPTED_PARSE_RESUME",
+            bumpRetry: true,
+          });
+        } catch {
+          /* */
+        }
+      }
       if (n.state === "DISCOVERED") {
         try {
           transitionFrontierNode(n.id, "QUEUED");
@@ -325,33 +481,53 @@ export async function runCrawlSlice(opts: {
         }
       }
       if (n.state === "TECHNICAL_BLOCKED") {
-        // Circuit breaker (k3 RC-01): nodi bloccati da circuito aperto NON vengono
-        // riaperti a ogni resume — l'host viene ri-sondato solo dopo REPROBE_MS
-        // (default 6h). Evita 90+ refetch/run su host DNS-morti (Villa Maione).
-        const cb = /^host_circuit_open@(\d+)/.exec(String(n.lastError || ""));
-        if (cb) {
-          const openedAt = Number(cb[1] || 0);
-          const reprobeMs = Math.max(60_000, Number(process.env.CRAWL_HOST_CIRCUIT_REPROBE_MS || 6 * 3_600_000));
-          if (!openedAt || Date.now() - openedAt < reprobeMs) continue;
-        }
-        try {
-          transitionFrontierNode(n.id, "RETRY_PENDING", {
-            lastError: n.lastError ? `reopen:${n.lastError}` : "reopen_technical_blocked",
-            nextRetryAt: new Date().toISOString(),
-          });
-        } catch {
-          /* */
-        }
-      }
-      if (n.state === "FETCHING") {
-        try {
-          transitionFrontierNode(n.id, "RETRY_PENDING", {
-            lastError: "interrupted_fetch",
-            bumpRetry: true,
-            nextRetryAt: new Date(Date.now() + computeBackoffMs(n.retryCount || 0)).toISOString(),
-          });
-        } catch {
-          /* */
+        const lastError = String(n.lastError || "");
+        const circuit = /^host_circuit_open@(\d+)/.exec(lastError);
+        const circuitReprobeMs = Math.max(
+          60_000,
+          Number(
+            process.env.CRAWL_HOST_CIRCUIT_REPROBE_MS || 6 * 3_600_000
+          )
+        );
+        const circuitIsDue = Boolean(
+          circuit &&
+            Number(circuit[1]) > 0 &&
+            Date.now() - Number(circuit[1]) >= circuitReprobeMs
+        );
+        // A path-specific WAF response gets a small, bounded browser-escalation
+        // allowance. OCR/content-quality failures never reopen automatically.
+        const wafRetryLimit =
+          budget.maxUrlRetries + Math.max(1, budget.maxBrowserRetries);
+        const wafEscalationDue =
+          /^(?:reopen:)*http_(?:403|429)$/i.test(lastError) &&
+          (n.retryCount || 0) < wafRetryLimit;
+        const imageVisualReclassificationDue =
+          /^IMAGE_OCR_(?:LOW_CONFIDENCE|EMPTY)(?::VISUAL_V\d+)?$/i.test(
+            lastError
+          );
+        const imageFetchReprobeDue =
+          n.resourceType === "image" &&
+          /(?:fetch failed|terminated|ECONNRESET|ETIMEDOUT|socket hang up)/i.test(
+            lastError
+          ) &&
+          // Image/document downloads may outlive a stale pooled connection.
+          // Keep recovery bounded, but allow enough independent probes to
+          // distinguish a transient transport failure from a real blocker.
+          (n.retryCount || 0) < budget.maxDocumentRetries + 4;
+        if (
+          circuitIsDue ||
+          wafEscalationDue ||
+          imageVisualReclassificationDue ||
+          imageFetchReprobeDue
+        ) {
+          try {
+            transitionFrontierNode(n.id, "RETRY_PENDING", {
+              lastError: `reopen:${lastError || "technical_blocked"}`,
+              nextRetryAt: new Date().toISOString(),
+            });
+          } catch {
+            /* */
+          }
         }
       }
     }
@@ -443,21 +619,84 @@ export async function runCrawlSlice(opts: {
     tryT("TECHNICAL_BLOCKED", true);
   }
   let sliceBrowser: import("playwright").Browser | null = null;
+  let sliceBrowserContext: import("playwright").BrowserContext | null = null;
   async function fetchSinglePageViaBrowser(
     url: string
-  ): Promise<{ ok: boolean; html: string; status: number; error?: string }> {
+  ): Promise<{
+    ok: boolean;
+    html: string;
+    status: number;
+    networkResources: Array<{
+      url: string;
+      contentType: string;
+      method: string;
+      status: number;
+      bodyText?: string;
+    }>;
+    error?: string;
+  }> {
     try {
       if (!sliceBrowser) {
         const { chromium } = await import("playwright");
         const { playwrightChromiumLaunchOptions } = await import("@/lib/sanita/playwright-launch");
         sliceBrowser = await chromium.launch(playwrightChromiumLaunchOptions());
       }
-      const ctx = await sliceBrowser.newContext({
-        locale: "it-IT",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      if (!sliceBrowserContext) {
+        sliceBrowserContext = await sliceBrowser.newContext({
+          locale: "it-IT",
+          userAgent:
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        });
+      }
+      const page = await sliceBrowserContext.newPage();
+      const networkResources = new Map<
+        string,
+        {
+          url: string;
+          contentType: string;
+          method: string;
+          status: number;
+          bodyText?: string;
+        }
+      >();
+      const responseCaptures: Promise<void>[] = [];
+      page.on("response", (response) => {
+        try {
+          const resourceUrl = response.url();
+          const contentType = response.headers()["content-type"] || "";
+          const item: {
+            url: string;
+            contentType: string;
+            method: string;
+            status: number;
+            bodyText?: string;
+          } = {
+            url: resourceUrl,
+            contentType,
+            method: response.request().method(),
+            status: response.status(),
+          };
+          networkResources.set(resourceUrl, item);
+          const declaredLength = Number(response.headers()["content-length"] || 0);
+          if (
+            item.status >= 200 &&
+            item.status < 300 &&
+            (!declaredLength || declaredLength <= 2_000_000) &&
+            /json|xml|text\/plain|javascript/i.test(contentType)
+          ) {
+            responseCaptures.push(
+              response
+                .text()
+                .then((bodyText) => {
+                  item.bodyText = bodyText.slice(0, 500_000);
+                })
+                .catch(() => {})
+            );
+          }
+        } catch {
+          /* response URL may be unavailable after context close */
+        }
       });
-      const page = await ctx.newPage();
       try {
         const resp = await page.goto(url, {
           waitUntil: "domcontentloaded",
@@ -465,15 +704,71 @@ export async function runCrawlSlice(opts: {
         });
         const status = resp?.status() || 0;
         if (status >= 400) {
-          return { ok: false, html: "", status, error: `browser_http_${status}` };
+          return {
+            ok: false,
+            html: "",
+            status,
+            networkResources: [],
+            error: `browser_http_${status}`,
+          };
         }
-        await page.waitForTimeout(1500);
-        return { ok: true, html: await page.content(), status: status || 200 };
+        await page
+          .waitForLoadState("networkidle", {
+            timeout: Math.min(1500, budget.browserNavigationTimeoutMs),
+          })
+          .catch(() => {});
+        const performanceUrls = await page
+          .evaluate(() =>
+            performance
+              .getEntriesByType("resource")
+              .map((entry) => entry.name)
+              .filter(Boolean)
+          )
+          .catch(() => [] as string[]);
+        for (const resourceUrl of performanceUrls) {
+          if (!networkResources.has(resourceUrl)) {
+            networkResources.set(resourceUrl, {
+              url: resourceUrl,
+              contentType: "",
+              method: "GET",
+              status: 200,
+            });
+          }
+        }
+        // k3 2026-07-30: le capture sono best-effort — una risposta che non
+        // si chiude mai (stream/chunked appeso) non deve parcheggiare il lead
+        // per 14+ minuti fino allo stall watchdog. Timeout duro condiviso.
+        const captureSettleMs = Math.min(
+          10_000,
+          Math.max(2_000, budget.browserNavigationTimeoutMs)
+        );
+        await Promise.race([
+          Promise.allSettled(responseCaptures),
+          new Promise((resolve) => setTimeout(resolve, captureSettleMs)),
+        ]);
+        const html = await Promise.race([
+          page.content(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("page_content_timeout")), captureSettleMs)
+          ),
+        ]);
+        return {
+          ok: true,
+          html: html as string,
+          status: status || 200,
+          networkResources: [...networkResources.values()],
+        };
       } finally {
-        await ctx.close().catch(() => {});
+        await page.close().catch(() => {});
       }
     } catch (e) {
-      return { ok: false, html: "", status: 0, error: e instanceof Error ? e.message : String(e) };
+      return {
+        ok: false,
+        html: "",
+        status: 0,
+        networkResources: [],
+        error: e instanceof Error ? e.message : String(e),
+      };
     }
   }
 
@@ -527,6 +822,14 @@ export async function runCrawlSlice(opts: {
     const htmlCap = Number(process.env.CRAWL_HTML_URL_CAP || 100);
     const nodeIsPdf = node.resourceType === "pdf" || /\.pdf/i.test(node.canonicalUrl);
     if (Number.isFinite(htmlCap) && htmlCap > 0 && completedHtml >= htmlCap) {
+      if (exhaustiveSite) {
+        // Exhaustive certification may checkpoint at a cap, but it must never
+        // discard the remaining graph and call that absence.
+        setCrawlRunFlags(crawlRunId, { urlCapReached: true });
+        stopReason = "EXHAUSTIVE_HTML_URL_CAP";
+        outcome = "SLICE_CHECKPOINTED";
+        break;
+      }
       const pendingLowHtml = listNodes(crawlRunId).filter(
         (n) =>
           ["DISCOVERED", "QUEUED", "RETRY_PENDING", "FETCHING"].includes(n.state) &&
@@ -672,7 +975,11 @@ export async function runCrawlSlice(opts: {
 
     if (!fetched.ok) {
       const retries = (node.retryCount || 0) + 1;
-      const max = /\.pdf/i.test(node.canonicalUrl) ? budget.maxDocumentRetries : budget.maxUrlRetries;
+      const max =
+        /^(?:pdf|document|office|image)$/i.test(node.resourceType) ||
+        /\.pdf(?:$|[?#])/i.test(node.canonicalUrl)
+          ? budget.maxDocumentRetries
+          : budget.maxUrlRetries;
       try {
         if (fetched.status === 404 || fetched.status === 410) {
           const decision = classifyTerminalMissingUrl({
@@ -721,18 +1028,43 @@ export async function runCrawlSlice(opts: {
     }
 
     const hash = createHash("sha256").update(fetched.buf).digest("hex");
+    const resourceType = resourceTypeForContentType(
+      node.canonicalUrl,
+      fetched.contentType
+    );
     try {
       transitionFrontierNode(node.id, "FETCHED", {
         httpStatus: fetched.status,
         contentType: fetched.contentType,
         contentHash: hash,
+        resourceType,
       });
     } catch {
       /* */
     }
 
+    const declaredType = node.resourceType || resourceTypeForUrl(node.canonicalUrl);
+    const staticAssetHtmlFallback =
+      resourceType === "html" &&
+      /^(?:image|script|style|xml|other)$/i.test(declaredType) &&
+      !isPolicyLikeResourceUrl(node.canonicalUrl);
+    if (staticAssetHtmlFallback) {
+      try {
+        transitionFrontierNode(node.id, "EXCLUDED", {
+          lastError: "STATIC_ASSET_HTML_FALLBACK",
+          exclusionReason: "STATIC_ASSET_HTML_FALLBACK",
+          contentHash: hash,
+        });
+      } catch {
+        /* safe terminal exclusion; a later resume can retry cleanup */
+      }
+      continue;
+    }
+
     let text = "";
-    if (/\.pdf/i.test(node.canonicalUrl) || fetched.contentType.includes("pdf")) {
+    let nodeOcrStatus: string | null = null;
+    let playwrightSource: string | null = null;
+    if (resourceType === "pdf") {
       pdfProcessed++;
       const prev = process.env.OCR_JOB_TIMEOUT_MS;
       // Stop-ship: never disable OCR via URL heuristics — thin PDFs must hit real pdftoppm.
@@ -740,6 +1072,7 @@ export async function runCrawlSlice(opts: {
       try {
         const extracted = await extractPdfFullText(fetched.buf);
         text = extracted.text || "";
+        nodeOcrStatus = extracted.status;
         if (
           extracted.rasterize?.status === "OK" ||
           (extracted.ocr && (extracted.digital?.length || 0) < 200)
@@ -771,8 +1104,13 @@ export async function runCrawlSlice(opts: {
         }
         if (
           extracted.status === "OCR_TIMEOUT" ||
-          extracted.status === "OCR_EXTRACTION_FAILED"
+          extracted.status === "OCR_EXTRACTION_FAILED" ||
+          (extracted.status === "OCR_EMPTY" &&
+            (extracted.digital?.length || 0) < 200) ||
+          (extracted.status === "OCR_LOW_CONFIDENCE" &&
+            (extracted.digital?.length || 0) < 200)
         ) {
+          setCrawlRunFlags(crawlRunId, { ocrDoubts: 1 });
           const retries = (node.retryCount || 0) + 1;
           const max = budget.maxDocumentRetries;
           try {
@@ -822,12 +1160,252 @@ export async function runCrawlSlice(opts: {
         if (prev == null) delete process.env.OCR_JOB_TIMEOUT_MS;
         else process.env.OCR_JOB_TIMEOUT_MS = prev;
       }
-    } else {
-      const html = fetched.buf.toString("utf8");
+    } else if (resourceType === "office") {
+      const extracted = extractOfficeDocumentText(
+        fetched.buf,
+        node.canonicalUrl,
+        fetched.contentType
+      );
+      text = extracted.text;
+      if (extracted.status !== "SUCCESS" && extracted.status !== "EMPTY") {
+        const retries = (node.retryCount || 0) + 1;
+        const lastError = `OFFICE_${extracted.status}`;
+        try {
+          if (retries >= budget.maxDocumentRetries) {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              lastError,
+              contentHash: hash,
+              bumpRetry: true,
+            });
+          } else {
+            transitionFrontierNode(node.id, "RETRY_PENDING", {
+              lastError,
+              contentHash: hash,
+              bumpRetry: true,
+              nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+            });
+          }
+        } catch {
+          /* */
+        }
+        continue;
+      }
+      let embeddedOcrFailure: string | null = null;
+      for (const image of extracted.embeddedImages) {
+        ocrUsed = true;
+        const embedded = await extractImageText(image);
+        nodeOcrStatus = embedded.status;
+        if (embedded.text) text = `${text}\n${embedded.text}`.trim();
+        if (
+          embedded.status === "OCR_TIMEOUT" ||
+          embedded.status === "OCR_EXTRACTION_FAILED" ||
+          embedded.status === "OCR_EMPTY" ||
+          embedded.status === "OCR_LOW_CONFIDENCE"
+        ) {
+          embeddedOcrFailure = embedded.status;
+          break;
+        }
+      }
+      if (embeddedOcrFailure) {
+        setCrawlRunFlags(crawlRunId, { ocrDoubts: 1 });
+        const retries = (node.retryCount || 0) + 1;
+        try {
+          if (retries >= budget.maxDocumentRetries) {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              lastError: `OFFICE_EMBEDDED_${embeddedOcrFailure}`,
+              contentHash: hash,
+              bumpRetry: true,
+            });
+          } else {
+            transitionFrontierNode(node.id, "RETRY_PENDING", {
+              lastError: `OFFICE_EMBEDDED_${embeddedOcrFailure}`,
+              contentHash: hash,
+              bumpRetry: true,
+              nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+            });
+          }
+        } catch {
+          /* */
+        }
+        continue;
+      }
+    } else if (resourceType === "image") {
+      const originalImageUrl = originalImageUrlForThumbnail(node.canonicalUrl);
+      if (originalImageUrl) {
+        if (
+          enqueue(
+            crawlRunId,
+            originalImageUrl,
+            node.canonicalUrl,
+            "image-original",
+            "image"
+          )
+        ) {
+          discovered++;
+          linksDiscoveredTotal++;
+        }
+      }
+      ocrUsed = true;
+      const extracted = await extractImageText(fetched.buf);
+      const visualAnalysis = await analyzeImageVisualContent(fetched.buf);
+      text = extracted.text || "";
+      nodeOcrStatus = extracted.status;
+      const candidate = detectPolicyCandidate(text, node.canonicalUrl);
+      const visuallyNonDocument =
+        Boolean(visualAnalysis?.clearlyNonDocumentMedia) &&
+        !isPolicyLikeResourceUrl(node.canonicalUrl);
+      const safelyDecorativeNoText =
+        (extracted.status === "OCR_LOW_CONFIDENCE" ||
+          extracted.status === "OCR_EMPTY") &&
+        (isClearlyDecorativeImageUrl(node.canonicalUrl) ||
+          isClearlyPatientConventionLogoUrl(
+            node.canonicalUrl,
+            node.parentUrl
+          ) ||
+          isClearlyCommercialProductImageUrl(
+            node.canonicalUrl,
+            node.parentUrl
+          ) ||
+          Boolean(originalImageUrl) ||
+          visuallyNonDocument) &&
+        !candidate.candidate;
+      if (safelyDecorativeNoText) {
+        nodeOcrStatus = "OCR_NON_DOCUMENT_MEDIA";
+      }
+      if (
+        extracted.status === "OCR_TIMEOUT" ||
+        extracted.status === "OCR_EXTRACTION_FAILED" ||
+        ((extracted.status === "OCR_LOW_CONFIDENCE" ||
+          extracted.status === "OCR_EMPTY") &&
+          !safelyDecorativeNoText)
+      ) {
+        setCrawlRunFlags(crawlRunId, { ocrDoubts: 1 });
+        const retries = (node.retryCount || 0) + 1;
+        try {
+          if (retries >= budget.maxDocumentRetries) {
+            transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+              lastError: `IMAGE_${extracted.status}:VISUAL_V9`,
+              contentHash: hash,
+              bumpRetry: true,
+            });
+          } else {
+            transitionFrontierNode(node.id, "RETRY_PENDING", {
+              lastError: `IMAGE_${extracted.status}:VISUAL_V9`,
+              contentHash: hash,
+              bumpRetry: true,
+              nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+            });
+          }
+        } catch {
+          /* */
+        }
+        continue;
+      }
+    } else if (resourceType === "html") {
+      let html = fetched.buf.toString("utf8");
+      const renderedNetworkText: Array<{ url: string; text: string }> = [];
+      if (renderEveryHtml) {
+        heartbeatCrawlRun(crawlRunId, `render:${node.canonicalUrl.slice(0, 80)}`);
+        const rendered = await fetchSinglePageViaBrowser(node.canonicalUrl);
+        if (!rendered.ok) {
+          const retries = (node.retryCount || 0) + 1;
+          try {
+            if (retries >= budget.maxBrowserRetries) {
+              transitionFrontierNode(node.id, "TECHNICAL_BLOCKED", {
+                lastError: `BROWSER_RENDER:${rendered.error || rendered.status}`,
+                bumpRetry: true,
+              });
+            } else {
+              transitionFrontierNode(node.id, "RETRY_PENDING", {
+                lastError: `BROWSER_RENDER:${rendered.error || rendered.status}`,
+                bumpRetry: true,
+                nextRetryAt: new Date(Date.now() + computeBackoffMs(retries)).toISOString(),
+              });
+            }
+          } catch {
+            /* */
+          }
+          continue;
+        }
+        html = rendered.html;
+        playwrightUsed = true;
+        playwrightSource = "rendered";
+        try {
+          transitionFrontierNode(node.id, "RENDERED");
+        } catch {
+          /* */
+        }
+        for (const network of rendered.networkResources) {
+          let networkProtocol = "";
+          try {
+            networkProtocol = new URL(network.url).protocol;
+          } catch {
+            continue;
+          }
+          if (networkProtocol !== "http:" && networkProtocol !== "https:") {
+            continue;
+          }
+          const networkType = resourceTypeForContentType(
+            network.url,
+            network.contentType
+          );
+          const sameSiteNetwork = isCrawlScopeResource(
+            network.url,
+            opts.website,
+            networkType
+          );
+          // Third-party widgets may return megabytes of JavaScript/CSS whose
+          // identifiers resemble insurers or dates. They are not page text.
+          // Same-site API/script bodies remain discoverable with their own URL
+          // as the resolution base, so genuine dynamically exposed documents
+          // are still enqueued and analysed independently.
+          if (network.bodyText && sameSiteNetwork) {
+            renderedNetworkText.push({ url: network.url, text: network.bodyText });
+          }
+          if (
+            (network.method !== "GET" && network.method !== "HEAD") ||
+            network.status < 200 ||
+            network.status >= 400
+          ) {
+            continue;
+          }
+          if (
+            sameSiteNetwork ||
+            shouldFollowExternalResource(network.url, networkType)
+          ) {
+            if (
+              enqueue(
+                crawlRunId,
+                network.url,
+                node.canonicalUrl,
+                "playwright-network",
+                networkType
+              )
+            ) {
+              discovered++;
+            }
+          }
+        }
+      }
       if (htmlSamples.length < 3) htmlSamples.push(html.slice(0, 8000));
-      text = cheerio.load(html).text().replace(/\s+/g, " ").trim();
+      text = extractVisibleTextFromHtml(html);
+      for (const networkText of renderedNetworkText) {
+        const nLinks = discoverTextResources(
+          networkText.text,
+          networkText.url,
+          opts.website,
+          crawlRunId
+        );
+        discovered += nLinks;
+        linksDiscoveredTotal += nLinks;
+      }
       if (opts.discoverLinks !== false) {
-        const nLinks = discoverLinks(html, node.canonicalUrl, crawlRunId);
+        const nLinks = discoverLinks(
+          html,
+          node.canonicalUrl,
+          opts.website,
+          crawlRunId
+        );
         discovered += nLinks;
         linksDiscoveredTotal += nLinks;
         for (const n of listNodes(crawlRunId)) {
@@ -840,14 +1418,30 @@ export async function runCrawlSlice(opts: {
           }
         }
       }
+    } else {
+      text = fetched.buf.toString("utf8").replace(/\s+/g, " ").trim();
+      if (opts.discoverLinks !== false) {
+        const nLinks = discoverTextResources(
+          text,
+          node.canonicalUrl,
+          opts.website,
+          crawlRunId
+        );
+        discovered += nLinks;
+        linksDiscoveredTotal += nLinks;
+      }
     }
 
     pagesText = `${pagesText}\n${text}`.slice(0, 200_000);
-    const analysis = analyzePolicy(text, node.canonicalUrl);
+    const candidate = detectPolicyCandidate(text, node.canonicalUrl);
+    const analysis = candidate.policy;
+    const currentPolicyText = analysis.policyFound
+      ? boundedPolicyEvidenceText(text, analysis.policyNumber, analysis.company)
+      : "";
     if (analysis.policyFound) {
       policyFound = true;
       policyUrl = node.canonicalUrl;
-      policyText = text.slice(0, 40_000);
+      policyText = currentPolicyText;
       contentHash = hash;
     }
 
@@ -857,12 +1451,18 @@ export async function runCrawlSlice(opts: {
         nodeId: node.id,
         canonicalUrl: node.canonicalUrl,
         contentHash: hash,
-        resourceType: node.resourceType || "html",
+        resourceType,
         normalizedText: text,
-        policyText: analysis.policyFound ? text.slice(0, 40_000) : "",
+        policyText: currentPolicyText,
         policyFound: Boolean(analysis.policyFound),
-        policySignalsJson: analysis.policyFound ? analysis : undefined,
-        ocrStatus: ocrUsed ? "USED" : null,
+        policyCandidate: candidate.candidate,
+        policySignalsJson: {
+          ...analysis,
+          candidateReasons: candidate.reasons,
+          candidateDetectorVersion: candidate.detectorVersion,
+        },
+        ocrStatus: nodeOcrStatus,
+        playwrightSource,
       });
     } catch {
       /* evidence persistence must not abort crawl */
@@ -891,6 +1491,12 @@ export async function runCrawlSlice(opts: {
 
   // Adaptive / forced Playwright — never silent swallow
   try {
+    await (sliceBrowserContext as import("playwright").BrowserContext | null)?.close();
+  } catch {
+    /* */
+  }
+  sliceBrowserContext = null;
+  try {
     // cast: TS non traccia l'assegnazione dentro la closure fetchSinglePageViaBrowser
     await (sliceBrowser as import("playwright").Browser | null)?.close();
   } catch {
@@ -909,6 +1515,7 @@ export async function runCrawlSlice(opts: {
     linksDiscovered: linksDiscoveredTotal,
   });
   const skipPw =
+    renderEveryHtml ||
     process.env.SKIP_PLAYWRIGHT === "1" ||
     process.env.REVALIDATE_FINALIZE_RESUME === "1" ||
     listNodes(crawlRunId).filter(
@@ -1004,8 +1611,14 @@ export async function runCrawlSlice(opts: {
       throw new Error(`invariant_retry_pending_null_nextRetryAt count=${still}`);
     }
   }
-  const pendingWork = nodesAfter.some((n) =>
-    ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING"].includes(n.state)
+  const boundedWafRetryLimit =
+    budget.maxUrlRetries + Math.max(1, budget.maxBrowserRetries);
+  const pendingWork = nodesAfter.some(
+    (n) =>
+      ["DISCOVERED", "QUEUED", "FETCHING", "RETRY_PENDING"].includes(n.state) ||
+      (n.state === "TECHNICAL_BLOCKED" &&
+        /^(?:reopen:)*http_(?:403|429)$/i.test(String(n.lastError || "")) &&
+        (n.retryCount || 0) < boundedWafRetryLimit)
   );
   const retryPending = nodesAfter.filter((n) => n.state === "RETRY_PENDING").length;
   const failed = nodesAfter.filter((n) => n.state === "TECHNICAL_BLOCKED").length;
@@ -1087,7 +1700,11 @@ export async function runCrawlUntilSettled(opts: {
 }> {
   const runStartedAtMs = Date.now();
   const slices: CrawlSliceResult[] = [];
-  const maxSlices = opts.maxSlices ?? 20;
+  const maxSlices =
+    opts.maxSlices ??
+    (process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1"
+      ? Math.max(1, Number(process.env.CRAWL_MAX_SLICES_PER_LEAD || 5))
+      : 20);
   let last!: CrawlSliceResult;
 
   for (let i = 0; i < maxSlices; i++) {

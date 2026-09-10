@@ -102,6 +102,15 @@ export function extractDocumentEntityFingerprint(
     const c = cleanLegalCandidate(raw);
     if (c && !legalCandidates.includes(c)) legalCandidates.push(c);
   };
+  // PARM tables commonly identify the facility in the immediately preceding
+  // Art. 2 disclosure: "RISARCIMENTI EROGATI DI VILLA FIORITA – AVERSA -
+  // SPA". Capture the whole legal name before the generic bare-SPA regex,
+  // which can otherwise start in the middle of "AVERSA" and invent "RSA SPA".
+  for (const m of hay.matchAll(
+    /risarcimenti\s+erogati\s+di\s+(.{3,100}?\bS\.?\s*P\.?\s*A\.?)\s*\(/gi
+  )) {
+    pushCandidate(m[1]);
+  }
   for (const m of hay.matchAll(
     /((?:Fondazione|Casa\s+di\s+[Cc]ura|Clinica|Istituto|Poliambulatorio|Ospedale|RSA|Cooperativa)\b[^,\n;.]{0,60}(?:S\.?\s*p\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|Soc\.?\s+Coop\.?)?)/gi
   )) {
@@ -146,6 +155,26 @@ export function extractDocumentEntityFingerprint(
     groupSeatVerified: seats.length > 0,
     insuredSeats: seats.length ? seats : null,
   };
+}
+
+/**
+ * Fingerprint per il gate PUBLISHED: usa soltanto il contenuto della risorsa
+ * che ha prodotto il segnale polizza. Il testo generale del sito non deve poter
+ * "coprire" un contraente diverso nominato nel PDF.
+ */
+export function extractPolicyDocumentEntityFingerprint(input: {
+  policyText: string | null | undefined;
+  analysisEvidence?: string | null;
+  url?: string | null;
+}): EntityFingerprint {
+  const documentText = [input.analysisEvidence, input.policyText]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join("\n");
+  return extractDocumentEntityFingerprint(
+    documentText,
+    { title: input.url || null },
+    input.url
+  );
 }
 
 /** Facility fingerprint from lead + official site signals (not from document body). */

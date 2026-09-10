@@ -12,6 +12,7 @@ import {
   type FrontierNodeState,
 } from "@/lib/sanita/frontier-store";
 import { classifyUrlRelevance } from "@/lib/sanita/crawl-relevance";
+import { resourceTypeForUrl } from "@/lib/sanita/site-resource";
 
 export type SitemapTraceEntry = {
   url: string;
@@ -51,14 +52,6 @@ function sameHost(a: string, b: string): boolean {
   }
 }
 
-function resourceTypeFor(url: string): string {
-  if (/\.pdf(?:$|\?|#)/i.test(url)) return "pdf";
-  if (/\.xml(?:$|\?|#)/i.test(url)) return "sitemap";
-  if (/\.json(?:$|\?|#)/i.test(url)) return "json";
-  if (/\.(docx?|odt|rtf)(?:$|\?|#)/i.test(url)) return "document";
-  return "html";
-}
-
 function relevanceFor(
   url: string,
   discoverySource?: string | null
@@ -78,22 +71,35 @@ async function fetchText(
   url: string,
   timeoutMs = 12_000
 ): Promise<{ ok: boolean; status: number; text: string; hash: string | null; error?: string }> {
-  try {
-    const res = await externalFetch(url, { timeoutMs, redirect: "follow" });
-    const text = await res.text();
-    const hash = text
-      ? createHash("sha256").update(text).digest("hex")
-      : null;
-    return { ok: res.ok, status: res.status, text, hash };
-  } catch (e) {
-    return {
-      ok: false,
-      status: 0,
-      text: "",
-      hash: null,
-      error: e instanceof Error ? e.message : String(e),
-    };
+  let last: { ok: boolean; status: number; text: string; hash: string | null; error?: string } = {
+    ok: false,
+    status: 0,
+    text: "",
+    hash: null,
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await externalFetch(url, { timeoutMs, redirect: "follow" });
+      const text = await res.text();
+      const hash = text
+        ? createHash("sha256").update(text).digest("hex")
+        : null;
+      last = { ok: res.ok, status: res.status, text, hash };
+      const transient = res.status === 408 || res.status === 425 || res.status === 429 || res.status >= 500;
+      if (!transient || attempt === 3) return last;
+    } catch (e) {
+      last = {
+        ok: false,
+        status: 0,
+        text: "",
+        hash: null,
+        error: e instanceof Error ? e.message : String(e),
+      };
+      if (attempt === 3) return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
+  return last;
 }
 
 function enqueueUrl(crawlRunId: string, url: string, website: string, source: string): boolean {
@@ -104,7 +110,7 @@ function enqueueUrl(crawlRunId: string, url: string, website: string, source: st
       canonicalUrl: url,
       parentUrl: null,
       discoverySource: source,
-      resourceType: resourceTypeFor(url),
+      resourceType: resourceTypeForUrl(url),
       relevance: relevanceFor(url, source),
       state: "DISCOVERED" as FrontierNodeState,
     });

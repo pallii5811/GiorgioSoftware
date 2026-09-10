@@ -32,6 +32,12 @@ process.env.OCR_ENABLED = process.env.OCR_ENABLED ?? "1";
 process.env.POLICY_EXHAUSTIVE = "1";
 process.env.SCAN_FAST = "0";
 delete process.env.SCAN_FAST;
+// HOT means exhaustive first-party absence, not "no policy found in a sample".
+process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE = "1";
+process.env.CRAWL_RENDER_EVERY_HTML = "1";
+process.env.CRAWL_HTML_URL_CAP = "0";
+process.env.SITEMAP_URL_CAP = process.env.SITEMAP_URL_CAP || "50000";
+process.env.SITEMAP_CHILD_CAP = process.env.SITEMAP_CHILD_CAP || "2000";
 // RC-07 — without this, analyzeLead early-returns on legacy [V:PUB]+policyFound
 // (wallMs≈20–40ms, no crawl) and the coordinator demotes to RETRY_PENDING because
 // evidence lacks [STATE:]/[BV:] stamps. sanita-job-runner already sets this; the
@@ -449,6 +455,9 @@ const row = {
   policyNumber: after?.policyNumber ?? null,
   policyExpiry: after?.policyExpiry ? new Date(after.policyExpiry).toISOString() : null,
   policyMassimale: after?.policyMassimale ?? null,
+  entityAttributionCertified: /\[ATTR_RESOURCE_ISOLATED:1\]/i.test(evidence),
+  negativeIdentityCertified: /\[NEGATIVE_IDENTITY_V2:1\]/i.test(evidence),
+  siteCoverageCertified: /\[SITE_COVERAGE_V3:1\]/i.test(evidence),
   confidence: after?.confidence ?? null,
   pagesVisited: after?.pagesVisited ?? null,
   leadScore: after?.leadScore ?? null,
@@ -473,6 +482,9 @@ const row = {
           processingState: finalState,
           crawlComplete: /\[CRAWL_COMPLETE:true\]/i.test(evidence),
           policyFound: after?.policyFound ?? null,
+          negativeIdentityCertified:
+            /\[NEGATIVE_IDENTITY_V2:1\]/i.test(evidence),
+          siteCoverageCertified: /\[SITE_COVERAGE_V3:1\]/i.test(evidence),
         }
       : null,
   pass2:
@@ -486,6 +498,9 @@ const row = {
           processingState: finalState,
           crawlComplete: /\[CRAWL_COMPLETE:true\]/i.test(evidence),
           policyFound: after?.policyFound ?? null,
+          negativeIdentityCertified:
+            /\[NEGATIVE_IDENTITY_V2:1\]/i.test(evidence),
+          siteCoverageCertified: /\[SITE_COVERAGE_V3:1\]/i.test(evidence),
         }
       : null,
   dualDisagreement: false,

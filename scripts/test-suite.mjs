@@ -360,7 +360,8 @@ function testFalsePositiveGates() {
   const malzoniParsText = `
     PARS 2025 Piano Annuale Gestione del Rischio Sanitario Malzoni Research Hospital
     Art. 10 Legge Gelli 24/2017 responsabilità civile verso terzi
-    autoassicurazione gestione diretta del rischio copertura assicurativa RC
+    Attualmente, la struttura non ha sottoscritto alcuna polizza assicurativa,
+    ma opera sotto il regime di autoassicurazione per la gestione diretta del rischio RC.
   `;
   const malzoniCrawl = {
     ...mockCrawl,

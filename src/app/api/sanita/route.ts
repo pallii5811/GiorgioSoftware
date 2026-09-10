@@ -469,7 +469,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error("Errore fatale SanitÃ :", error);
+    console.error("Errore fatale Sanità:", error);
     return NextResponse.json({ success: false, error: "Errore interno del server" }, { status: 500 });
   } finally {
     await closeMapsBrowserPool().catch(() => {});

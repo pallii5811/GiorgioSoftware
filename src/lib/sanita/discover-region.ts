@@ -44,8 +44,12 @@ function mergeDiscoveryWebsite(
 }
 
 /** Case di cura accreditate Min. Salute — nome/comune senza URL (sito si trova via Maps/Google in analisi). */
-async function upsertMinSaluteClinics(region: Region): Promise<number> {
-  const clinics = await fetchAccreditedClinics(region);
+async function upsertMinSaluteClinics(region: Region, municipality?: string | null): Promise<number> {
+  const municipalityKey = municipality?.trim().toLocaleLowerCase("it") || null;
+  const clinics = (await fetchAccreditedClinics(region)).filter(
+    (clinic) =>
+      !municipalityKey || clinic.city?.trim().toLocaleLowerCase("it") === municipalityKey
+  );
   if (clinics.length === 0) return 0;
 
   const existing = await prisma.lead.findMany({
@@ -102,20 +106,28 @@ async function upsertMinSaluteClinics(region: Region): Promise<number> {
  */
 export async function discoverRegionFromMaps(
   region: Region,
-  opts: { deadline: number; cityOffset?: number; includeMinSalute?: boolean }
+  opts: {
+    deadline: number;
+    cityOffset?: number;
+    includeMinSalute?: boolean;
+    maxCities?: number;
+    cities?: string[];
+    minSaluteMunicipality?: string | null;
+  }
 ): Promise<DiscoverRegionResult> {
   const cityOffset = opts.cityOffset ?? 0;
   let saluteAdded = 0;
 
   if ((opts.includeMinSalute ?? cityOffset === 0) && Date.now() < opts.deadline) {
-    saluteAdded = await upsertMinSaluteClinics(region);
+    saluteAdded = await upsertMinSaluteClinics(region, opts.minSaluteMunicipality);
   }
 
   const mapsResult = await discoverFromMaps(region, {
     deadline: opts.deadline,
     cityOffset,
     maxPerCity: 50,
-    maxCities: 999,
+    maxCities: opts.maxCities ?? 999,
+    cities: opts.cities,
   });
 
   let mapsDiscovered = 0;

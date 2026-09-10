@@ -23,6 +23,7 @@ function parseItalianDate(raw: string): Date | null {
   if (!m) return null;
   let y = Number(m[3]);
   if (y < 100) y += 2000;
+  if (y < 1990 || y > 2100) return null;
   const d = Number(m[1]);
   const mo = Number(m[2]);
   if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
@@ -66,17 +67,25 @@ function findNextPayment(text: string): Date | null {
 }
 
 function findScadeAlleOre24(text: string): Date | null {
-  const patterns = [
+  const explicitPatterns = [
     /scade\s+alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/i,
     /fino\s+alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/i,
-    /alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/i,
   ];
-  for (const re of patterns) {
+  for (const re of explicitPatterns) {
     const m = text.match(re);
     if (m?.[1]) {
       const d = parseItalianDate(m[1]);
       if (d) return d;
     }
+  }
+  // Nei moduli "Decorrenza dalle ore ... alle ore ..." la prima data e
+  // l'inizio della copertura: la scadenza e sempre l'ultima data etichettata.
+  const generic = [...text.matchAll(
+    /alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi
+  )];
+  for (const match of generic.reverse()) {
+    const d = parseItalianDate(match[1]);
+    if (d) return d;
   }
   return null;
 }
@@ -86,21 +95,37 @@ function findPeriodoAssicurazione(text: string): {
   decorrenza: Date | null;
   expiry: Date | null;
 } {
+  const duration = text.match(
+    /decorrenza[\s\S]{0,80}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})[\s\S]{0,120}?alle\s+ore\s+24(?:[:.]?00)?\s+del\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/i
+  );
+  if (duration?.[1] && duration[2]) {
+    const decorrenza = parseItalianDate(duration[1]);
+    const expiry = parseItalianDate(duration[2]);
+    if (decorrenza && expiry && expiry.getTime() >= decorrenza.getTime()) {
+      return { decorrenza, expiry };
+    }
+  }
   const block =
+    text.match(
+      /decorrenza[\s\S]{0,60}?scadenza[\s\S]{0,360}/i
+    )?.[0] ||
     text.match(
       /periodo\s+di\s+assicurazione[\s\S]{0,280}/i
     )?.[0] ||
     text.match(/periodo\s+assicurativ[oa][\s\S]{0,280}/i)?.[0] ||
-    text.match(
-      /decorrenza[\s\S]{0,40}?scadenza[\s\S]{0,120}/i
-    )?.[0] ||
     "";
   if (!block) return { decorrenza: null, expiry: null };
   // Non usare quietanza residue nel blocco
   const cleaned = stripQuietanzaDates(block);
-  const dates = [...cleaned.matchAll(DATE_RE)]
+  const compactDates = [...cleaned.matchAll(DATE_RE)]
     .map((m) => parseItalianDate(m[1]))
     .filter((d): d is Date => Boolean(d));
+  const tableDates = [...cleaned.matchAll(
+    /\bg[.\s|]*(\d{1,2})\s*[|/]?\s*m\s*(\d{1,2})\s*[|/]?\s*a\s*(\d{4})/gi
+  )]
+    .map((m) => parseItalianDate(`${m[1]}/${m[2]}/${m[3]}`))
+    .filter((d): d is Date => Boolean(d));
+  const dates = [...compactDates, ...tableDates];
   if (dates.length >= 2) {
     // Ordina cronologicamente: prima = decorrenza, ultima = scadenza
     dates.sort((a, b) => a.getTime() - b.getTime());
@@ -112,6 +137,7 @@ function findPeriodoAssicurazione(text: string): {
 
 function findSchedaPolicyNumber(text: string): string | null {
   const patterns = [
+    /\b(20\d{2}\/\d{2}\/\d{5,})\b/i,
     /polizza\s*n[°ºo.]?\s*[:\-]?\s*(RCI[0-9]{6,})/i,
     /\b(RCI[0-9]{8,})\b/i,
     /n[°º.]?\s*polizza\s*[:\-]?\s*([A-Z]{2,5}[0-9]{6,})/i,

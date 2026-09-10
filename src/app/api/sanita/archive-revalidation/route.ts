@@ -55,6 +55,9 @@ function deriveCurrentState(cp: CheckpointFile) {
   let technicalBlockedFinal = 0;
   let hot = 0;
   let published = 0;
+  let publishedValid = 0;
+  let publishedExpired = 0;
+  let publishedDateUnknown = 0;
   let selfInsurance = 0;
   let otherNonCommercialTerminal = 0;
   let outOfScope = 0;
@@ -90,6 +93,9 @@ function deriveCurrentState(cp: CheckpointFile) {
       ps === "PUBLISHED_DATE_UNKNOWN"
     ) {
       published++;
+      if (ps === "PUBLISHED_CURRENT") publishedValid++;
+      else if (ps === "PUBLISHED_EXPIRED") publishedExpired++;
+      else publishedDateUnknown++;
       terminalIds.published.push(lid);
     } else if (ps === "OUT_OF_SCOPE") {
       outOfScope++;
@@ -120,6 +126,9 @@ function deriveCurrentState(cp: CheckpointFile) {
     certifiedCurrentRun,
     hot,
     published,
+    publishedValid,
+    publishedExpired,
+    publishedDateUnknown,
     selfInsurance,
     otherNonCommercialTerminal,
     outOfScope,
@@ -153,6 +162,9 @@ function emptyPayload(extra: Record<string, unknown> = {}) {
     certifiedCurrentRun: 0,
     hot: 0,
     published: 0,
+    publishedValid: 0,
+    publishedExpired: 0,
+    publishedDateUnknown: 0,
     selfInsurance: 0,
     otherNonCommercialTerminal: 0,
     terminalIds: { hot: [], published: [], selfInsurance: [], review: [], technical: [], other: [] },
@@ -203,6 +215,9 @@ async function readLocalStatus() {
         certifiedCurrentRun: 0,
         hot: 0,
         published: 0,
+        publishedValid: 0,
+        publishedExpired: 0,
+        publishedDateUnknown: 0,
         selfInsurance: 0,
         otherNonCommercialTerminal: 0,
         outOfScope: 0,
@@ -239,6 +254,9 @@ async function readLocalStatus() {
     certifiedCurrentRun: cur.certifiedCurrentRun,
     hot: cur.hot,
     published: cur.published,
+    publishedValid: cur.publishedValid,
+    publishedExpired: cur.publishedExpired,
+    publishedDateUnknown: cur.publishedDateUnknown,
     selfInsurance: cur.selfInsurance,
     otherNonCommercialTerminal: cur.otherNonCommercialTerminal,
     terminalIds: cur.terminalIds ?? {

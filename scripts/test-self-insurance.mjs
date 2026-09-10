@@ -5,9 +5,11 @@
 import {
   detectSelfInsuranceDeclaration,
   canEmitSelfInsurance,
+  resolveSelfInsuranceSignal,
   SELF_INSURANCE_UI,
   SELF_INSURANCE_VERIFIED,
 } from "../src/lib/sanita/self-insurance.ts";
+import { analyzePolicy } from "../src/lib/sanita/detector.ts";
 import { canEmitPublished, detectInsuranceSignals } from "../src/lib/sanita/can-emit-published.ts";
 import { derivePublishedSubtype, PUBLISHED_SUBTYPE_META } from "../src/lib/sanita/published-subtype.ts";
 import {
@@ -136,6 +138,32 @@ const weak = canEmitSelfInsurance({
 ok(!weak.ok, "4. menzione generica non attribuita → non promuovere");
 
 // 5) documento altra struttura → entityAttributed false
+const alternativeTemplate =
+  "Il dato si riferisce al periodo in cui la struttura è in copertura assicurativa o in autoassicurazione/autoritenzione.";
+const alternativeDetection = detectSelfInsuranceDeclaration(alternativeTemplate);
+ok(
+  alternativeDetection.declared === false,
+  "4b. alternativa assicurazione o autoassicurazione non dichiara SI"
+);
+ok(
+  resolveSelfInsuranceSignal({
+    text: alternativeTemplate,
+    policyCompany: "Autoassicurazione / gestione diretta del rischio",
+  }).declared === false,
+  "4b. label detector non può promuovere menzione alternativa"
+);
+ok(
+  analyzePolicy(alternativeTemplate).policyFound === false,
+  "4b. detector polizza non pubblica SI da testo modello"
+);
+
+const normativeReference =
+  "Delibera regionale di approvazione del programma e delle indicazioni operative per la gestione diretta dei sinistri nelle Aziende Sanitarie sperimentatrici.";
+ok(
+  detectSelfInsuranceDeclaration(normativeReference).declared === false,
+  "4c. riferimento normativo a gestione diretta di terzi non dichiara SI"
+);
+
 const other = canEmitPublished({
   identityStatus: "OFFICIAL_CONFIRMED",
   sourceClass: "FIRST_PARTY_GROUP",
@@ -174,6 +202,18 @@ ok(
     evidenceBody: "misura analoga alle coperture assicurative",
   }) === "PUBLISHED_ANALOGOUS_MEASURE",
   "7. misura analoga resta ANALOGOUS (non SELF)"
+);
+ok(
+  derivePublishedSubtype({
+    analogousMeasure: true,
+    policyCompany: "AmTrust",
+    policyNumber: "RCH00020000239",
+    policyExpiry: "2026-11-04T00:00:00.000Z",
+    evidenceBody:
+      "POLIZZA ASSICURATIVA VILLA CINZIA AMTRUST RCH00020000239 SCAD. 04/11/2026. " +
+      "Riferimento normativo alle misure analoghe.",
+  }) === "PUBLISHED_CURRENT",
+  "7b. polizza concreta prevale su una menzione normativa di misura analoga"
 );
 
 // autoassicurazione non deve classificare come ANALOGOUS

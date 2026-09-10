@@ -32,6 +32,26 @@ ok(!/in regola/i.test(VERDICT_META.PUBLISHED.label), "VERDICT_META.PUBLISHED sen
 
 const expired = derivePublishedSubtype({ policyObsolete: true, policyCompany: "Generali", policyExpiry: new Date("2016-01-01") });
 ok(expired === "PUBLISHED_EXPIRED", "subtype EXPIRED");
+ok(
+  derivePublishedSubtype({
+    policyObsolete: false,
+    policyCompany: "Generali",
+    policyNumber: "RCT-123",
+    policyExpiry: "2025-12-31",
+    now: "2026-07-27T12:00:00Z",
+  }) === "PUBLISHED_EXPIRED",
+  "scadenza passata forza EXPIRED anche senza policyObsolete"
+);
+ok(
+  derivePublishedSubtype({
+    policyObsolete: false,
+    policyCompany: "Generali",
+    policyNumber: "RCT-123",
+    policyExpiry: "2026-07-27",
+    now: "2026-07-27T12:00:00Z",
+  }) === "PUBLISHED_CURRENT",
+  "polizza resta valida per l'intero giorno di scadenza"
+);
 const label = uxLabelForPublished(expired, VERDICT_META.PUBLISHED.label);
 ok(/scaduta/i.test(label), "label scaduta");
 ok(!/in regola/i.test(label), "scaduta ≠ in regola");

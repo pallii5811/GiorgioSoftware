@@ -164,6 +164,42 @@ await withDb(async () => {
   srv.close();
 });
 
+// --- transient sitemap failure recovers inside the same certification pass ---
+await withDb(async () => {
+  let sitemapAttempts = 0;
+  const srv = await server((req, res) => {
+    const port = srv.address().port;
+    const u = req.url.split("?")[0];
+    if (u === "/robots.txt") {
+      res.writeHead(200);
+      res.end(`Sitemap: http://127.0.0.1:${port}/transient.xml\n`);
+      return;
+    }
+    if (u === "/transient.xml") {
+      sitemapAttempts++;
+      if (sitemapAttempts === 1) {
+        res.writeHead(503);
+        res.end("temporary");
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/xml" });
+      res.end(`<?xml version="1.0"?><urlset><loc>http://127.0.0.1:${port}/ok</loc></urlset>`);
+      return;
+    }
+    res.writeHead(404);
+    res.end("nf");
+  });
+  const base = `http://127.0.0.1:${srv.address().port}/`;
+  const { crawlRunId } = createCrawlRun({ leadId: "L4b", runId: "s4b" });
+  const r = await discoverAndProcessSitemaps(crawlRunId, base);
+  ok(sitemapAttempts === 2, `transient sitemap retried once (${sitemapAttempts})`);
+  ok(
+    r.status === "ROBOTS_REFERENCED_COMPLETE",
+    `transient sitemap recovered (got ${r.status})`
+  );
+  srv.close();
+});
+
 // --- absent ---
 await withDb(async () => {
   const srv = await server((req, res) => {

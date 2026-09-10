@@ -1,5 +1,6 @@
 import type { CrawlResult } from "@/lib/sanita/crawler";
 import { mapsNameVariants, mapsNamesMatch } from "@/lib/sanita/maps-query";
+import { hostBrandMatchesName } from "@/lib/sanita/contacts";
 import { isBlockedWebsiteHost, isParkedOrForSalePage, isSiteUnderMaintenance } from "@/lib/sanita/website";
 
 function hostKey(url: string | null | undefined): string | null {
@@ -97,6 +98,12 @@ const HOSPITALITY_CORPUS =
 
 const HEALTH_CORPUS =
   /\b(sanitar|rsa|riposo|assistenz|infermier|degent|pazient|visita\s+medic|poliambulator|terapia|reparto)\b/i;
+
+const STRONG_PRIVATE_HEALTH_CORPUS =
+  /\b(casa\s+di\s+cura|clinica|struttura\s+sanitaria|ricover|pazient|reparto|ambulator|reumatolog|diagnos|chirurg|medic[oi]|infermier)\b/i;
+
+const RELIGIOUS_ENTITY_CORPUS =
+  /\b(santuario|apparizion|vergine\s+immacolata|celebrazion|santa\s+messa|sacerdot|diocesi|preghier|pellegrin|offert[ae]\s+e\s+donazion)\b/i;
 
 function norm(s: string): string {
   return s
@@ -204,17 +211,73 @@ export function validateSiteIdentity(
   if (isParkedOrForSalePage(corpus)) {
     return { ok: false, reason: "Dominio parcheggiato o in vendita — non è un sito istituzionale" };
   }
-  if (!companyNameOnSite(companyName, corpus)) {
+  if (
+    isPrivateName &&
+    !isPublicName &&
+    RELIGIOUS_ENTITY_CORPUS.test(corpus) &&
+    !STRONG_PRIVATE_HEALTH_CORPUS.test(corpus)
+  ) {
     return {
       ok: false,
-      reason: "Nome struttura assente nel sito analizzato — probabile sito errato (omonimia Maps)",
+      reason:
+        "Sito di santuario/ente religioso omonimo — non è la struttura sanitaria indicata",
     };
+  }
+  // Dominio first-party + contenuti sanitari: l'host stesso prova l'identità
+  // (nome spesso solo in logo/immagini). Domini estranei (delta.com, trieste.com)
+  // restano bloccati perché senza corpus sanitario.
+  const brandHost = hostBrandMatchesName(companyName, website);
+  const brandHostHealthSite = brandHost && HEALTH_CORPUS.test(corpus);
+  const corpusLen = corpus.replace(/\s+/g, " ").trim().length;
+  const thinCorpus =
+    corpusLen < 800 || (crawl.pagesVisited?.length ?? 0) < 5;
+
+  if (!brandHostHealthSite && !companyNameOnSite(companyName, corpus)) {
+    if (brandHost) {
+      // Dominio allineato al nome: NON dichiarare "omonimia Maps" / sito errato.
+      // Crawl corto → insufficiente (retry normale). Corpus lungo non sanitario → rifiuto.
+      if (!HEALTH_CORPUS.test(corpus) && thinCorpus) {
+        return {
+          ok: false,
+          reason:
+            "Identità brand-host in attesa di contenuti sanitari sufficienti",
+        };
+      }
+      if (!HEALTH_CORPUS.test(corpus)) {
+        return {
+          ok: false,
+          reason:
+            "Dominio brand allineato ma contenuti non sanitari verificabili",
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        reason:
+          "Nome struttura assente nel sito analizzato — probabile sito errato (omonimia Maps)",
+      };
+    }
   }
 
   if (HOSPITALITY_CORPUS.test(corpus) && !HEALTH_CORPUS.test(corpus) && isPrivateName && !isPublicName) {
     return {
       ok: false,
       reason: "Contenuti tipici di hotel/turismo — sito non sanitario (URL Maps errato)",
+    };
+  }
+
+  // Brand-host o nome sul sito, ma crawl già ampio e ZERO segnali sanitari
+  // (infissi, turismo, corporate generico) → non è il sito della struttura sanitaria.
+  if (
+    !HEALTH_CORPUS.test(corpus) &&
+    !thinCorpus &&
+    isPrivateName &&
+    !isPublicName
+  ) {
+    return {
+      ok: false,
+      reason:
+        "Dominio/nome allineati ma contenuti non sanitari verificabili",
     };
   }
 
@@ -227,6 +290,69 @@ export function validateSiteIdentity(
   }
 
   if (!cityOnSite(city, corpus)) {
+    const otherCity =
+      /\b(milano|roma|napoli|salerno|caserta|avellino|benevento|torino|bologna|firenze|genova|palermo|bari|catania|verona|vicenza|padova|venezia|treviso|rovigo|brescia|bergamo|monza)\b/i.exec(
+        corpus
+      );
+    const cityTokenInName =
+      /\b(milano|roma|napoli|salerno|caserta|avellino|benevento|torino|bologna|firenze|genova|palermo|bari|catania|verona|vicenza|padova|venezia|treviso|rovigo|brescia|bergamo|monza)\b/i.exec(
+        companyName
+      );
+
+    // Brand-host: comune Maps/footer non vincolante (Tortorella/Valva + footer Roma).
+    // Eccezione: se il NOME struttura contiene già una città (Salus Napoli) e il sito
+    // ne mostra un'altra (Milano) → omonimia reale, resta MISMATCH.
+    if (brandHost) {
+      const firstPartyPolicyDoc =
+        crawl.policyPdfUrl &&
+        (crawl.policyPdfsRead ?? 0) > 0 &&
+        hostCompatibleWithWebsite(website, hostKey(crawl.policyPdfUrl));
+      if (
+        firstPartyPolicyDoc &&
+        companyNameOnSite(companyName, crawl.policyText || corpus)
+      ) {
+        return {
+          ok: true,
+          reason:
+            "Identità confermata da documento polizza first-party (città multi-sede)",
+        };
+      }
+      if (!HEALTH_CORPUS.test(corpus)) {
+        if (thinCorpus) {
+          return {
+            ok: false,
+            reason:
+              "Identità brand-host in attesa di contenuti sanitari sufficienti",
+          };
+        }
+        return {
+          ok: false,
+          reason:
+            "Dominio/nome allineati ma contenuti non sanitari verificabili",
+        };
+      }
+      if (otherCity && cityTokenInName) {
+        const named = norm(cityTokenInName[1]);
+        const found = norm(otherCity[1]);
+        if (
+          named &&
+          found &&
+          !named.includes(found) &&
+          !found.includes(named)
+        ) {
+          return {
+            ok: false,
+            reason: `Città sul sito (${otherCity[1]}) diversa da ${cityTokenInName[1]} nel nome — omonimia o URL errato`,
+          };
+        }
+      }
+      return {
+        ok: true,
+        reason:
+          "Identità confermata da brand-host (comune Maps non vincolante su multi-sede/footer)",
+      };
+    }
+
     // RC-08e: se esiste un documento polizza first-party che cita il nome della struttura,
     // non bloccare come MISMATCH per città diversa su siti multi-sede (es. sede legale vs sede operativa).
     const firstPartyPolicyDoc =
@@ -240,10 +366,6 @@ export function validateSiteIdentity(
       };
     }
     // Se il sito cita chiaramente un altro comune italiano ≠ atteso → omonimia/URL errato.
-    const otherCity =
-      /\b(milano|roma|torino|bologna|firenze|genova|palermo|bari|catania|verona|padova|venezia|brescia|bergamo|monza)\b/i.exec(
-        corpus
-      );
     if (otherCity && city?.trim()) {
       const expected = norm(city);
       const found = norm(otherCity[1]);

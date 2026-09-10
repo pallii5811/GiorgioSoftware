@@ -1,62 +1,43 @@
 /**
- * Scarica l'elenco COMPLETO dei comuni ISTAT e salva data/comuni.json
- * filtrato per Campania + Veneto (TUTTI i comuni, anche i più piccoli).
+ * Genera data/comuni.json dalla fonte ufficiale ISTAT corrente.
+ * Richiede Python 3 + openpyxl.
  *
  * Uso: npx tsx scripts/download-comuni.mjs
  */
-import fs from "node:fs";
-import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import process from "node:process";
 
-const SOURCES = [
-  "https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json",
-  "https://cdn.jsdelivr.net/gh/matteocontrini/comuni-json@master/comuni.json",
-];
-
-const TARGET_REGIONS = ["Campania", "Veneto"];
-
-async function fetchJson() {
-  let lastErr;
-  for (const url of SOURCES) {
-    try {
-      const res = await fetch(url, { headers: { "User-Agent": "leadsniper/1.0" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      console.warn(`  ⚠️ ${url}: ${e.message}`);
-    }
-  }
-  throw lastErr ?? new Error("Nessuna fonte comuni disponibile");
-}
-
-async function main() {
-  console.log("Scarico elenco comuni ISTAT…");
-  const all = await fetchJson();
-
-  const out = {};
-  for (const r of TARGET_REGIONS) out[r] = [];
-
-  for (const c of all) {
-    const regName = c?.regione?.nome;
-    const nome = c?.nome;
-    if (!regName || !nome) continue;
-    if (TARGET_REGIONS.includes(regName)) out[regName].push(nome);
-  }
-
-  for (const r of TARGET_REGIONS) {
-    out[r] = [...new Set(out[r])].sort((a, b) => a.localeCompare(b, "it"));
-  }
-
-  const dir = path.join(process.cwd(), "data");
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, "comuni.json");
-  fs.writeFileSync(file, JSON.stringify(out, null, 2), "utf8");
-
-  for (const r of TARGET_REGIONS) console.log(`  ${r}: ${out[r].length} comuni`);
-  console.log(`✓ Salvato in ${file}`);
-}
-
-main().catch((e) => {
-  console.error("Errore download comuni:", e);
-  process.exit(1);
+const source =
+  "https://www.istat.it/storage/codici-unita-amministrative/Elenco-comuni-italiani.xlsx";
+const workbook = join(tmpdir(), "istat-comuni-current.xlsx");
+const response = await fetch(source, {
+  headers: { "User-Agent": "giorgio-software/territorio-italia" },
 });
+if (!response.ok) throw new Error(`ISTAT ha risposto HTTP ${response.status}`);
+writeFileSync(workbook, Buffer.from(await response.arrayBuffer()));
+
+const candidates =
+  process.platform === "win32"
+    ? ["python", "py"]
+    : ["python3", "python"];
+
+let last = null;
+for (const command of candidates) {
+  const args =
+    command === "py"
+      ? ["-3", "scripts/download-comuni.py", workbook]
+      : ["scripts/download-comuni.py", workbook];
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    env: process.env,
+  });
+  last = result;
+  if (!result.error && result.status === 0) process.exit(0);
+}
+
+console.error("Impossibile eseguire Python 3 con openpyxl.");
+process.exit(last?.status || 1);

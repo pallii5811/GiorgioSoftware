@@ -2,10 +2,16 @@
  * published-false-positive-defense — blog/snippet/wrong entity must NOT → PUBLISHED.
  */
 import { analyzePolicy } from "../src/lib/sanita/detector.ts";
-import { reconcilePolicyVerdict } from "../src/lib/sanita/policy-verify.ts";
+import {
+  reconcilePolicyVerdict,
+  canPromotePersistedExhaustiveAbsence,
+} from "../src/lib/sanita/policy-verify.ts";
 import { terminalVerdictFromDiscovery, discoveryBlocksTerminalVerdict } from "../src/lib/sanita/discovery-gate.ts";
 import { classifySourceUrl, sourceAllowsPublished } from "../src/lib/sanita/source-class.ts";
-import { canEmitPublished } from "../src/lib/sanita/can-emit-published.ts";
+import {
+  canEmitPublished,
+  detectInsuranceSignals,
+} from "../src/lib/sanita/can-emit-published.ts";
 
 const start = Date.now();
 let pass = 0;
@@ -26,6 +32,46 @@ ok(discoveryBlocksTerminalVerdict("BLOG_ARTICLE"), "blog blocks terminal");
 ok(discoveryBlocksTerminalVerdict("SNIPPET"), "snippet blocks terminal");
 ok(discoveryBlocksTerminalVerdict("BROKER_COMPARISON"), "broker blocks terminal");
 ok(!discoveryBlocksTerminalVerdict("OFFICIAL_SITE"), "official site allowed");
+
+ok(
+  canPromotePersistedExhaustiveAbsence({
+    verdict: "REVIEW",
+    policyFound: false,
+    finalComplete: true,
+    siteCoverageOk: true,
+    exhaustiveCoverageMode: true,
+    identityVerified: true,
+    needsOcrReview: false,
+    siteUnderMaintenance: false,
+  }),
+  "persisted exhaustive frontier promotes a slice-local REVIEW to the HOT candidate gate"
+);
+ok(
+  !canPromotePersistedExhaustiveAbsence({
+    verdict: "REVIEW",
+    policyFound: false,
+    finalComplete: true,
+    siteCoverageOk: true,
+    exhaustiveCoverageMode: true,
+    identityVerified: true,
+    needsOcrReview: true,
+    siteUnderMaintenance: false,
+  }),
+  "persisted exhaustive promotion remains blocked by OCR uncertainty"
+);
+ok(
+  !canPromotePersistedExhaustiveAbsence({
+    verdict: "REVIEW",
+    policyFound: false,
+    finalComplete: true,
+    siteCoverageOk: true,
+    exhaustiveCoverageMode: true,
+    identityVerified: false,
+    needsOcrReview: false,
+    siteUnderMaintenance: false,
+  }),
+  "persisted exhaustive promotion remains blocked without official identity"
+);
 
 const blog = `
   Articolo blog sulla Legge Gelli: le strutture devono pubblicare la polizza.
@@ -111,6 +157,66 @@ ok(
     category: "Ospedale",
   }).ok,
   "article cannot emit PUB"
+);
+const proseSignals = detectInsuranceSignals(
+  "Siamo a pubblicare il testo della polizza assicurativa in corso di validità. " +
+    "È stata stipulata polizza assicurativa con AM TRUST ITALIA."
+);
+ok(
+  proseSignals.strong && proseSignals.mediumCount >= 1,
+  "explicit first-party policy publication with AMTrust supplies certified insurance signals"
+);
+ok(
+  !detectInsuranceSignals(
+    "Relazione PARM: la Legge Gelli richiede alle strutture di pubblicare la polizza."
+  ).strong,
+  "generic legal duty does not become a strong insurance signal"
+);
+const villaCinziaText =
+  "POLIZZA ASSICURATIVA VILLA CINZIA AMTRUST OSPEDALI PRIVATI " +
+  "RCH00020000239 DATA STIPULA: 04/02/25 – SCAD. 04/11/2026. " +
+  "LEGGE GELLI: relazione annuale sugli eventi avversi e risarcimenti erogati. " +
+  "Il modello normativo contempla copertura assicurativa o autoassicurazione.";
+const villaCinziaAnalysis = analyzePolicy(
+  villaCinziaText,
+  "https://www.clinicavillacinzia.com/amministrazione-trasparente"
+);
+const villaCinziaReconciled = reconcilePolicyVerdict(
+  {
+    ok: true,
+    error: null,
+    text: villaCinziaText,
+    policyText: villaCinziaText,
+    pagesVisited: [
+      "https://www.clinicavillacinzia.com/amministrazione-trasparente",
+    ],
+    foundRelevantPage: true,
+    policyExhaustive: true,
+    policyPdfsQueued: 0,
+    policyPdfsRead: 0,
+    needsOcrReview: false,
+    policyPdfUrl: null,
+    policySourceUrl:
+      "https://www.clinicavillacinzia.com/amministrazione-trasparente",
+    policyPdfAnalysis: villaCinziaAnalysis,
+    emails: [],
+    pec: null,
+    phones: [],
+    piva: null,
+  },
+  villaCinziaAnalysis,
+  "REVIEW",
+  {
+    companyName: "Clinica Villa Cinzia",
+    website: "https://www.clinicavillacinzia.com/",
+    city: "Napoli",
+    category: "Ospedale",
+  }
+);
+ok(
+  villaCinziaReconciled.verdict === "PUBLISHED" &&
+    /Amministrazione Trasparente \(HTML\)/i.test(villaCinziaReconciled.note),
+  "concrete Villa Cinzia HTML policy is certified despite PARM/self-insurance boilerplate"
 );
 
 const elapsed = Date.now() - start;

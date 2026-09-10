@@ -16,6 +16,31 @@ export interface MapsPlace {
   category: string;
 }
 
+/**
+ * Maps può confondere comuni italiani con omonimi esteri (Burgos è il caso
+ * reale). Un prefisso internazionale esplicitamente diverso da +39/0039 o un
+ * Paese estero scritto nell'indirizzo è una prova sufficiente per scartare la
+ * scheda prima di aprirne il sito. I numeri locali/assenti restano ammessi.
+ */
+export function isClearlyForeignMapsPlace(
+  place: Pick<MapsPlace, "address" | "phone">
+): boolean {
+  const phone = String(place.phone || "")
+    .replace(/[^+\d]/g, "")
+    .trim();
+  if (/^\+(?!39\b|39\d)/.test(phone) || /^00(?!39\b|39\d)/.test(phone)) {
+    return true;
+  }
+
+  const address = String(place.address || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("it");
+  return /\b(?:spagna|espana|francia|france|germania|deutschland|austria|svizzera|switzerland|slovenia|croazia|croatia|regno unito|united kingdom|portogallo|portugal|belgio|belgium|paesi bassi|netherlands)\b/.test(
+    address
+  );
+}
+
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -195,9 +220,35 @@ function composeQuery(category: string, city: string): string {
   return `${category} ${city}`;
 }
 
-/** In discovery per-comune la query Maps è già geo-ancorata: non scartare RSA/cliniche in comuni limitrofi. */
-function addressMatchesSearchCity(_address: string | null, _city: string): boolean {
-  return true;
+function geoTokens(value: string): string[] {
+  const connectors = new Set(["a", "d", "da", "de", "del", "della", "di", "in", "l", "la", "le", "nel", "nell"]);
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("it")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !connectors.has(token));
+}
+
+/**
+ * La query Maps può restituire strutture della provincia o di comuni limitrofi.
+ * La località viene verificata sulla parte finale dell'indirizzo, evitando falsi
+ * match come "Via Roma" per una struttura che non si trova nel comune di Roma.
+ */
+export function addressMatchesSearchCity(address: string | null, city: string): boolean {
+  if (!address?.trim() || !city.trim()) return false;
+  const normalizedAddress = address
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("it");
+  const postalTail =
+    normalizedAddress.match(/\b\d{5}\s+(.+)$/)?.[1] ??
+    normalizedAddress.split(",").slice(-2).join(" ");
+  const addressTokens = new Set(geoTokens(postalTail));
+  const cityTokens = geoTokens(city);
+  return cityTokens.length > 0 && cityTokens.every((token) => addressTokens.has(token));
 }
 
 /** True se la scheda Maps è una struttura soggetta art. 10 Gelli (polizza obbligatoria). */
@@ -238,7 +289,7 @@ async function extractSingleMapsPlace(page: Page, city: string, category: string
     .textContent({ timeout: 1500 })
     .catch(() => null);
   if (address && city && !addressMatchesSearchCity(address, city)) return null;
-  return {
+  const place = {
     name: placeName,
     address: address?.trim() || null,
     phone: await extractPhoneFromPanel(page),
@@ -246,6 +297,7 @@ async function extractSingleMapsPlace(page: Page, city: string, category: string
     city,
     category: panelCategory,
   };
+  return isClearlyForeignMapsPlace(place) ? null : place;
 }
 
 async function searchMaps(page: Page, query: string, _expectedCity: string): Promise<void> {
@@ -460,7 +512,7 @@ export async function scrapeMapsCategoryCity(
       const panelCategory = await extractCategoryFromPanel(page);
       if (!isHealthcarePlace(placeName, panelCategory)) continue;
 
-      results.push({
+      const place = {
         name: placeName,
         address: address?.trim() || null,
         phone: await extractPhoneFromPanel(page),
@@ -468,7 +520,9 @@ export async function scrapeMapsCategoryCity(
         website: normalizeOfficialWebsite(await extractWebsiteFromPanel(page)),
         city,
         category: panelCategory || category,
-      });
+      };
+      if (isClearlyForeignMapsPlace(place)) continue;
+      results.push(place);
     }
   } catch {
     /* ignore */

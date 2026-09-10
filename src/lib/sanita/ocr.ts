@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { isScanEngineHost } from "@/lib/sanita/scan-engine-url";
+import { detectPolicyCandidate } from "@/lib/sanita/detector";
 
 const execFileAsync = promisify(execFile);
 
@@ -76,6 +77,12 @@ export const MAX_OCR_PAGES = (() => {
 
 const MIN_IMAGE_BYTES = 12_000;
 const MAX_IMAGE_BYTES = 30_000_000;
+// A4 a 300 DPI e circa 8,7 MP. Oltre questa soglia il dettaglio aggiuntivo
+// non migliora il testo assicurativo, mentre Leptonica puo fallire pixdata_malloc
+// e lasciare il crawler apparentemente fermo. Manteniamo margine senza ridurre
+// le normali scansioni di documenti.
+const MAX_OCR_IMAGE_DIMENSION = 3_600;
+const MAX_OCR_IMAGE_PIXELS = 12_000_000;
 const DIGITAL_TEXT_RICH_THRESHOLD = 1_500;
 function normalizeOcrInsuranceText(text: string): string {
   return text
@@ -330,8 +337,14 @@ async function normalizeEncodedForOcr(buf: Buffer): Promise<Buffer | null> {
     if (!meta.width || !meta.height) return null;
     if (meta.width < 32 || meta.height < 32) return null;
     let p = img.flatten({ background: "#ffffff" }).grayscale().normalize();
-    if (meta.width < 1000) {
-      p = p.resize({ width: Math.min(2200, meta.width * 2), withoutEnlargement: false });
+    const target = boundedOcrDimensions(meta.width, meta.height);
+    if (target.width !== meta.width || target.height !== meta.height) {
+      p = p.resize({
+        width: target.width,
+        height: target.height,
+        fit: "fill",
+        withoutEnlargement: false,
+      });
     }
     return await p.png().toBuffer();
   } catch {
@@ -352,8 +365,14 @@ async function normalizeRawForOcr(
       .flatten({ background: "#ffffff" })
       .grayscale()
       .normalize();
-    if (width < 1000) {
-      p = p.resize({ width: Math.min(2200, width * 2), withoutEnlargement: false });
+    const target = boundedOcrDimensions(width, height);
+    if (target.width !== width || target.height !== height) {
+      p = p.resize({
+        width: target.width,
+        height: target.height,
+        fit: "fill",
+        withoutEnlargement: false,
+      });
     }
     return await p.png().toBuffer();
   } catch {
@@ -366,7 +385,8 @@ async function normalizeRawForOcr(
  */
 export async function rasterizePdfPages(
   pdfBuffer: Buffer,
-  maxPages: number
+  maxPages: number,
+  startPage = 1
 ): Promise<RasterizeResult> {
   const t0 = Date.now();
   const resolved = await resolvePdftoppm();
@@ -390,7 +410,18 @@ export async function rasterizePdfPages(
     await fs.promises.writeFile(inPath, pdfBuffer);
     await execFileAsync(
       resolved.path,
-      ["-png", "-r", "300", "-f", "1", "-l", String(maxPages), "-gray", inPath, outPrefix],
+      [
+        "-png",
+        "-r",
+        "300",
+        "-f",
+        String(Math.max(1, startPage)),
+        "-l",
+        String(Math.max(1, startPage) + maxPages - 1),
+        "-gray",
+        inPath,
+        outPrefix,
+      ],
       { timeout: 120_000, windowsHide: true }
     );
     const files = (await fs.promises.readdir(dir))
@@ -473,6 +504,59 @@ async function extractImagesViaPdfParse(pdfBuffer: Buffer, maxPages: number): Pr
   } catch {
     return [];
   }
+}
+
+function boundedOcrDimensions(
+  width: number,
+  height: number
+): { width: number; height: number } {
+  let scale = Math.min(
+    1,
+    MAX_OCR_IMAGE_DIMENSION / width,
+    MAX_OCR_IMAGE_DIMENSION / height,
+    Math.sqrt(MAX_OCR_IMAGE_PIXELS / (width * height))
+  );
+  if (width < 1_000 && scale === 1) {
+    scale = Math.min(
+      2,
+      2_200 / width,
+      MAX_OCR_IMAGE_DIMENSION / height,
+      Math.sqrt(MAX_OCR_IMAGE_PIXELS / (width * height))
+    );
+  }
+  return {
+    width: Math.max(32, Math.round(width * scale)),
+    height: Math.max(32, Math.round(height * scale)),
+  };
+}
+
+async function readPdfPageCount(pdfBuffer: Buffer): Promise<number | null> {
+  try {
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: pdfBuffer });
+    try {
+      const info = (await parser.getInfo()) as unknown as {
+        total?: number;
+        pages?: number;
+        numpages?: number;
+      };
+      const total = Number(info?.total ?? info?.numpages ?? info?.pages);
+      return Number.isFinite(total) && total > 0 ? Math.floor(total) : null;
+    } finally {
+      await parser.destroy().catch(() => {});
+    }
+  } catch {
+    return null;
+  }
+}
+
+function exhaustivePdfOcrPageLimit(): number {
+  const raw = process.env.OCR_MAX_PAGES;
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.min(parsed, 500);
+  }
+  return POLICY_EXHAUSTIVE ? 500 : MAX_OCR_PAGES;
 }
 
 function dedupeImages(buffers: Buffer[]): Buffer[] {
@@ -619,16 +703,32 @@ async function runOcrOnImages(
   try {
     let combined = "";
     let emptyStreak = 0;
+    let timedOut = false;
     const t0 = Date.now();
     const hardMs = ocrJobTimeoutMs();
     for (const img of slice) {
-      if (hardMs > 0 && Date.now() - t0 > hardMs) {
-        return {
-          text: combined.replace(/\s+/g, " ").trim() || null,
-          status: combined.trim() ? "OCR_SUCCESS" : "OCR_TIMEOUT",
-        };
+      const remainingMs = hardMs > 0 ? hardMs - (Date.now() - t0) : 0;
+      if (hardMs > 0 && remainingMs <= 0) {
+        timedOut = true;
+        break;
       }
-      const text = await recognizeImage(img, worker);
+      let text = "";
+      try {
+        text =
+          hardMs > 0
+            ? await withTimeout(
+                recognizeImage(img, worker),
+                remainingMs,
+                "OCR recognize"
+              )
+            : await recognizeImage(img, worker);
+      } catch (error) {
+        if (/OCR recognize timeout/i.test(String(error))) {
+          timedOut = true;
+          break;
+        }
+        continue;
+      }
       if (!text.trim()) {
         emptyStreak++;
         if (emptyStreak >= 6 && !combined.trim()) break;
@@ -636,14 +736,29 @@ async function runOcrOnImages(
       }
       emptyStreak = 0;
       combined += text + "\n";
+      const candidateText = normalizeOcrInsuranceText(
+        combined.replace(/\s+/g, " ").trim()
+      );
       if (
-        /polizza|assicuraz|unipol|generali|zurich|massimale|scadenz/i.test(combined) &&
-        combined.replace(/\s+/g, " ").trim().length > 400
+        candidateText.length > 400 &&
+        detectPolicyCandidate(candidateText).candidate
       ) {
         break;
       }
     }
     const normalized = normalizeOcrInsuranceText(combined.replace(/\s+/g, " ").trim());
+    if (timedOut && normalized && detectPolicyCandidate(normalized).candidate) {
+      return {
+        text: normalized,
+        status: "OCR_SUCCESS",
+      };
+    }
+    if (timedOut) {
+      return {
+        text: normalized || null,
+        status: "OCR_TIMEOUT",
+      };
+    }
     if (!normalized) return { text: null, status: "OCR_EMPTY" };
     // Low confidence: mostly symbols / very short alpha ratio
     const alpha = (normalized.match(/[A-Za-zÀ-ú0-9]/g) || []).length;
@@ -656,7 +771,140 @@ async function runOcrOnImages(
   }
 }
 
-export async function ocrPdfText(pdfBuffer: Buffer): Promise<OcrPdfTextResult> {
+/** OCR a standalone image discovered on a first-party site. */
+export async function extractImageText(
+  imageBuffer: Buffer
+): Promise<{ text: string | null; status: OcrStatus }> {
+  if (!isOcrEnabled()) return { text: null, status: "OCR_EXTRACTION_FAILED" };
+  return enqueueOcr(() => runOcrOnImages([imageBuffer]));
+}
+
+export type ImageVisualAnalysis = {
+  stronglyPhotographic: boolean;
+  clearlyNonDocumentMedia: boolean;
+  width: number;
+  height: number;
+  entropy: number;
+  sharpness: number;
+  meanBrightness: number;
+  colorMeanSpread: number;
+  alphaMean: number | null;
+};
+
+/**
+ * Conservative post-OCR media classifier. A high-entropy, globally soft,
+ * non-white raster is characteristic of a photograph, unlike a scanned page
+ * whose background dominates and whose text creates sharp edges.
+ */
+export async function analyzeImageVisualContent(
+  imageBuffer: Buffer
+): Promise<ImageVisualAnalysis | null> {
+  try {
+    const image = sharp(imageBuffer, { failOn: "none", unlimited: true });
+    const [metadata, stats] = await Promise.all([image.metadata(), image.stats()]);
+    const width = Number(metadata.width || 0);
+    const height = Number(metadata.height || 0);
+    const rgb = stats.channels.slice(0, 3);
+    if (!width || !height || rgb.length < 3) return null;
+    const means = rgb.map((channel) => channel.mean);
+    const meanBrightness = means.reduce((sum, value) => sum + value, 0) / 3;
+    const colorMeanSpread = Math.max(...means) - Math.min(...means);
+    const alphaMean = stats.channels.length > 3
+      ? Number(stats.channels[3]?.mean ?? 255)
+      : null;
+    const entropy = Number(stats.entropy || 0);
+    const sharpness = Number(stats.sharpness || 0);
+    const aspect = width / height;
+    const largeNaturalPhoto =
+      Math.max(width, height) >= 600 &&
+      entropy >= 6 &&
+      sharpness <= 4.5 &&
+      meanBrightness < 210;
+    const smallPhotoCollage =
+      Math.max(width, height) <= 800 &&
+      aspect >= 0.5 &&
+      aspect <= 2 &&
+      entropy >= 4.8 &&
+      colorMeanSpread >= 12 &&
+      meanBrightness < 235;
+    const brightPortraitPhoto =
+      Math.max(width, height) >= 500 &&
+      aspect >= 0.5 &&
+      aspect <= 2 &&
+      entropy >= 4 &&
+      sharpness <= 3 &&
+      meanBrightness < 240;
+    const smallNeutralPhoto =
+      Math.max(width, height) >= 400 &&
+      Math.min(width, height) >= 200 &&
+      aspect >= 0.5 &&
+      aspect <= 2.3 &&
+      entropy >= 6.5 &&
+      sharpness <= 3.2 &&
+      meanBrightness < 215;
+    const wideMarketingGraphic =
+      aspect >= 1.55 &&
+      Math.max(width, height) >= 600 &&
+      entropy >= 4 &&
+      sharpness <= 5 &&
+      meanBrightness < 200;
+    const wideBrandBanner =
+      aspect >= 3 &&
+      Math.max(width, height) >= 600 &&
+      entropy < 3 &&
+      sharpness <= 3;
+    const wideBrightBrandGraphic =
+      aspect >= 1.8 &&
+      Math.max(width, height) >= 600 &&
+      entropy < 3 &&
+      sharpness <= 3.5 &&
+      meanBrightness >= 210;
+    const smallUiGraphic =
+      Math.max(width, height) <= 384 && width * height <= 120_000;
+    const transparentCutout =
+      alphaMean !== null &&
+      alphaMean < 245 &&
+      Math.max(width, height) >= 300 &&
+      aspect >= 0.4 &&
+      aspect <= 2.5 &&
+      entropy >= 3;
+    const transparentUiGraphic =
+      alphaMean !== null &&
+      alphaMean < 200 &&
+      Math.max(width, height) <= 512 &&
+      width * height <= 200_000;
+    const stronglyPhotographic =
+      largeNaturalPhoto ||
+      smallPhotoCollage ||
+      brightPortraitPhoto ||
+      smallNeutralPhoto ||
+      wideMarketingGraphic;
+    return {
+      stronglyPhotographic,
+      clearlyNonDocumentMedia:
+        stronglyPhotographic ||
+        wideBrandBanner ||
+        wideBrightBrandGraphic ||
+        smallUiGraphic ||
+        transparentCutout ||
+        transparentUiGraphic,
+      width,
+      height,
+      entropy,
+      sharpness,
+      meanBrightness,
+      colorMeanSpread,
+      alphaMean,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function ocrPdfText(
+  pdfBuffer: Buffer,
+  opts?: { pageNumbers?: number[] }
+): Promise<OcrPdfTextResult> {
   if (!isOcrEnabled()) {
     return {
       text: null,
@@ -669,49 +917,149 @@ export async function ocrPdfText(pdfBuffer: Buffer): Promise<OcrPdfTextResult> {
   return enqueueOcr(async () => {
     const ms = ocrJobTimeoutMs();
     const job = (async (): Promise<OcrPdfTextResult> => {
-      const { images, rasterize } = await collectPdfImagesForOcr(pdfBuffer, {
-        allowCarveFallback: false,
-      });
-      if (rasterize.status === "RENDERER_MISSING") {
-        return {
-          text: null,
-          status: "OCR_RENDERER_MISSING",
-          reasonCode: "OCR_RENDERER_MISSING",
-          rasterize,
-        };
-      }
-      if (rasterize.status === "FAILED") {
+      const totalPages = await readPdfPageCount(pdfBuffer);
+      if (!totalPages) {
         return {
           text: null,
           status: "OCR_EXTRACTION_FAILED",
           reasonCode: "OCR_EXTRACTION_FAILED",
-          rasterize,
+          rasterize: {
+            status: "FAILED",
+            rendererPath: null,
+            rendererVersion: null,
+            pageCount: 0,
+            images: [],
+            error: "OCR_PAGE_COUNT_UNKNOWN",
+            durationMs: 0,
+          },
         };
       }
-      if (images.length === 0) {
+      const pageLimit = exhaustivePdfOcrPageLimit();
+      const requestedPages =
+        opts?.pageNumbers && opts.pageNumbers.length > 0
+          ? [
+              ...new Set(
+                opts.pageNumbers
+                  .map((page) => Math.floor(Number(page)))
+                  .filter((page) => page >= 1 && page <= totalPages)
+              ),
+            ].sort((a, b) => a - b)
+          : Array.from({ length: totalPages }, (_, index) => index + 1);
+      const targetPages = requestedPages.slice(0, pageLimit);
+      const pageBatches: Array<{ startPage: number; size: number }> = [];
+      for (const page of targetPages) {
+        const last = pageBatches.at(-1);
+        if (
+          last &&
+          last.startPage + last.size === page &&
+          last.size < MAX_OCR_PAGES
+        ) {
+          last.size++;
+        } else {
+          pageBatches.push({ startPage: page, size: 1 });
+        }
+      }
+      let combined = "";
+      let pagesRead = 0;
+      let sawLowConfidence = false;
+      let aggregateRasterize: RasterizeResult | null = null;
+
+      for (const { startPage, size: batchSize } of pageBatches) {
+        let rasterize = await rasterizePdfPages(pdfBuffer, batchSize, startPage);
+        if (rasterize.status === "RENDERER_MISSING") {
+          resetPdftoppmCache();
+          rasterize = await rasterizePdfPages(pdfBuffer, batchSize, startPage);
+        }
+        aggregateRasterize = {
+          ...rasterize,
+          pageCount: pagesRead + rasterize.pageCount,
+          images: [],
+        };
+        if (rasterize.status === "RENDERER_MISSING") {
+          return {
+            text: combined || null,
+            status: "OCR_RENDERER_MISSING",
+            reasonCode: "OCR_RENDERER_MISSING",
+            rasterize: aggregateRasterize,
+          };
+        }
+        if (rasterize.status === "FAILED") {
+          return {
+            text: combined || null,
+            status: "OCR_EXTRACTION_FAILED",
+            reasonCode: "OCR_EXTRACTION_FAILED",
+            rasterize: aggregateRasterize,
+          };
+        }
+        if (rasterize.images.length === 0) {
+          return {
+            text: combined || null,
+            status: "OCR_EMPTY",
+            reasonCode: "OCR_EMPTY",
+            rasterize: aggregateRasterize,
+          };
+        }
+        const cleaned: Buffer[] = [];
+        for (const png of rasterize.images) {
+          cleaned.push((await normalizeEncodedForOcr(png)) ?? png);
+        }
+        const batch = await runOcrOnImages(cleaned);
+        pagesRead += rasterize.pageCount;
+        aggregateRasterize.pageCount = pagesRead;
+        if (batch.text) combined = `${combined} ${batch.text}`.trim();
+        if (batch.status === "OCR_TIMEOUT" || batch.status === "OCR_EXTRACTION_FAILED") {
+          return {
+            text: combined || null,
+            status: batch.status,
+            reasonCode: batch.status,
+            rasterize: aggregateRasterize,
+          };
+        }
+        if (batch.status === "OCR_LOW_CONFIDENCE") sawLowConfidence = true;
+        const normalized = normalizeOcrInsuranceText(combined);
+        if (normalized && detectPolicyCandidate(normalized).candidate) {
+          return {
+            text: normalized,
+            status: "OCR_SUCCESS",
+            reasonCode: "OCR_SUCCESS",
+            rasterize: aggregateRasterize,
+          };
+        }
+      }
+
+      const normalized = normalizeOcrInsuranceText(combined);
+      if (requestedPages.length > pageLimit) {
         return {
-          text: null,
-          status: "OCR_EMPTY",
-          reasonCode: "OCR_EMPTY",
-          rasterize,
+          text: normalized || null,
+          status: "OCR_EXTRACTION_FAILED",
+          reasonCode: "OCR_EXTRACTION_FAILED",
+          rasterize: aggregateRasterize
+            ? {
+                ...aggregateRasterize,
+                status: "FAILED",
+                error: `OCR_PAGE_LIMIT:${pagesRead}/${requestedPages.length}`,
+              }
+            : null,
         };
       }
-      const { text, status } = await runOcrOnImages(images);
-      return { text, status, reasonCode: status, rasterize };
+      const status: OcrStatus = !normalized
+        ? "OCR_EMPTY"
+        : sawLowConfidence
+          ? "OCR_LOW_CONFIDENCE"
+          : "OCR_SUCCESS";
+      return {
+        text: normalized || null,
+        status,
+        reasonCode: status,
+        rasterize: aggregateRasterize,
+      };
     })();
 
-    if (ms <= 0) return job;
-    try {
-      return await withTimeout(job, ms, "OCR PDF");
-    } catch {
-      void job.catch(() => null);
-      return {
-        text: null,
-        status: "OCR_TIMEOUT",
-        reasonCode: "OCR_TIMEOUT",
-        rasterize: null,
-      };
-    }
+    // Il timeout è applicato dentro runOcrOnImages alla singola recognize:
+    // il finally termina Tesseract prima che la coda inizi il job seguente.
+    // Un Promise.race qui lascerebbe il job sconfitto vivo in background.
+    void ms;
+    return job;
   });
 }
 
@@ -723,17 +1071,23 @@ export async function ocrPdfTextLegacy(pdfBuffer: Buffer): Promise<string | null
 
 export async function extractPdfFullText(pdfBuffer: Buffer): Promise<ExtractPdfFullTextResult> {
   let digital = "";
+  let digitalPages: Array<{ num: number; text: string }> = [];
   try {
     const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: pdfBuffer });
     try {
       const result = await parser.getText();
       digital = (result?.text || "").replace(/\s+/g, " ").trim();
+      digitalPages = (result?.pages || []).map((page) => ({
+        num: Number(page.num),
+        text: String(page.text || ""),
+      }));
     } finally {
       await parser.destroy().catch(() => {});
     }
   } catch {
     digital = "";
+    digitalPages = [];
   }
 
   // Strip pdf-parse page markers like "-- 1 of 38 --" for richness check
@@ -742,7 +1096,20 @@ export async function extractPdfFullText(pdfBuffer: Buffer): Promise<ExtractPdfF
     .replace(/\s+/g, " ")
     .trim();
 
-  if (digitalMeaningful.length >= DIGITAL_TEXT_RICH_THRESHOLD) {
+  const thinDigitalPages = digitalPages
+    .filter((page) => {
+      const meaningful = page.text
+        .replace(/--\s*\d+\s+of\s+\d+\s*--/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return Number.isFinite(page.num) && page.num > 0 && meaningful.length < 80;
+    })
+    .map((page) => page.num);
+
+  if (
+    digitalMeaningful.length >= DIGITAL_TEXT_RICH_THRESHOLD &&
+    thinDigitalPages.length === 0
+  ) {
     return {
       digital,
       ocr: null,
@@ -771,7 +1138,10 @@ export async function extractPdfFullText(pdfBuffer: Buffer): Promise<ExtractPdfF
   process.env.OCR_ENABLED = "1";
   let ocrResult;
   try {
-    ocrResult = await ocrPdfText(pdfBuffer);
+    ocrResult = await ocrPdfText(
+      pdfBuffer,
+      thinDigitalPages.length > 0 ? { pageNumbers: thinDigitalPages } : undefined
+    );
   } finally {
     if (prevOcrEnabled == null) delete process.env.OCR_ENABLED;
     else process.env.OCR_ENABLED = prevOcrEnabled;

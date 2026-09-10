@@ -5,7 +5,12 @@ import {
   type MapsLookupOptions,
   type MapsPlace,
 } from "./playwright-maps";
-import { getRegionCities, HEALTHCARE_MAP_QUERIES, isMapsSignificantCity } from "./region-cities";
+import {
+  getRegionCities,
+  HEALTHCARE_MAP_QUERIES,
+  TERRITORY_HEALTHCARE_MAP_QUERIES,
+  isMapsSignificantCity,
+} from "./region-cities";
 
 export type { MapsPlace };
 
@@ -25,15 +30,24 @@ export interface MapsDiscoveryResult {
 /** Comuni processati in parallelo — 1 evita rate-limit Google su sessioni condivise. */
 const CITY_CONCURRENCY = Number(process.env.MAPS_CITY_CONCURRENCY || 1);
 /** Budget massimo per singolo comune. */
-const CITY_BUDGET_MS = Number(process.env.MAPS_CITY_BUDGET_MS || 55_000);
+const IS_TERRITORY_DISCOVERY = Boolean(process.env.NATIONAL_DISCOVERY_JOB_ID);
+const CITY_BUDGET_MS = Number(
+  process.env.MAPS_CITY_BUDGET_MS || (IS_TERRITORY_DISCOVERY ? 120_000 : 55_000)
+);
 /** Pausa tra query sullo stesso comune. */
 const QUERY_GAP_MS = Number(process.env.MAPS_QUERY_GAP_MS || 900);
 
 export async function discoverFromMaps(
   region: Region,
-  opts: { deadline: number; maxPerCity?: number; cityOffset?: number; maxCities?: number }
+  opts: {
+    deadline: number;
+    maxPerCity?: number;
+    cityOffset?: number;
+    maxCities?: number;
+    cities?: string[];
+  }
 ): Promise<MapsDiscoveryResult> {
-  const cities = await getRegionCities(region);
+  const cities = opts.cities ?? (await getRegionCities(region));
   const maxPerCity = opts.maxPerCity ?? 50;
   const maxCities = opts.maxCities ?? 999;
   const offset = opts.cityOffset ?? 0;
@@ -50,8 +64,11 @@ export async function discoverFromMaps(
     let totalResults = 0;
     let queriesAttempted = 0;
 
-    for (let qi = 0; qi < HEALTHCARE_MAP_QUERIES.length; qi++) {
-      const category = HEALTHCARE_MAP_QUERIES[qi];
+    const queries = IS_TERRITORY_DISCOVERY
+      ? TERRITORY_HEALTHCARE_MAP_QUERIES
+      : HEALTHCARE_MAP_QUERIES;
+    for (let qi = 0; qi < queries.length; qi++) {
+      const category = queries[qi];
       if (Date.now() >= cityDeadline) break;
       queriesAttempted++;
       queriesRun++;

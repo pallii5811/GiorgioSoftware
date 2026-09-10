@@ -13,12 +13,14 @@ import {
   setCrawlRunFlags,
   completeCrawlRun,
   deriveCrawlCompleteness,
+  persistNodeEvidence,
   listNodes,
   getCrawlRun,
   releaseWorkerLock,
   heartbeatCrawlRun,
 } from "../src/lib/sanita/frontier-store.ts";
 import { canEmitHot } from "../src/lib/sanita/can-emit-hot.ts";
+import { finalizeVerdict } from "../src/lib/sanita/finalize-verdict.ts";
 
 const start = Date.now();
 let pass = 0;
@@ -100,12 +102,21 @@ for (const u of urls) {
 ok(listNodes(id2).length === beforeCount, "node count unchanged after resume upsert");
 
 for (const n of listNodes(id2)) {
-  if (n.state === "COMPLETED") continue;
+  const contentHash = `hash-${n.id}`;
   transitionFrontierNode(n.id, "QUEUED");
   transitionFrontierNode(n.id, "FETCHING");
   transitionFrontierNode(n.id, "FETCHED");
   transitionFrontierNode(n.id, "PARSED");
-  transitionFrontierNode(n.id, "COMPLETED", { httpStatus: 200 });
+  transitionFrontierNode(n.id, "COMPLETED", { httpStatus: 200, contentHash });
+  persistNodeEvidence({
+    crawlRunId: id2,
+    nodeId: n.id,
+    canonicalUrl: n.canonicalUrl,
+    contentHash,
+    resourceType: n.resourceType,
+    normalizedText: "Contenuto istituzionale senza polizza.",
+    playwrightSource: n.resourceType === "html" ? "rendered" : null,
+  });
 }
 setCrawlRunFlags(id2, {
   identityVerified: true,
@@ -140,6 +151,50 @@ ok(
   }),
   "canEmitHot only after persisted completeness"
 );
+
+const previousExhaustive = process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE;
+const previousRenderEvery = process.env.CRAWL_RENDER_EVERY_HTML;
+process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE = "1";
+process.env.CRAWL_RENDER_EVERY_HTML = "1";
+const strictFinal = finalizeVerdict({
+  verdict: "HOT",
+  evidenceBody: "Assenza verificata.",
+  pagesVisited: 20,
+  websiteReachable: true,
+  website: "https://clinic.example",
+  policyExhaustive: true,
+  needsOcrReview: false,
+  crawlCompleteness: completeness,
+  crawlRunId: id2,
+  requirePersistedCompleteness: true,
+  identityStatus: "OFFICIAL_CONFIRMED",
+  category: "Casa di cura",
+});
+ok(
+  strictFinal.verdict === "HOT",
+  "finalizeVerdict receives persisted run and accepts certified exhaustive HOT"
+);
+const missingRunFinal = finalizeVerdict({
+  verdict: "HOT",
+  evidenceBody: "Assenza dichiarata senza run.",
+  pagesVisited: 20,
+  websiteReachable: true,
+  website: "https://clinic.example",
+  policyExhaustive: true,
+  needsOcrReview: false,
+  crawlCompleteness: completeness,
+  identityStatus: "OFFICIAL_CONFIRMED",
+  category: "Casa di cura",
+});
+ok(
+  missingRunFinal.verdict === "REVIEW" &&
+    /run assente|crawlRunId assente/i.test(missingRunFinal.evidenceBody),
+  "strict finalize remains fail-closed when persisted run is absent"
+);
+if (previousExhaustive === undefined) delete process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE;
+else process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE = previousExhaustive;
+if (previousRenderEvery === undefined) delete process.env.CRAWL_RENDER_EVERY_HTML;
+else process.env.CRAWL_RENDER_EVERY_HTML = previousRenderEvery;
 
 // Incomplete cannot emit HOT
 const { crawlRunId: badId } = createCrawlRun({

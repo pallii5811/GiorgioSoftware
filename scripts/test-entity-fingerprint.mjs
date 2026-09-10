@@ -3,6 +3,7 @@
  */
 import {
   extractDocumentEntityFingerprint,
+  extractPolicyDocumentEntityFingerprint,
   buildFacilityFingerprint,
   canAttributeEntity,
 } from "../src/lib/sanita/entity-fingerprint.ts";
@@ -51,6 +52,28 @@ const otherDoc = extractDocumentEntityFingerprint(
 const attrOther = canAttributeEntity(otherDoc, facC);
 ok(!attrOther.ok, "first-party PDF of other entity rejected");
 
+// Il nome nell'header del sito non deve mascherare un contraente diverso nel PDF.
+const santaPatriziaFacility = buildFacilityFingerprint({
+  companyName: "Casa di Cura S. Patrizia",
+  city: "Stra",
+  website: "https://www.casadicurasantapatrizia.it/",
+});
+const villaQuercePolicy = extractPolicyDocumentEntityFingerprint({
+  policyText:
+    "Contraente/Assicurato: Casa di Cura Villa delle Querce S.p.A. Polizza RCT/O n. RCH00020000157 AmTrust.",
+  analysisEvidence:
+    "Casa di Cura Villa delle Querce S.p.A. responsabilità civile verso terzi.",
+  url: "https://www.casadicurasantapatrizia.it/wp-content/uploads/polizzaVillaDelleQuerceSpA.pdf",
+});
+const santaPatriziaWrongPolicy = canAttributeEntity(
+  villaQuercePolicy,
+  santaPatriziaFacility
+);
+ok(
+  !santaPatriziaWrongPolicy.ok,
+  "same-host PDF intestato ad altra struttura non pubblica"
+);
+
 // RC-08 — first-party PARM PDF with no extractable name still attributes via domain+seatPage
 const parmDoc = extractDocumentEntityFingerprint(
   "PARM 2025 Piano annuale del rischio. Posizione assicurativa RCT/O Massimale Euro 5000000.",
@@ -64,6 +87,31 @@ const facPini = buildFacilityFingerprint({
 });
 const attrParm = canAttributeEntity(parmDoc, facPini);
 ok(attrParm.ok && attrParm.mediumIds.includes("domain"), "RC-08 PARM first-party policy PDF attributed");
+
+// Villa Fiorita: the PARM names the facility in the Art.2 payout heading,
+// while the insurance table itself contains only dates, number and insurer.
+const villaFioritaParmDoc = extractPolicyDocumentEntityFingerprint({
+  policyText:
+    "DESCRIZIONE DEGLI EVENTI/SINISTRI E RISARCIMENTI EROGATI DI VILLA FIORITA – AVERSA - SPA (AI SENSI DELL’ART.2 C.5 DELLA L.24/2017) " +
+    "DESCRIZIONE DELLA POSIZIONE ASSICURATIVA Validità Polizza Compagnia assicuratrice " +
+    "31/12/2024 AL 31/12/2025 48480OO SARA ASSICURAZIONI A.O.N.",
+  analysisEvidence:
+    "DESCRIZIONE DELLA POSIZIONE ASSICURATIVA 31/12/2024 AL 31/12/2025 48480OO SARA ASSICURAZIONI",
+  url: "https://clinicavillafiorita.it/wp-content/uploads/2026/06/Parm-2026-Villa-Fiorita-Aversa.pdf",
+});
+const villaFioritaFacility = buildFacilityFingerprint({
+  companyName: "Villa Fiorita Aversa S.R.L.",
+  city: "Villa Literno",
+  website: "https://clinicavillafiorita.it/",
+});
+const villaFioritaAttr = canAttributeEntity(
+  villaFioritaParmDoc,
+  villaFioritaFacility
+);
+ok(
+  villaFioritaAttr.ok && villaFioritaAttr.mediumIds.includes("name"),
+  `Villa Fiorita PARM attribution preserves full legal name (${villaFioritaAttr.mediumIds}|${villaFioritaAttr.reasons})`
+);
 
 // RC-08c — URL-as-title must not invent hostname "Clinica..." name that conflicts
 const mvUrl = "https://www.clinicamontevergine.com/cuore/wp-content/uploads/2025/06/OBBLIGO-DI-ASSICURAZIONE.pdf";

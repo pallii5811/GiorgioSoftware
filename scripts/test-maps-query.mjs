@@ -39,6 +39,11 @@ ok(
   "estrazione città da indirizzo Maps"
 );
 ok(isBlockedWebsiteHost("facebook.com"), "blocca social");
+ok(isBlockedWebsiteHost("nike.com"), "blocca collisione NIKE OTI con il marchio sportivo");
+ok(
+  normalizeOfficialWebsite("https://nikemedics.it/")?.includes("nikemedics"),
+  "accetta il sito sanitario ufficiale NIKE Medics"
+);
 ok(normalizeOfficialWebsite("https://www.pinetagrande.it/")?.includes("pinetagrande"), "normalizza sito ufficiale");
 
 process.exit(failed ? 1 : 0);

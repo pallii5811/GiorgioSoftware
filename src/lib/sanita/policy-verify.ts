@@ -141,6 +141,9 @@ function htmlPolicyPublicationCertain(
   if (company && policyNumber && massimale) return true;
   // company + (policyNumber | massimale) + contesto RC → PUBLISHED
   if (company && (policyNumber || massimale) && hasRcContext) return true;
+  // HTML home/footer: numero polizza + contesto RC (anche senza compagnia) → PUBLISHED
+  // Evita falso HOT tipo IATREION / Galdiero con polizza in chiaro sulla home.
+  if (policyNumber && hasRcContext) return true;
 
   // Evidenza parziale: richiede pagina Trasparenza visitata
   if (!crawl.foundRelevantPage || !visitedPolicyPage) return false;
@@ -247,6 +250,34 @@ export type ReconcileResult = {
   adjusted: boolean;
   note: string | null;
 };
+
+/**
+ * A crawl is split into resumable slices. The last slice can contain only a
+ * handful of pages even though the persisted frontier is fully exhausted.
+ * In that case the slice-local verifier may conservatively return REVIEW.
+ * Promote the absence candidate only from the stronger persisted proof.
+ */
+export function canPromotePersistedExhaustiveAbsence(input: {
+  verdict: Verdict;
+  policyFound: boolean;
+  finalComplete: boolean;
+  siteCoverageOk: boolean;
+  exhaustiveCoverageMode: boolean;
+  identityVerified: boolean;
+  needsOcrReview: boolean;
+  siteUnderMaintenance: boolean;
+}): boolean {
+  return (
+    input.verdict === "REVIEW" &&
+    input.policyFound === false &&
+    input.finalComplete === true &&
+    input.siteCoverageOk === true &&
+    input.exhaustiveCoverageMode === true &&
+    input.identityVerified === true &&
+    input.needsOcrReview === false &&
+    input.siteUnderMaintenance === false
+  );
+}
 
 /**
  * Unico gate per il verdetto sito.

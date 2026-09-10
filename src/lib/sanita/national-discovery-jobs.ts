@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ItalianRegion } from "@/lib/sanita/italy-regions";
@@ -143,7 +142,9 @@ export function findActiveNationalDiscoveryJob(region: ItalianRegion, municipali
 export function spawnNationalDiscoveryRunner(jobId: string) {
   const tsxCli = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
   const runner = path.join(process.cwd(), "scripts", "sanita-national-discovery-runner.mjs");
-  const frontierDir = path.join(os.tmpdir(), "leadsniper-national-discovery-frontier");
+  const frontierDir =
+    process.env.NATIONAL_DISCOVERY_FRONTIER_DIR ||
+    path.join("/var", "lib", "leadsniper", "frontiers");
   fs.mkdirSync(frontierDir, { recursive: true });
   const child = spawn(process.execPath, [tsxCli, runner, jobId], {
     cwd: process.cwd(),

@@ -87,11 +87,17 @@ export function detectInsuranceSignals(text: string): {
   // RC-08b — PARM/PARS Art.10 docs often say "auto-assicurazione" / "posizione assicurativa"
   // without "numero polizza"; hyphenated autoassicurazione must count as strong.
   const strong =
-    /numero\s+(?:di\s+)?polizza|polizza\s+n[°o.]?\s*[A-Z0-9\-_/]{4,}|contratto\s+assicurativ|attestazione\s+assicurativ|auto-?\s*assicuraz|gestione\s+diretta\s+del\s+rischio|posizione\s+assicurativ/i.test(
+    /numero\s+(?:di\s+)?polizza|polizza\s+n[°o.]?\s*[A-Z0-9\-_/]{4,}|contratto\s+assicurativ|attestazione\s+assicurativ|(?:siamo\s+a\s+pubblicare|pubblichiamo|si\s+pubblica).{0,180}(?:testo\s+della\s+)?polizza\s+assicurativa|(?:[èe]\s+stata|ha|abbiamo)\s+stipulat[ao].{0,100}polizza\s+assicurativa.{0,100}(?:con|presso|da)\s+|auto-?\s*assicuraz|gestione\s+diretta\s+del\s+rischio|posizione\s+assicurativ/i.test(
       t
     );
   let medium = 0;
-  if (/compagnia|unipol|generali|allianz|zurich|axa|reale\s+mutua|accelerant/i.test(t)) medium++;
+  if (
+    /compagnia|unipol|generali|allianz|zurich|axa|reale\s+mutua|accelerant|am\s*trust|lloyd|hdi|qbe|chubb|aig|berkshire|relyens|sham|markel|beazley/i.test(
+      t
+    )
+  ) {
+    medium++;
+  }
   if (/massimale|€\s*\d|euro\s*\d/i.test(t)) medium++;
   if (/\bRCT\b|\bRCO\b|responsabilit[aà]\s+civile/i.test(t)) medium++;
   if (/scadenza|decorrenza|dal\s+\d{1,2}[\/.\-]/i.test(t)) medium++;

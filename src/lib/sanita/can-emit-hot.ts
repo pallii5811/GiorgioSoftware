@@ -12,7 +12,11 @@ import {
   frontierBlocksHot,
   type CrawlFrontierLedger,
 } from "@/lib/sanita/crawl-frontier-ledger";
-import { deriveCrawlCompleteness, getCrawlRun } from "@/lib/sanita/frontier-store";
+import {
+  deriveCrawlCompleteness,
+  deriveExhaustiveSiteCoverage,
+  getCrawlRun,
+} from "@/lib/sanita/frontier-store";
 
 export const MIN_PAGES_FOR_HOT = 12;
 
@@ -58,8 +62,17 @@ export function explainCanEmitHot(evidence: HotEmitEvidence): HotEmitResult {
 
   if (!evidence.category?.trim()) reasons.push("categoria sanitaria assente");
 
-  if (evidence.pagesVisited < MIN_PAGES_FOR_HOT) {
+  const strictCoverage =
+    process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1" && evidence.crawlRunId
+      ? deriveExhaustiveSiteCoverage(evidence.crawlRunId)
+      : null;
+  if (!strictCoverage?.ok && evidence.pagesVisited < MIN_PAGES_FOR_HOT) {
     reasons.push(`pagine insufficienti (${evidence.pagesVisited}/${MIN_PAGES_FOR_HOT})`);
+  }
+  if (process.env.CRAWL_REQUIRE_EXHAUSTIVE_SITE === "1" && !strictCoverage?.ok) {
+    reasons.push(
+      `copertura sito non certificata (${strictCoverage?.reasons.join(",") || "run assente"})`
+    );
   }
   if (evidence.needsOcrReview) reasons.push("OCR critico incerto / PDF illeggibile");
   if (evidence.policyExhaustive !== true) reasons.push("crawl non esaustivo");

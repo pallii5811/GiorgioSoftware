@@ -15,9 +15,17 @@ import {
   classifyResult,
   nextRetryAt,
   pickRetryStrategy,
-  MAX_RETRY_ATTEMPTS,
+  buildWorkerNodeOptions,
+  reconcileTerminalCertifications,
   isTerminalState,
+  isCertifiedHotPass,
+  selectDualOutcome,
+  alignCertifiedTerminalResult,
   writeResultAtomic,
+  sortDueRetryEntries,
+  interleaveFrontierAndGeneralEntries,
+  MAX_RETRY_ATTEMPTS,
+  selectNextRetryEntry,
 } from "./revalidate-checkpoint-v3.mjs";
 
 function frontierInspect(frontierPath) {
@@ -27,6 +35,9 @@ function frontierInspect(frontierPath) {
       pending: 0,
       blocked: 0,
       pdfPending: 0,
+      completed: 0,
+      excluded: 0,
+      totalNodes: 0,
       urlCap: 0,
       timeCap: 0,
       state: null,
@@ -45,6 +56,9 @@ function frontierInspect(frontierPath) {
       pending: Number(row.pending || 0),
       blocked: Number(row.blocked || 0),
       pdfPending: Number(row.pdfPending || 0),
+      completed: Number(row.completed || 0),
+      excluded: Number(row.excluded || 0),
+      totalNodes: Number(row.totalNodes || 0),
       urlCap: Number(row.urlCap || 0),
       timeCap: Number(row.timeCap || 0),
       state: row.state ? String(row.state) : null,
@@ -56,12 +70,101 @@ function frontierInspect(frontierPath) {
       pending: -1,
       blocked: 0,
       pdfPending: 0,
+      completed: 0,
+      excluded: 0,
+      totalNodes: 0,
       urlCap: 0,
       timeCap: 0,
       state: null,
       sitemapStatus: null,
     };
   }
+}
+
+/**
+ * HOT needs the persisted frontier as proof, not just copied JSON flags.
+ * Demote any contradiction before the checkpoint is exposed to the UI.
+ */
+function demoteInvalidHotFrontiers(checkpoint, resultsDir) {
+  const demoted = [];
+  for (const [leadId, terminalMeta] of Object.entries(checkpoint.terminal || {})) {
+    if (terminalMeta?.processingState !== "HOT_VERIFIED") continue;
+    const resultPath = path.join(resultsDir, `${leadId}.json`);
+    let row;
+    try {
+      row = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+    } catch {
+      row = null;
+    }
+    const passes = [row?.pass1, row?.pass2];
+    const invalidPass = passes.find((pass) => {
+      const inspected = frontierInspect(pass?.frontierPath);
+      return (
+        !pass ||
+        !inspected.exists ||
+        inspected.state !== "COMPLETED" ||
+        inspected.pending !== 0 ||
+        inspected.blocked !== 0 ||
+        inspected.urlCap !== 0 ||
+        inspected.timeCap !== 0
+      );
+    });
+    if (!invalidPass) continue;
+
+    const now = new Date().toISOString();
+    const reasonCode = "HOT_FRONTIER_RECERTIFICATION_REQUIRED";
+    const inspected = frontierInspect(invalidPass?.frontierPath);
+    delete checkpoint.terminal[leadId];
+    checkpoint.retryQueue[leadId] = {
+      attempts: checkpoint.attempts?.[leadId] || 1,
+      lastReason: reasonCode,
+      lastError: reasonCode,
+      nextRetryAt: new Date(0).toISOString(),
+      lastRunId: invalidPass?.runId || null,
+      frontierPath: invalidPass?.frontierPath || null,
+      passLabel: invalidPass === row?.pass2 ? "p2" : "p1",
+      strategy: "resume_boost",
+      continuationReady: true,
+      firstSeenAt: now,
+      lastAttemptAt: now,
+      operational: true,
+    };
+    if (row) {
+      writeResultAtomic(resultPath, {
+        ...row,
+        previousProcessingState: row.processingState || null,
+        previousReasonCode: row.reasonCode || null,
+        processingState: "RETRY_PENDING",
+        businessVerdict: null,
+        validationStatus: "REVALIDATION_PENDING",
+        newVerdict: null,
+        token: null,
+        terminal: false,
+        reasonCode,
+      });
+    }
+    demoted.push({
+      leadId,
+      frontierPath: invalidPass?.frontierPath || null,
+      frontierState: inspected.state,
+    });
+  }
+
+  const terminalStates = Object.values(checkpoint.terminal || {}).map(
+    (meta) => meta?.processingState
+  );
+  checkpoint.stats.terminal = terminalStates.length;
+  checkpoint.stats.hot = terminalStates.filter((state) => state === "HOT_VERIFIED").length;
+  checkpoint.stats.pub = terminalStates.filter(
+    (state) =>
+      state === "SELF_INSURANCE_VERIFIED" ||
+      String(state || "").startsWith("PUBLISHED")
+  ).length;
+  checkpoint.stats.outOfScope = terminalStates.filter(
+    (state) => state === "OUT_OF_SCOPE"
+  ).length;
+  checkpoint.stats.tech = 0;
+  return demoted;
 }
 
 /** Clear sticky caps so a raised CRAWL_HTML_URL_CAP can continue the same frontier. */
@@ -77,19 +180,6 @@ function frontierClearCaps(frontierPath) {
 }
 
 /** Isolate TECHNICAL_BLOCKED / stuck PDFs — never wipe completed nodes. */
-function frontierQuarantineBlocked(frontierPath, { isolatePdfs = false } = {}) {
-  if (!frontierPath || !fs.existsSync(frontierPath)) return null;
-  try {
-    const helper = path.join(ROOT, "scripts/_frontier_quarantine_blocked.py");
-    const args = [helper, frontierPath];
-    if (isolatePdfs) args.push("--isolate-pdfs");
-    const out = execFileSync("python3", args, { encoding: "utf8", timeout: 8000 }).trim();
-    return JSON.parse(out || "{}");
-  } catch {
-    return null;
-  }
-}
-
 const ROOT = path.resolve(".");
 // Prefer absolute OUT_DIR so checkpoint/results/locks stay outside the app tree.
 const OUT_DIR = process.env.REVALIDATE_OUT_DIR
@@ -178,14 +268,21 @@ let rawCp = fs.existsSync(CHECKPOINT)
 
 const mig = migrateCheckpointV2toV3(rawCp, RESULTS_DIR, testedCodeSha);
 const cp = mig.checkpoint;
+cp.startedAt = cp.startedAt || new Date().toISOString();
 cp.testedCodeSha = testedCodeSha || cp.testedCodeSha;
+const recertification = reconcileTerminalCertifications(cp, RESULTS_DIR);
+const frontierRecertification = demoteInvalidHotFrontiers(cp, RESULTS_DIR);
 saveCheckpointAtomic(CHECKPOINT, cp);
 console.log(
   JSON.stringify({
     event: "checkpoint_migrated",
     migratedRetry: mig.migrated,
+    recertificationRequired: recertification.demoted.length,
+    terminalMetadataNormalized: recertification.normalized.length,
     terminal: mig.terminal,
-    retry: mig.retry,
+    terminalAfterRecertification: recertification.terminal,
+    hotFrontierRecertificationRequired: frontierRecertification,
+    retry: recertification.retry,
     version: cp.version,
   })
 );
@@ -200,6 +297,9 @@ for (const id of Object.keys(cp.inProgress || {})) {
       nextRetryAt: new Date(0).toISOString(),
       lastRunId: cp.inProgress[id]?.runId || null,
       frontierPath: cp.inProgress[id]?.frontierPath || null,
+      passLabel: /^reval-p2-/i.test(String(cp.inProgress[id]?.runId || ""))
+        ? "p2"
+        : cp.inProgress[id]?.pass || "p1",
       firstSeenAt: cp.inProgress[id]?.startedAt || new Date().toISOString(),
       lastAttemptAt: new Date().toISOString(),
     };
@@ -246,24 +346,13 @@ function dueRetryIds() {
   const now = Date.now();
   const ids = Object.entries(cp.retryQueue)
     .filter(([, meta]) => {
-      const attempts = Number(meta?.attempts || 0);
-      // forceDue: explicit resume of parked engine-ceiling leads (preserve attempts history).
-      if (attempts >= MAX_RETRY_ATTEMPTS && !meta?.forceDue) return false;
+      // Attempts are diagnostic, never a reason to park a lead forever.
+      // The frontier is resumable and strategy rotation/anti-hog budgets provide safety.
       const t = new Date(meta.nextRetryAt || 0).getTime();
       return Number.isFinite(t) && t <= now;
     })
     .map(([id, meta]) => ({ id, meta }));
-  // Fairness: due soonest first, then fewer attempts (avoid starving new / hot-looping one lead).
-  ids.sort((a, b) => {
-    const ta = new Date(a.meta?.nextRetryAt || 0).getTime();
-    const tb = new Date(b.meta?.nextRetryAt || 0).getTime();
-    if (ta !== tb) return ta - tb;
-    const aa = Number(a.meta?.attempts || 0);
-    const ab = Number(b.meta?.attempts || 0);
-    if (aa !== ab) return aa - ab;
-    return String(a.id).localeCompare(String(b.id));
-  });
-  return ids.map((x) => x.id);
+  return interleaveFrontierAndGeneralEntries(ids).map((x) => x.id);
 }
 
 function pendingNewIds() {
@@ -390,10 +479,10 @@ function recentRetryRate() {
 
 function spawnWorker({ leadId, passLabel, outPath, frontierPath, runId, strategyEnv = {} }) {
   return new Promise((resolve) => {
-    const nodeOpts = [process.env.NODE_OPTIONS || "", "--max-old-space-size=3072"]
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const nodeOpts = buildWorkerNodeOptions(
+      process.env.NODE_OPTIONS,
+      process.env.REVALIDATE_WORKER_HEAP_MB || 1536
+    );
     // Slice wall: short per-attempt budget; overall progress via auto-retry + frontier resume.
     const sliceWall = String(
       strategyEnv.REVALIDATE_LEAD_WALL_MS ||
@@ -485,6 +574,8 @@ function mergePassIntoResult(basePath, passLabel, passRow) {
       processingState: passRow.processingState,
       crawlComplete: passRow.crawlComplete,
       policyFound: passRow.policyFound,
+      negativeIdentityCertified: passRow.negativeIdentityCertified,
+      siteCoverageCertified: passRow.siteCoverageCertified,
     };
     base.runIds = [...(base.runIds || []), ...(passRow.runIds || [])];
     base.frontierPaths = [...(base.frontierPaths || []), ...(passRow.frontierPaths || [])];
@@ -545,12 +636,15 @@ async function processLeadId(leadId) {
     prevRetry?.frontierPath &&
     (insp.blocked > 0 || (/PDF_UNPROCESSED/i.test(prevErr) && insp.pdfPending > 0))
   ) {
-    const q = frontierQuarantineBlocked(prevRetry.frontierPath, {
-      isolatePdfs: /PDF_UNPROCESSED|ANALYZE_ERROR|LEAD_WALL/i.test(prevErr),
-    });
-    console.log(JSON.stringify({ event: "frontier_quarantine", id: leadId, prevErr, q, insp }));
-    insp = frontierInspect(prevRetry.frontierPath);
-    if (strategy === "fresh") strategy = "resume_boost";
+    console.log(
+      JSON.stringify({
+        event: "frontier_blocked_fail_closed",
+        id: leadId,
+        prevErr,
+        insp,
+      })
+    );
+    strategy = "resume_boost";
   }
   // Sitemap external fail with empty queue: remap status via quarantine helper, stay on resume.
   if (
@@ -561,10 +655,14 @@ async function processLeadId(leadId) {
       prevErr + " " + String(insp.sitemapStatus || "")
     )
   ) {
-    const q = frontierQuarantineBlocked(prevRetry.frontierPath, { isolatePdfs: false });
-    insp = frontierInspect(prevRetry.frontierPath);
     strategy = "resume_boost";
-    console.log(JSON.stringify({ event: "frontier_sitemap_quarantine", id: leadId, q, insp }));
+    console.log(
+      JSON.stringify({
+        event: "frontier_sitemap_fail_closed",
+        id: leadId,
+        insp,
+      })
+    );
   }
   // STOP-SHIP: never recreate frontier from zero for the same lead when file exists.
   // Cap with empty pending → clear caps + resume_boost, not fresh rediscovery.
@@ -590,7 +688,9 @@ async function processLeadId(leadId) {
     Boolean(prevRetry?.frontierPath) &&
     Boolean(prevRetry?.lastRunId) &&
     fs.existsSync(prevRetry.frontierPath);
-  if (strategy === "fresh" && canReuseFile) {
+  const identityFresh =
+    strategy === "fresh" && /IDENTITY/i.test(prevErr);
+  if (strategy === "fresh" && canReuseFile && !identityFresh) {
     strategy = "resume_boost";
   }
   const workLeft = insp.pending > 0 || insp.blocked > 0 || insp.pdfPending > 0;
@@ -659,31 +759,60 @@ async function processLeadId(leadId) {
   }
   const outPath = path.join(RESULTS_DIR, `${leadId}.json`);
   const tmpOut = path.join(RESULTS_DIR, `${leadId}.p1.json`);
+  let storedPass1 = null;
+  if (fs.existsSync(tmpOut)) {
+    try {
+      storedPass1 = JSON.parse(fs.readFileSync(tmpOut, "utf8"));
+    } catch {
+      storedPass1 = null;
+    }
+  }
+  const resumePass2 =
+    (prevRetry?.passLabel === "p2" || /^reval-p2-/i.test(String(runId))) &&
+    isCertifiedHotPass(storedPass1?.pass1 || storedPass1);
 
   cp.inProgress[leadId] = {
     startedAt: new Date().toISOString(),
     runId,
     frontierPath,
-    pass: "p1",
+    pass: resumePass2 ? "p2" : "p1",
     resumed: !!reuse,
     strategy,
   };
   cp.attempts[leadId] = (cp.attempts[leadId] || 0) + 1;
   saveCheckpointAtomic(CHECKPOINT, cp);
 
+  // Se il secondo pass HOT viene interrotto, il retry deve riprendere la sua
+  // frontiera (non tornare alla p1 già esaurita e ricominciare il dual scan).
+  let retryRunId = runId;
+  let retryFrontierPath = frontierPath;
+  let retryPassLabel = resumePass2 ? "p2" : "p1";
+
   try {
-    const r1 = await spawnWorker({
-      leadId,
-      passLabel: "p1",
-      outPath: tmpOut,
-      frontierPath,
-      runId,
-      strategyEnv,
-    });
-    if (!fs.existsSync(tmpOut)) {
-      throw new Error(`worker_no_output code=${r1.code}`);
+    let pass1 = storedPass1;
+    if (!resumePass2) {
+      const r1 = await spawnWorker({
+        leadId,
+        passLabel: "p1",
+        outPath: tmpOut,
+        frontierPath,
+        runId,
+        strategyEnv,
+      });
+      if (!fs.existsSync(tmpOut)) {
+        throw new Error(`worker_no_output code=${r1.code}`);
+      }
+      pass1 = JSON.parse(fs.readFileSync(tmpOut, "utf8"));
+    } else {
+      console.log(
+        JSON.stringify({
+          event: "dual_hot_resume_pass2",
+          id: leadId,
+          runId,
+          frontierPath,
+        })
+      );
     }
-    const pass1 = JSON.parse(fs.readFileSync(tmpOut, "utf8"));
     let finalRow = { ...pass1, pass1: pass1.pass1 || pass1 };
 
     // Fail-closed: any HOT complete candidate MUST get dual pass when enabled.
@@ -712,9 +841,16 @@ async function processLeadId(leadId) {
         };
         writeResultAtomic(outPath, finalRow);
       } else {
-        const runId2 = `reval-p2-${leadId}-${Date.now()}`;
-        const frontier2 = path.join(FRONTIER_DIR, `${runId2}.sqlite`);
+        const runId2 = resumePass2
+          ? runId
+          : `reval-p2-${leadId}-${Date.now()}`;
+        const frontier2 = resumePass2
+          ? frontierPath
+          : path.join(FRONTIER_DIR, `${runId2}.sqlite`);
         const tmp2 = path.join(RESULTS_DIR, `${leadId}.p2.json`);
+        retryRunId = runId2;
+        retryFrontierPath = frontier2;
+        retryPassLabel = "p2";
         cp.inProgress[leadId] = {
           startedAt: new Date().toISOString(),
           runId: runId2,
@@ -744,34 +880,69 @@ async function processLeadId(leadId) {
           writeResultAtomic(outPath, finalRow);
         } else {
           const pass2 = JSON.parse(fs.readFileSync(tmp2, "utf8"));
-          const agree =
-            !pass1.error &&
-            !pass2.error &&
-            pass1.token === "HOT" &&
-            pass2.token === "HOT" &&
-            pass1.crawlComplete === true &&
-            pass2.crawlComplete === true &&
-            pass1.policyFound !== true &&
-            pass2.policyFound !== true &&
-            pass1.processingState === "HOT_VERIFIED" &&
-            pass2.processingState === "HOT_VERIFIED";
-          finalRow = {
-            ...pass1,
-            pass1: pass1.pass1,
+          const dualOutcome = selectDualOutcome(pass1, pass2);
+          const passProof = {
+            pass1: pass1.pass1 || pass1,
             pass2: pass2.pass2 || pass2.pass1 || pass2,
             runIds: [...(pass1.runIds || []), ...(pass2.runIds || [])],
-            frontierPaths: [...(pass1.frontierPaths || []), ...(pass2.frontierPaths || [])],
-            fullEvidence: pass2.fullEvidence || pass1.fullEvidence,
-            dualDisagreement: !agree,
-            processingState: agree ? "HOT_VERIFIED" : "REVIEW_HUMAN",
-            businessVerdict: agree ? "HOT_VERIFIED" : "REVIEW_HUMAN",
-            validationStatus: agree ? pass2.validationStatus || pass1.validationStatus : "CONFLICT_FOUND",
-            newVerdict: agree ? "HOT" : "REVIEW",
-            token: agree ? "HOT" : "REVIEW",
-            terminal: true,
-            reasonCode: agree ? "HOT_VERIFIED" : "DUAL_HOT_DISAGREE",
+            frontierPaths: [
+              ...(pass1.frontierPaths || []),
+              ...(pass2.frontierPaths || []),
+            ],
             finishedAt: new Date().toISOString(),
           };
+          if (dualOutcome.kind === "published") {
+            const winner = dualOutcome.winner;
+            finalRow = {
+              ...winner,
+              ...passProof,
+              fullEvidence: winner.fullEvidence,
+              dualDisagreement: false,
+              processingState: winner.processingState,
+              businessVerdict: winner.businessVerdict || winner.processingState,
+              validationStatus: winner.validationStatus,
+              newVerdict: "PUBLISHED",
+              token: "PUBLISHED",
+              terminal: true,
+              reasonCode: winner.reasonCode || winner.processingState,
+              positiveEvidenceWonOverHot: true,
+            };
+          } else if (dualOutcome.kind === "incomplete") {
+            const pendingPass = dualOutcome.winner;
+            finalRow = {
+              ...pass1,
+              ...passProof,
+              fullEvidence: pendingPass.fullEvidence || pass1.fullEvidence,
+              dualDisagreement: false,
+              processingState: "RETRY_PENDING",
+              businessVerdict: null,
+              validationStatus: "REVALIDATION_PENDING",
+              newVerdict: null,
+              token: null,
+              terminal: false,
+              reasonCode:
+                pendingPass.reasonCode ||
+                pendingPass.error ||
+                "FRONTIER_INCOMPLETE",
+            };
+          } else {
+            const agree = dualOutcome.kind === "hot";
+            finalRow = {
+              ...pass1,
+              ...passProof,
+              fullEvidence: pass2.fullEvidence || pass1.fullEvidence,
+              dualDisagreement: !agree,
+              processingState: agree ? "HOT_VERIFIED" : "REVIEW_HUMAN",
+              businessVerdict: agree ? "HOT_VERIFIED" : "REVIEW_HUMAN",
+              validationStatus: agree
+                ? pass2.validationStatus || pass1.validationStatus
+                : "CONFLICT_FOUND",
+              newVerdict: agree ? "HOT" : "REVIEW",
+              token: agree ? "HOT" : "REVIEW",
+              terminal: true,
+              reasonCode: agree ? "HOT_VERIFIED" : "DUAL_HOT_DISAGREE",
+            };
+          }
           writeResultAtomic(outPath, finalRow);
           try {
             fs.unlinkSync(tmp2);
@@ -788,6 +959,10 @@ async function processLeadId(leadId) {
     delete cp.retryQueue[leadId];
     const cls = classifyResult(finalRow);
     if (cls.kind === "terminal") {
+      const aligned = alignCertifiedTerminalResult(finalRow, cls.state);
+      if (aligned.changed) {
+        finalRow = writeResultAtomic(outPath, aligned.row);
+      }
       recordOutcome("terminal");
       cp.terminal[leadId] = {
         finishedAt: finalRow.finishedAt || new Date().toISOString(),
@@ -807,23 +982,79 @@ async function processLeadId(leadId) {
       // Do NOT dump to REVIEW_HUMAN. "Zero incomplete" = finish the scan, not hide it as review.
       const attempts = cp.attempts[leadId] || 1;
       const errCode = finalRow.reasonCode || finalRow.error || "RETRY_PENDING";
-      const sliceContinue = /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP|LEAD_WALL|ANALYZE_ERROR|WORKER_SIGTERM|OCR_/i.test(
-        String(errCode)
+      const previousProcessingState = finalRow.processingState || null;
+      finalRow = {
+        ...finalRow,
+        previousProcessingState,
+        previousReasonCode: finalRow.reasonCode || null,
+        processingState: "RETRY_PENDING",
+        businessVerdict: null,
+        validationStatus: "REVALIDATION_PENDING",
+        newVerdict: null,
+        token: null,
+        terminal: false,
+        reasonCode: errCode,
+      };
+      writeResultAtomic(outPath, finalRow);
+      const continuationState = frontierInspect(retryFrontierPath);
+      const sliceContinue =
+        /CRAWL_CAP|FRONTIER_INCOMPLETE|PDF_UNPROCESSED|SITEMAP|LEAD_WALL|ANALYZE_ERROR|WORKER_SIGTERM|OCR_/i.test(
+          String(errCode)
+        ) ||
+        (continuationState.exists && continuationState.pending > 0);
+      const continuationReady =
+        sliceContinue &&
+        continuationState.exists &&
+        continuationState.pending > 0 &&
+        !/IDENTITY_MISMATCH|POLICY_CROSS_DOMAIN|DUAL_HOT_DISAGREE/i.test(
+          String(errCode)
+        );
+      const previousSnapshot = prevRetry?.frontierSnapshot || null;
+      const madeFrontierProgress =
+        continuationReady &&
+        (!previousSnapshot ||
+          Number(continuationState.completed) > Number(previousSnapshot.completed) ||
+          Number(continuationState.excluded) > Number(previousSnapshot.excluded) ||
+          Number(continuationState.pending) < Number(previousSnapshot.pending) ||
+          Number(continuationState.pdfPending) < Number(previousSnapshot.pdfPending) ||
+          Number(continuationState.blocked) < Number(previousSnapshot.blocked));
+      const stallCount = continuationReady
+        ? madeFrontierProgress
+          ? 0
+          : Number(prevRetry?.stallCount || 0) + 1
+        : Number(prevRetry?.stallCount || 0) + 1;
+      const parked =
+        stallCount >= 3 ||
+        (!continuationReady && attempts >= MAX_RETRY_ATTEMPTS);
+      const effectiveContinuationReady = continuationReady && !parked;
+      const parkedDelayMs = Math.min(
+        24 * 60 * 60_000,
+        60 * 60_000 * Math.max(1, Math.min(24, attempts - MAX_RETRY_ATTEMPTS + 1))
       );
       recordOutcome("retry");
       cp.retryQueue[leadId] = {
         attempts,
         lastReason: errCode,
         lastError: errCode,
-        nextRetryAt: nextRetryAt(attempts, {
-          sliceContinue: true,
-          immediate: true,
-          delayMs: sliceContinue ? 3_000 : 8_000,
-        }),
-        lastRunId: runId,
-        frontierPath,
+        nextRetryAt: effectiveContinuationReady
+          ? nextRetryAt(attempts, {
+              immediate: true,
+              delayMs: madeFrontierProgress ? 0 : 30_000,
+            })
+          : parked
+            ? nextRetryAt(attempts, { immediate: true, delayMs: parkedDelayMs })
+            : nextRetryAt(attempts, { sliceContinue: true }),
+        lastRunId: retryRunId,
+        frontierPath: retryFrontierPath,
+        passLabel: retryPassLabel,
         strategy: pickRetryStrategy(attempts, errCode, strategy),
-        firstSeenAt: new Date().toISOString(),
+        continuationReady: effectiveContinuationReady,
+        madeFrontierProgress,
+        stallCount,
+        parked,
+        parkedReason: parked ? `NO_SAFE_PROGRESS_AFTER_${attempts}_ATTEMPTS` : null,
+        frontierSnapshot: continuationState,
+        firstSeenAt: prevRetry?.firstSeenAt || new Date().toISOString(),
         lastAttemptAt: new Date().toISOString(),
         operational: true,
       };
@@ -858,8 +1089,9 @@ async function processLeadId(leadId) {
       lastReason: "PARENT_CATCH",
       lastError: String(e).slice(0, 300),
       nextRetryAt: nextRetryAt(attempts, { immediate: true, delayMs: 5_000 }),
-      lastRunId: runId,
-      frontierPath,
+      lastRunId: retryRunId,
+      frontierPath: retryFrontierPath,
+      passLabel: retryPassLabel,
       firstSeenAt: new Date().toISOString(),
       lastAttemptAt: new Date().toISOString(),
       operational: true,
@@ -933,8 +1165,10 @@ async function pump() {
       // Soft backoff only — never pin to 1 forever: slice retries are expected and
       // single-worker mode leaves one hard lead blocking the whole 877.
       if (rr > 0.35) {
-        concurrency = Math.min(concurrency, 2);
-        console.log(JSON.stringify({ event: "concurrency_soft_backoff", retryRate: rr, concurrency }));
+        // A partial exhaustive slice is recorded as retry even when it made
+        // useful frontier progress. Resource pressure is already handled by
+        // adaptiveConcurrency; retry rate alone must never halve throughput.
+        console.log(JSON.stringify({ event: "concurrency_retry_pressure", retryRate: rr, concurrency }));
       } else if (rr > 0.2) {
         concurrency = Math.min(concurrency, Math.max(2, concurrency));
         console.log(JSON.stringify({ event: "concurrency_hold", retryRate: rr, concurrency }));
@@ -949,7 +1183,17 @@ async function pump() {
     }
     if (queue.length === 0 && workers.size === 0) break;
     while (workers.size < concurrency && queue.length && !stopping) {
-      const id = queue.shift();
+      const queueEntries = queue.map((id) => ({
+        id,
+        meta: cp.retryQueue[id] || {},
+      }));
+      const activeEntries = Object.keys(cp.inProgress || {}).map((id) => ({
+        id,
+        meta: cp.retryQueue[id] || {},
+      }));
+      const selected = selectNextRetryEntry(queueEntries, activeEntries);
+      const selectedIndex = selected ? queue.indexOf(selected.id) : 0;
+      const [id] = queue.splice(Math.max(0, selectedIndex), 1);
       if (!id || cp.terminal[id] || cp.inProgress[id]) continue;
       if (onlyIds && !onlyIds.has(id)) continue;
       const p = processLeadId(id).finally(() => workers.delete(p));

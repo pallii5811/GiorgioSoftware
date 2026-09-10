@@ -42,6 +42,12 @@ export function resolveTerminalProcessing(opts: {
 }): TerminalResolution {
   if (opts.gatewayDecision) {
     const g = opts.gatewayDecision;
+    const canonicalPublishedSubtype =
+      g.legacyVerdict === "PUBLISHED" &&
+      opts.publishedSubtype &&
+      opts.publishedSubtype !== "PUBLISHED_STALE_DOCUMENT"
+        ? opts.publishedSubtype
+        : null;
     const counterKind: TerminalCounterKind =
       g.processingState === "HOT_VERIFIED"
         ? "hot"
@@ -49,8 +55,8 @@ export function resolveTerminalProcessing(opts: {
           ? "published"
           : "none";
     return {
-      processingState: g.processingState,
-      businessVerdict: g.businessVerdict,
+      processingState: canonicalPublishedSubtype ?? g.processingState,
+      businessVerdict: canonicalPublishedSubtype ?? g.businessVerdict,
       validationStatus: g.validationStatus,
       counterKind,
       packAsRetry: false,

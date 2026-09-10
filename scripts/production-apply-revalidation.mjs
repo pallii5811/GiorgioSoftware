@@ -6,7 +6,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { isTerminalState, resultHasRequiredFields } from "./revalidate-checkpoint-v3.mjs";
+import {
+  classifyResult,
+  isTerminalState,
+  resultHasRequiredFields,
+} from "./revalidate-checkpoint-v3.mjs";
 
 const ROOT = path.resolve(".");
 const RESULTS_DIR =
@@ -62,6 +66,15 @@ const gates = {
   all_results_have_full_evidence: rows
     .filter((r) => terminal[r.id])
     .every((r) => resultHasRequiredFields(r) && typeof r.fullEvidence === "string"),
+  terminal_results_reclassify_same: terminalIds.every((id) => {
+    const row = rows.find((candidate) => candidate.id === id);
+    if (!row) return false;
+    const classification = classifyResult(row);
+    return (
+      classification.kind === "terminal" &&
+      classification.state === terminal[id]?.processingState
+    );
+  }),
   no_retry_as_terminal: terminalIds.every((id) => {
     const st = terminal[id]?.processingState;
     return st !== "RETRY_PENDING" && isTerminalState(st);
