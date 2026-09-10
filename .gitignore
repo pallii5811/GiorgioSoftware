@@ -160,3 +160,38 @@ docs/staging-acceptance/fixtures/*.pdf
 docs/staging-acceptance/screenshots/*.png
 !docs/staging-acceptance/screenshots/.gitkeep
 
+# ---------------------------------------------------------------------------
+# Eccezioni: questi NON sono sonde usa e getta, sono il motore.
+#
+# Le regole larghe qui sopra (scripts/check-*.mjs, scripts/test-ocr*.mjs)
+# stavano escludendo proprio i controlli che docs/HANDOFF-CODEX-PERFECT-SCAN.md
+# cita come prova del motore, e i test dell'OCR. Il risultato: vivevano solo
+# sul server, e quando Hetzner e' diventato irraggiungibile la loro unica copia
+# era su un portatile. Un file che non e' in git non esiste il giorno che serve.
+!scripts/check-html-home-policy.mjs
+!scripts/check-identity-brand-host.mjs
+!scripts/check-retry-strategy.mjs
+!scripts/test-ocr.mjs
+!scripts/test-ocr-contract.mjs
+!scripts/test-ocr-smoke.mjs
+!scripts/test-ocr-pdftoppm-resolver.mjs
+!scripts/test-ocr-hybrid-policy-page.mjs
+!scripts/test-ocr-policy-after-page-12.mjs
+
+# ---------------------------------------------------------------------------
+# Copie di staging morte: alberi dell'app duplicati per spedirli su Hetzner.
+# Due contengono ancora accenti ricodificati due volte. Non sono il motore,
+# sono fotocopie vecchie, e confonderebbero chi cerca la sorgente buona.
+tmp-cert-*/
+tmp-k3-*/
+tmp-metrics-fix-ui/
+tmp-sanita-*/
+tmp-detector-from-git.ts
+
+# 16 MB di schermate di collaudo. Il resto di tmp-v3-export/ e' l'esportazione
+# del runtime dal server e va tenuta: e' l'unica unit systemd originale rimasta.
+tmp-v3-export/ui-smoke/
+
+# Copie di sicurezza dello script che ha riparato gli accenti.
+*.mojibake.bak
+
