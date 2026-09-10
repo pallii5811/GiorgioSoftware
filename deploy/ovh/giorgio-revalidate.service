@@ -1,0 +1,87 @@
+[Unit]
+# UNA unit sola, nessun drop-in.
+#
+# Su Hetzner questo servizio girava con otto drop-in sovrapposti che
+# riscrivevano le stesse variabili con valori diversi (TOTAL_WORKERS 1 o 2,
+# CRAWL_HTML_URL_CAP 40 o 100, il muro per lead fra 1,8 e 3,3 milioni di ms).
+# Systemd li applica in ordine alfabetico e vince l'ultimo: nessuno sapeva piu'
+# quale configurazione fosse viva, e quando la macchina e' sparita la risposta
+# e' sparita con lei.
+#
+# Qui i valori stanno in un posto solo. Per cambiarne uno si cambia questo file.
+# Se serve un profilo diverso, si copia questo file, non si aggiunge un drop-in.
+Description=Giorgio sanita — rivalidazione (motore + OCR)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/leadsniper-revalidate/app
+
+# ---------------------------------------------------------------- sicurezza
+# Non scrivere mai sul database commerciale senza un ok esplicito.
+# Questi quattro restano cosi' finche' non e' l'utente a deciderlo.
+Environment=APPLY_LIVE=0
+Environment=DISABLE_LIVE_DB=true
+Environment=DISABLE_EMAILS=true
+Environment=STAGING_MODE=true
+Environment=DATABASE_URL=file:/opt/leadsniper-revalidate/shadow-revalidate.db
+
+# ------------------------------------------------- invarianti di prodotto
+# docs/ops/giorgio-revalidate.md — non si abbassano per andare piu' veloce.
+Environment=SCAN_ENGINE_LOCAL=1
+Environment=OCR_ENABLED=1
+Environment=POLICY_EXHAUSTIVE=1
+Environment=SCAN_FAST=0
+Environment=REVALIDATE_DUAL_HOT=1
+
+# ------------------------------------------------------------------- OCR
+# Senza pdftoppm l'OCR non rasterizza e ogni PDF scansionato diventa un buco.
+# ExecStartPre sotto rifiuta l'avvio se manca: meglio fermi che ciechi.
+Environment=PDFTOPPM_PATH=/usr/bin/pdftoppm
+Environment=TESSDATA_PREFIX=/opt/leadsniper-revalidate/app/.tesseract-cache
+Environment=OCR_JOB_TIMEOUT_MS=180000
+Environment=PDF_FETCH_TIMEOUT_MS=60000
+Environment=MAX_DOCUMENT_RETRIES=3
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# ------------------------------------------------------------------ stato
+Environment=REVALIDATE_CHECKPOINT=/opt/leadsniper-revalidate/data/revalidation/checkpoint.json
+Environment=REVALIDATE_OUT_DIR=/opt/leadsniper-revalidate/data/revalidation
+Environment=FRONTIER_DB_PATH=/opt/leadsniper-revalidate/data/revalidation/frontiers/boot.sqlite
+
+# ------------------------------------------------------- ritmo e memoria
+# Tarato per 8 GB. Il server vecchio ne aveva 3,7 e l'OOM killer uccideva i
+# lead a meta' crawl (handoff, sezione B6: Chromium a ~2,5 GB di picco).
+Environment=TOTAL_WORKERS=2
+Environment=REVALIDATE_CONCURRENCY=2
+Environment=PER_HOST_CONCURRENCY=1
+Environment=REVALIDATE_WORKER_HEAP_MB=1152
+Environment=NODE_OPTIONS=--max-old-space-size=3072
+Environment=REVALIDATE_LEAD_WALL_MS=2700000
+Environment=REVALIDATE_SLICE_WALL_MS=2700000
+Environment=CRAWL_RUN_MAX_WALL_CLOCK_MS=2700000
+Environment=CRAWL_MAX_HTML_PER_SLICE=24
+Environment=REVALIDATE_MAX_RETRY=5
+
+MemoryMax=4500M
+MemorySwapMax=4G
+Nice=5
+
+# L'OCR e' obbligatorio: se il preflight esce 1, il servizio non parte.
+# Una verifica che non gira non fallisce — quindi gira prima di ogni avvio.
+ExecStartPre=/usr/bin/npx tsx scripts/preflight-ocr.mjs
+ExecStart=/opt/leadsniper-revalidate/app/deploy/ovh/avvia-revalidate.sh
+
+# Fermata pulita: il lead in corso finisce, non si perde il suo crawl.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=1200
+
+Restart=on-failure
+RestartSec=60
+StandardOutput=append:/opt/leadsniper-revalidate/logs/revalidate.log
+StandardError=append:/opt/leadsniper-revalidate/logs/revalidate.log
+
+[Install]
+WantedBy=multi-user.target

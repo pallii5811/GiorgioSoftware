@@ -1,3 +1,16 @@
 .env
 .env.*
 !.env.example
+
+# Runtime/audit artifacts belong to the Hetzner scan engine, never to the Vercel UI proxy.
+data/**
+!data/comuni.json
+.tesseract-cache/**
+*.traineddata
+*.tgz
+tmp-*
+tmp*/**
+
+# Vercel only needs the Prisma bootstrap script during install/build.
+scripts/**
+!scripts/prisma-smart.mjs
