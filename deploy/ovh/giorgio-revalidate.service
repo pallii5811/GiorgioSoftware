@@ -53,18 +53,27 @@ Environment=FRONTIER_DB_PATH=/opt/leadsniper-revalidate/data/revalidation/fronti
 # ------------------------------------------------------- ritmo e memoria
 # Tarato per 8 GB. Il server vecchio ne aveva 3,7 e l'OOM killer uccideva i
 # lead a meta' crawl (handoff, sezione B6: Chromium a ~2,5 GB di picco).
-Environment=TOTAL_WORKERS=2
-Environment=REVALIDATE_CONCURRENCY=2
+# Due lavoratori vogliono due processori liberi, e qui ce ne sono due in tutto
+# — sui quali gira anche la UI. Con TOTAL_WORKERS=2 i due lavoratori si
+# contendono la stessa CPU mentre Chromium rende le pagine: il risultato non e'
+# il doppio della velocita', sono due lead che sforano il muro invece di uno che
+# lo rispetta. Uno alla volta, e il ritmo e' quello vero.
+Environment=TOTAL_WORKERS=1
+Environment=REVALIDATE_CONCURRENCY=1
 Environment=PER_HOST_CONCURRENCY=1
 Environment=REVALIDATE_WORKER_HEAP_MB=1152
-Environment=NODE_OPTIONS=--max-old-space-size=3072
+Environment=NODE_OPTIONS=--max-old-space-size=2560
 Environment=REVALIDATE_LEAD_WALL_MS=2700000
 Environment=REVALIDATE_SLICE_WALL_MS=2700000
 Environment=CRAWL_RUN_MAX_WALL_CLOCK_MS=2700000
 Environment=CRAWL_MAX_HTML_PER_SLICE=24
 Environment=REVALIDATE_MAX_RETRY=5
 
-MemoryMax=4500M
+# Su una macchina da 8 GB dichiarati (7 reali) gira anche la UI Next.js, che
+# ne vuole circa uno. Quattro alla rivalidazione lasciano il margine perche'
+# l'OOM killer non scelga lui chi fermare, e lo swap assorbe i picchi di
+# Chromium senza uccidere un lead a meta' crawl.
+MemoryMax=4G
 MemorySwapMax=4G
 Nice=5
 

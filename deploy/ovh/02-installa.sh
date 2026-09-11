@@ -29,8 +29,17 @@ echo
 echo "=== 2/9  estrazione in $UI ==="
 mkdir -p "$UI"
 tar -xzf "$PACCO" -C "$UI"
-grep -m1 '^# HEAD' "$MANIFESTO" | awk '{print $3}' > "$UI/RELEASE_SHA"
-echo "  RELEASE_SHA = $(cat "$UI/RELEASE_SHA")"
+# L'ultimo campo, non il terzo: la riga e' "# HEAD      : 9e23144..." e i campi
+# sono quattro perche' i due punti stanno da soli. Con $3 dentro RELEASE_SHA
+# finiva ":" — e nessuno se ne accorgeva, perche' il file esisteva e il
+# checkpoint veniva scritto lo stesso, con provenienza inventata.
+grep -m1 '^# HEAD' "$MANIFESTO" | awk '{print $NF}' > "$UI/RELEASE_SHA"
+SHA="$(cat "$UI/RELEASE_SHA")"
+if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "  RELEASE_SHA non e' un commit valido: '$SHA'. Manifesto malformato."
+  exit 1
+fi
+echo "  RELEASE_SHA = $SHA"
 
 echo
 echo "=== 3/9  PROVA DI PROVENIENZA — le impronte combaciano? ==="

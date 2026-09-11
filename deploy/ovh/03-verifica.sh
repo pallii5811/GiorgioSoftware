@@ -95,6 +95,36 @@ esito $? "test-suite esce 0"
 grep -E "TUTTI I TEST PASSATI|ERRORI" /tmp/test-suite.out | tail -2 | sed 's/^/        /'
 
 echo
+echo "--- 6b. Chromium apre davvero una pagina ---"
+# Non basta che "playwright install-deps" sia uscito 0: su una Ubuntu che non
+# riconosce puo' non installare niente in silenzio. L'unica prova che valga e'
+# aprire una pagina e leggerne il contenuto. Se Chromium non parte, il crawler
+# non vede nessun sito e ogni lead diventa un falso HOT.
+#
+# La prova si scrive DENTRO l'albero dell'applicazione, non in /tmp: Node
+# risolve "import ... from 'playwright'" risalendo dalle cartelle dello
+# SCRIPT, non da quella di lavoro. Da /tmp non trova node_modules e muore con
+# ERR_MODULE_NOT_FOUND — che sembra "Chromium e' rotto" e invece e' la prova
+# messa nel posto sbagliato.
+cat > "$APP/.prova-chromium.mjs" <<'PROVA'
+import { chromium } from "playwright";
+const browser = await chromium.launch({ args: ["--no-sandbox"] });
+const page = await browser.newPage();
+await page.setContent("<h1 id=x>polizza responsabilità civile</h1>");
+const testo = await page.textContent("#x");
+await browser.close();
+if (testo !== "polizza responsabilità civile") {
+  console.error("  testo letto:", JSON.stringify(testo));
+  process.exit(1);
+}
+console.log("  Chromium ha aperto la pagina e letto il testo accentato");
+PROVA
+( cd "$APP" && node .prova-chromium.mjs > /tmp/prova-chromium.out 2>&1 )
+esito $? "Chromium si avvia e rende una pagina"
+tail -4 /tmp/prova-chromium.out | sed 's/^/        /'
+rm -f "$APP/.prova-chromium.mjs"
+
+echo
 echo "--- 7. la UI risponde con dati veri ---"
 CODICE="$(curl -s -m 30 -o /tmp/api.json -w '%{http_code}' \
   'http://127.0.0.1:3000/api/sanita?region=Campania&includePending=1')"
@@ -102,17 +132,31 @@ CODICE="$(curl -s -m 30 -o /tmp/api.json -w '%{http_code}' \
 python3 - <<'PY'
 import json, sys
 from pathlib import Path
+
+# Si misura dbTotal, non quanti lead escono dall'elenco.
+#
+# L'elenco predefinito mostra solo i lead ATTIVABILI, e un lead e' attivabile
+# solo se ha una verifica recente (meta.actionableQueueRequireCurrentEvidence).
+# Su una macchina appena installata nessuno e' stato ancora rivalidato, quindi
+# zero e' la risposta GIUSTA — e un controllo che pretendesse "almeno un lead"
+# fallirebbe proprio quando il motore si comporta bene.
+#
+# Quello che va provato qui e' che la UI parli davvero col database.
 p = Path("/tmp/api.json")
 if not p.exists() or p.stat().st_size == 0:
     print("        risposta vuota"); sys.exit(1)
 j = json.loads(p.read_text())
-leads = j.get("leads", j)
-if isinstance(leads, dict):
-    leads = leads.get("data") or []
-print(f"        lead restituiti: {len(leads)}")
-sys.exit(0 if isinstance(leads, list) else 1)
+meta = j.get("meta") or {}
+totale = meta.get("dbTotal")
+mostrati = len(j.get("data") or [])
+print(f"        lead nel database: {totale}   mostrati come attivabili: {mostrati}")
+if not j.get("success"):
+    print("        success=false"); sys.exit(1)
+if not isinstance(totale, int) or totale <= 0:
+    print("        la UI non legge il database"); sys.exit(1)
+sys.exit(0)
 PY
-esito $? "il corpo e' una lista di lead"
+esito $? "la UI legge il database"
 
 echo
 echo "--- 8. la porta 3000 e' raggiungibile da fuori ---"

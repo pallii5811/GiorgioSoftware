@@ -17,6 +17,7 @@ import {
   getScanEngineUrl,
   HETZNER_SCAN_ENGINE,
   isVercelUiHost,
+  TIMEOUT_MOTORE_MS,
 } from "@/lib/sanita/scan-engine-url";
 import { stopBatchPipeline } from "@/lib/sanita/scan-coordinator";
 import { isInActionableSalesQueue, passesDefaultClientQueueGate } from "@/lib/sanita/actionable-queue";
@@ -166,7 +167,7 @@ async function stopPipelineProcesses(): Promise<void> {
   await stopBatchPipeline();
 }
 
-/** Vercel UI → legge i lead dal motore Hetzner (stesso DB della scansione). */
+/** Vercel UI → legge i lead dal motore di scansione (stesso DB della scansione). */
 async function proxyGetToEngine(req: Request) {
   const bases = [getScanEngineUrl(), HETZNER_SCAN_ENGINE].filter(
     (v, i, a) => v && a.indexOf(v) === i
@@ -174,7 +175,15 @@ async function proxyGetToEngine(req: Request) {
   const url = new URL(req.url);
   for (const base of bases) {
     try {
-      const upstream = await fetch(`${base}/api/sanita${url.search}`, { cache: "no-store" });
+      // Con un timeout, non senza: il 9 settembre il motore era morto e questo
+      // ciclo restava appeso su ogni indirizzo fino al limite della funzione
+      // Vercel — 16 secondi misurati — per poi dare 500 comunque. Un motore che
+      // non risponde in dieci secondi non sta rispondendo, e il secondo
+      // indirizzo merita di essere provato mentre la richiesta e' ancora viva.
+      const upstream = await fetch(`${base}/api/sanita${url.search}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(TIMEOUT_MOTORE_MS),
+      });
       if (!upstream.ok) continue;
       const body = await upstream.text();
       return new NextResponse(body, {
