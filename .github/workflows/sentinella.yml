@@ -1,0 +1,100 @@
+# Sentinella: controlla ogni quarto d'ora che il prodotto risponda DAVVERO.
+#
+# Perche' esiste.
+# Dal 9 all'11 settembre 2026 il prodotto e' stato fermo e nessuno se n'e'
+# accorto. Il server del motore era morto, ma la pagina su Vercel continuava a
+# rispondere 200 — e' un guscio statico — mentre l'API dava 500. Tre giorni.
+#
+# Da qui le due regole di questo controllo:
+#
+# 1. NON si guarda la home. Rispondeva 200 anche a prodotto morto.
+#    Si chiama l'API, che e' la sola cosa che attraversa tutta la catena:
+#    Vercel -> proxy -> motore su Scaleway -> database.
+#
+# 2. NON basta il codice 200. Si pretende un DATO: dbTotal maggiore di zero.
+#    Un 200 con il corpo vuoto e' esattamente come sembrava il prodotto il 9
+#    settembre — vivo da fuori, inutile da dentro.
+#
+# Gira su GitHub, cioe' FUORI dall'infrastruttura che sorveglia: un controllo
+# ospitato sulla macchina da controllare tace proprio quando serve parlare.
+#
+# Quando fallisce, GitHub manda una mail. Si puo' lanciare anche a mano dalla
+# scheda Actions, con "Run workflow".
+
+name: sentinella
+
+on:
+  schedule:
+    # Ogni 15 minuti. I cron di Actions partono solo dal ramo predefinito.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  controlla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Il prodotto risponde con dati veri
+        run: |
+          set -u
+
+          PRODOTTO="https://giorgio-software.vercel.app/api/sanita?region=Campania&includePending=1"
+          MOTORE="http://151.115.147.134:3000/api/sanita?region=Campania"
+
+          echo "=== 1. il prodotto, dalla porta d'ingresso ==="
+          CODICE="$(curl -s -m 45 -o risposta.json -w '%{http_code}' "$PRODOTTO" || echo 000)"
+          echo "  HTTP $CODICE"
+
+          echo
+          echo "=== 2. il motore, direttamente ==="
+          # Serve a dire QUALE pezzo si e' rotto, non solo che qualcosa lo e'.
+          CODICE_MOTORE="$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$MOTORE" || echo 000)"
+          echo "  HTTP $CODICE_MOTORE"
+
+          echo
+          echo "=== 3. il corpo contiene dati? ==="
+          python3 - "$CODICE" "$CODICE_MOTORE" <<'PY'
+          import json, sys, pathlib
+
+          codice, codice_motore = sys.argv[1], sys.argv[2]
+          guasti = []
+
+          if codice != "200":
+              guasti.append(f"l'API del prodotto risponde {codice}")
+
+          corpo = pathlib.Path("risposta.json")
+          if not corpo.exists() or corpo.stat().st_size == 0:
+              guasti.append("risposta vuota")
+          else:
+              try:
+                  j = json.loads(corpo.read_text(encoding="utf-8"))
+              except Exception as e:
+                  guasti.append(f"risposta non e' JSON: {e}")
+                  j = {}
+              if j:
+                  if not j.get("success"):
+                      guasti.append("success=false")
+                  totale = (j.get("meta") or {}).get("dbTotal")
+                  print(f"  lead nel database: {totale}")
+                  if not isinstance(totale, int) or totale <= 0:
+                      # Il caso del 9 settembre: 200 da fuori, niente dentro.
+                      guasti.append(f"dbTotal={totale}: la catena risponde ma non porta dati")
+
+          if guasti:
+              print()
+              print("PRODOTTO GUASTO")
+              for g in guasti:
+                  print(f"  - {g}")
+              print()
+              if codice_motore != "200":
+                  print(f"  Il motore su Scaleway risponde {codice_motore}: il guasto e' LA', non su Vercel.")
+                  print("  Controlla: ssh root@151.115.147.134 'pm2 status; systemctl status giorgio-revalidate'")
+              else:
+                  print("  Il motore risponde 200 ma il prodotto no: il guasto e' fra Vercel e il motore.")
+                  print("  Controlla la variabile SCAN_ENGINE_URL su Vercel.")
+              sys.exit(1)
+
+          print()
+          print("PRODOTTO VIVO: l'API risponde e porta dati")
+          PY
