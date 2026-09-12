@@ -242,6 +242,29 @@ if (/\/opt\/leadsniper\/prisma\/dev\.db/i.test(process.env.DATABASE_URL) && proc
 
 const dualHot = process.env.REVALIDATE_DUAL_HOT === "1";
 const regionFilter = process.env.REVALIDATE_REGION || null;
+
+// Quali regioni entrano nella rivalidazione profonda.
+//
+// Qui c'era l'elenco ["Campania", "Veneto"] scritto a mano dentro la query.
+// Conseguenza: ogni struttura scoperta in una regione nuova non entrava MAI
+// nella verifica esaustiva. Restava al primo passaggio della scansione
+// territoriale — una pagina sola, nessun PDF, nessuna scadenza — e nessuno
+// poteva accorgersene, perche' il lead esisteva ed era pure classificato.
+//
+// Misurato su RSA San Francesco (Alatri, Lazio): pagesVisited 1,
+// SITE_COVERAGE_V3:0, "PDF polizza letti 0/2". Il numero di polizza veniva
+// dal pie' di pagina, la scadenza stava in un PDF mai raggiunto — e per un
+// assicuratore la scadenza e' il dato che dice quando telefonare.
+//
+// Adesso l'elenco e' una variabile. Il valore predefinito e' quello di prima,
+// quindi chi non la imposta ottiene esattamente il comportamento precedente:
+// aggiungere una regione e' una riga nella unit, non una modifica al codice.
+const REGIONI_PREDEFINITE = ["Campania", "Veneto"];
+const regioniAmmesse = (process.env.REVALIDATE_REGIONS || "")
+  .split(",")
+  .map((r) => r.trim())
+  .filter(Boolean);
+const regioni = regioniAmmesse.length ? regioniAmmesse : REGIONI_PREDEFINITE;
 const limit = process.env.REVALIDATE_LIMIT ? Number(process.env.REVALIDATE_LIMIT) : null;
 const onlyIds = process.env.REVALIDATE_IDS
   ? new Set(process.env.REVALIDATE_IDS.split(",").map((s) => s.trim()).filter(Boolean))
@@ -313,7 +336,7 @@ const { readVerdictToken } = await import("../src/lib/sanita/verdict.ts");
 
 const where = {
   type: "HEALTHCARE",
-  ...(regionFilter ? { region: regionFilter } : { region: { in: ["Campania", "Veneto"] } }),
+  ...(regionFilter ? { region: regionFilter } : { region: { in: regioni } }),
   ...(onlyIds ? { id: { in: [...onlyIds] } } : {}),
 };
 const leads = await prisma.lead.findMany({

@@ -35,6 +35,14 @@ Environment=POLICY_EXHAUSTIVE=1
 Environment=SCAN_FAST=0
 Environment=REVALIDATE_DUAL_HOT=1
 
+# Le regioni che entrano nella verifica esaustiva.
+#
+# Prima era un elenco scritto dentro la query — Campania e Veneto — e ogni
+# struttura scoperta altrove restava al primo passaggio della scansione
+# territoriale: una pagina sola, i PDF mai aperti, la scadenza mai trovata.
+# Una regione nuova si aggiunge QUI, in coda, separata da una virgola.
+Environment=REVALIDATE_REGIONS=Campania,Veneto,Lazio
+
 # ------------------------------------------------------------------- OCR
 # Senza pdftoppm l'OCR non rasterizza e ogni PDF scansionato diventa un buco.
 # ExecStartPre sotto rifiuta l'avvio se manca: meglio fermi che ciechi.
