@@ -69,8 +69,23 @@ SCAN_FAST=0
 INSECURE_EXTERNAL_TLS=true
 FINE
   echo "  scritto $UI/.env"
-  echo "  >>> MANCA TAVILY_API_KEY: senza, la ricerca portali ASL non parte."
-  echo "  >>> Aggiungila a mano:  echo 'TAVILY_API_KEY=...' >> $UI/.env"
+  # TAVILY_API_KEY viaggia col pacchetto in un file a parte (non nel tar, che
+  # finirebbe in un archivio: si copia con scp accanto al pacchetto).
+  #
+  # Qui c'era solo un avviso stampato a schermo, e l'ho ignorato io stesso.
+  # Senza quella chiave isRegionalCheckAvailable() e' false, e ogni struttura
+  # senza sito in anagrafica viene marcata "Da controllare" PRIMA di provare a
+  # cercarlo: 61 strutture su 61, e nessuno capisce perche'.
+  # Un avviso non e' un meccanismo: adesso o la chiave c'e', o si ferma.
+  if [[ -f /tmp/TAVILY_API_KEY ]]; then
+    cat /tmp/TAVILY_API_KEY >> "$UI/.env"
+    echo "  TAVILY_API_KEY installata"
+  else
+    echo "  MANCA /tmp/TAVILY_API_KEY."
+    echo "  Dal portatile:  scp .env-tavily UTENTE@IP:/tmp/TAVILY_API_KEY"
+    echo "  (una riga sola:  TAVILY_API_KEY=...)"
+    exit 1
+  fi
 else
   echo "  .env gia' presente, non lo tocco"
 fi
@@ -103,6 +118,21 @@ cd "$UI"
 npm ci
 npx playwright install chromium
 npx prisma generate
+
+# Il motore NON usa il Chromium interno di Playwright: playwright-launch.ts
+# cerca un binario di SISTEMA fra percorsi fissi, e su una macchina senza snap
+# non ne trova nessuno — muore con PLAYWRIGHT_NO_CHROMIUM, il crawler non apre
+# un sito, e ogni lead torna in coda senza spiegazione.
+#
+# Playwright il binario vero ce l'ha: basta indicarglielo.
+CHROME="$(find /root/.cache/ms-playwright -maxdepth 3 -type f -name chrome 2>/dev/null | head -1)"
+if [[ -z "$CHROME" ]]; then
+  echo "  Chromium di Playwright non trovato dopo l'installazione. Mi fermo."
+  exit 1
+fi
+grep -q '^PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=' "$UI/.env" \
+  || echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$CHROME" >> "$UI/.env"
+echo "  Chromium: $CHROME"
 if [[ "${NEED_DB_PUSH:-0}" == "1" ]]; then
   npx prisma db push
 fi

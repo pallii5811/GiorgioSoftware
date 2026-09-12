@@ -40,6 +40,14 @@ Environment=REVALIDATE_DUAL_HOT=1
 # ExecStartPre sotto rifiuta l'avvio se manca: meglio fermi che ciechi.
 Environment=PDFTOPPM_PATH=/usr/bin/pdftoppm
 Environment=TESSDATA_PREFIX=/opt/leadsniper-revalidate/app/.tesseract-cache
+
+# Senza questo il crawler non apre nessun sito: playwright-launch.ts cerca un
+# Chromium di SISTEMA fra percorsi fissi e su questa macchina non ce n'e'.
+# Il binario e' quello che installa Playwright, e va indicato per nome —
+# 02-installa.sh lo trova e scrive lo stesso valore anche nell'.env.
+# Il percorso contiene il numero di versione: cambia a ogni aggiornamento di
+# Playwright, quindi dopo un npm update va riletto, non copiato a memoria.
+Environment=PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/root/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome
 Environment=OCR_JOB_TIMEOUT_MS=180000
 Environment=PDF_FETCH_TIMEOUT_MS=60000
 Environment=MAX_DOCUMENT_RETRIES=3

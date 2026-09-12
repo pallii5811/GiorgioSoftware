@@ -107,17 +107,52 @@ echo "--- 6b. Chromium apre davvero una pagina ---"
 # ERR_MODULE_NOT_FOUND — che sembra "Chromium e' rotto" e invece e' la prova
 # messa nel posto sbagliato.
 cat > "$APP/.prova-chromium.mjs" <<'PROVA'
-import { chromium } from "playwright";
-const browser = await chromium.launch({ args: ["--no-sandbox"] });
+// Si prova la strada DEL PRODOTTO, non chromium.launch() di Playwright.
+//
+// Costato mezza giornata: la versione precedente di questo controllo faceva
+// chromium.launch({args}) e passava, perche' quella strada usa il Chromium
+// interno di Playwright. Ma il prodotto chiama playwrightChromiumLaunchOptions(),
+// che pretende un binario di SISTEMA e moriva con PLAYWRIGHT_NO_CHROMIUM.
+// Risultato: verifica verde e crawler cieco — nessun sito aperto, nessuna
+// polizza trovata, 151 lead su 152 rimandati in coda senza una ragione visibile.
+//
+// Due strade diverse verso lo stesso browser: provare quella facile non dice
+// niente su quella che gira davvero.
+import "dotenv/config";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
+
+const mod = (rel) => pathToFileURL(path.join(process.cwd(), rel)).href;
+const { playwrightChromiumLaunchOptions } = await import(mod("src/lib/sanita/playwright-launch.ts"));
+const { chromium } = await import("playwright");
+
+const opzioni = playwrightChromiumLaunchOptions();
+console.log("  binario:", opzioni.executablePath);
+
+const browser = await chromium.launch(opzioni);
 const page = await browser.newPage();
+
+// Pagina locale: prova che rende e che legge gli accenti.
 await page.setContent("<h1 id=x>polizza responsabilità civile</h1>");
 const testo = await page.textContent("#x");
+
+// Pagina ESTERNA vera: prova che esce in rete. Un browser che apre solo
+// setContent non dimostra che il crawler possa visitare un sito.
+let esterna = null;
+try {
+  await page.goto("https://example.com", { waitUntil: "domcontentloaded", timeout: 30000 });
+  esterna = await page.title();
+} catch (e) {
+  console.error("  non raggiunge la rete:", e.message.slice(0, 120));
+}
 await browser.close();
+
 if (testo !== "polizza responsabilità civile") {
   console.error("  testo letto:", JSON.stringify(testo));
   process.exit(1);
 }
-console.log("  Chromium ha aperto la pagina e letto il testo accentato");
+if (!esterna) process.exit(1);
+console.log("  rende una pagina, legge gli accenti, ed esce in rete:", esterna);
 PROVA
 ( cd "$APP" && node .prova-chromium.mjs > /tmp/prova-chromium.out 2>&1 )
 esito $? "Chromium si avvia e rende una pagina"
