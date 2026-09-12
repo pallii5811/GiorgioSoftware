@@ -48,6 +48,30 @@ const ASSISTENTIAL_ONLY =
 const CLINICAL_SIGNAL =
   /casa\s+di\s+cura|clinica\b|ospedal|policlinic|day\s+hospital|centro\s+medic|laboratorio|diagnostic|accreditat|riabilit|fisioterap|sanitaria\s+assistenziale|presidio\s+ospedalier/i;
 
+/**
+ * Il nome comincia con un odonimo: e' un indirizzo, non il nome di un ente.
+ * Ancorato all'inizio, perche' "Villa Corso" o "Clinica Largo Augusto" sono
+ * nomi legittimi e non devono cadere qui.
+ */
+const ODONIMO_INIZIALE =
+  /^(via|viale|v\.le|vicolo|piazza|p\.zza|piazzale|largo|corso|c\.so|strada|str\.|localit[aà]|loc\.|contrada|c\.da|borgo|traversa|lungomare|lungotevere|circonvallazione|salita|discesa|rotonda)\b/i;
+
+/**
+ * Parole che, dentro il NOME, dicono che si tratta di una struttura.
+ *
+ * Elenco a parte, non CLINICAL_SIGNAL, per due ragioni misurate:
+ *  - CLINICAL_SIGNAL non contiene "poliambulatorio", e "Via Roma
+ *    Poliambulatorio" veniva scartata a torto;
+ *  - CLINICAL_SIGNAL e' usato altrove con significati diversi, e allargarlo
+ *    avrebbe cambiato comportamenti che qui non c'entrano.
+ */
+const SEGNALE_STRUTTURA_NEL_NOME =
+  /casa\s+di\s+cura|clinic|ospedal|hospital|policlinic|poliambulator|ambulator|day\s+hospital|centro\s+(medic|diagnostic|sanitari|odontoiatr|fisioterap|riabilitat)|laboratorio\s+analisi|diagnostic|residenza\s+sanitaria|\brsa\b|istituto\s+(clinic|sanitari|ortopedic)|riabilit|fisioterap|odontoiatr|dentist|presidio|medical\s+center|villa\s+.*(cura|clinic|sanitari)/i;
+
+/** Comuni, Province, Regioni e loro uffici: enti territoriali, non strutture. */
+const ENTE_PUBBLICO_TERRITORIALE =
+  /^(comune\s+di|citt[aà]\s+di|municipio|provincia\s+di|regione\s+[a-z])|^ufficio\s+(anagrafe|tecnico|protocollo)|anagrafe\s+comunal|servizi\s+demografic/i;
+
 export function classifyGelliScope(
   companyName: string,
   category: string | null | undefined,
@@ -61,6 +85,28 @@ export function classifyGelliScope(
   const hay = `${name} ${category ?? ""}`;
 
   if (!name) return { ok: false, reason: "Nome vuoto" };
+
+  // Un indirizzo non e' una struttura, e un Comune nemmeno.
+  //
+  // Google Maps restituisce anche schede il cui nome e' un odonimo o un ente
+  // pubblico, e gli attribuisce una categoria sanitaria plausibile. Il
+  // controllo sulla categoria, piu' sotto, le fa passare: "Via Guido Rossa
+  // Acquapendente" e' entrata in archivio come "Casa di cura per lungodegenti",
+  // col telefono e la PEC del Comune.
+  //
+  // Il rifiuto vale SOLO se nel nome non c'e' nessun segnale clinico: cosi'
+  // "Corso Italia Medical Center" o "Via Roma Poliambulatorio" restano dentro,
+  // perche' quelle sono strutture che si chiamano come la via dove stanno.
+  // Si guarda il NOME, non "nome + categoria": la categoria e' proprio la
+  // cosa inaffidabile — e' lei che ha fatto entrare "Via Guido Rossa
+  // Acquapendente" etichettandola "Casa di cura per lungodegenti".
+  if (ODONIMO_INIZIALE.test(name) && !SEGNALE_STRUTTURA_NEL_NOME.test(name)) {
+    return { ok: false, reason: "Il nome e' un indirizzo, non una struttura" };
+  }
+  if (ENTE_PUBBLICO_TERRITORIALE.test(name)) {
+    return { ok: false, reason: "Ente territoriale, non struttura sanitaria" };
+  }
+
   if (HARD_EXCLUDE.test(hay)) return { ok: false, reason: "Attività non sanitaria" };
   if (PUBLIC_HEALTH_OFFICE.test(hay)) return { ok: false, reason: "Ufficio/distretto ASL pubblico" };
   if (WELLNESS_NON_GELLI.test(hay)) return { ok: false, reason: "Terme/consultorio fuori scope" };
