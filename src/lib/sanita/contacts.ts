@@ -284,16 +284,72 @@ export function pickOfficialWebsiteFromHits(hits: TavilyHit[], companyName: stri
   return best.score >= 5 ? best.url : null;
 }
 
+/**
+ * Domini che appartengono con certezza a qualcun altro.
+ *
+ * Un contatto sbagliato e' peggio di un contatto assente: assente si vede,
+ * sbagliato si scopre quando il venditore ha gia' scritto — e chi risponde
+ * e' un notaio, un parroco o l'anagrafe comunale.
+ *
+ * Misurato sul Lazio, l'unica regione raccolta dal percorso vivo: 10 contatti
+ * su 20 appartenevano a terzi. Cinque Comuni, tre ASL, una parrocchia, un
+ * notaio. Su Campania e Veneto, che arrivano dall'archivio curato, erano 8 su
+ * 240.
+ *
+ * Non sono nell'elenco le caselle generiche — gmail, libero, hotmail — perche'
+ * NON sono un errore: molte piccole strutture usano davvero quelle. Scartarle
+ * toglierebbe 86 contatti buoni per togliere zero contatti sbagliati.
+ */
+const DOMINI_DI_TERZI: ReadonlyArray<{ chi: string; regola: RegExp }> = [
+  // Aziende sanitarie locali. Sta PRIMA del Comune perche' le AULSS venete
+  // usano lo stesso hub PEC dei Comuni (@pecveneto.it): senza quest'ordine
+  // un'azienda sanitaria verrebbe etichettata "comune", e una spiegazione
+  // sbagliata in diagnostica fa perdere piu' tempo di nessuna spiegazione.
+  { chi: "azienda sanitaria", regola: /[@.]a?ulss\d*|[@.]asl[a-z0-9.-]*\.|[@.]aslroma/i },
+  // Comuni: dominio istituzionale, hub PEC regionali, sportello attivita' produttive.
+  { chi: "comune", regola: /(^|[@.])comune[.-]|comunedi|pec\.comune|cert\.comune|@pecveneto\.it|^suap@|[@.]suap[.@]/i },
+  // Notai: la PEC del notaio che ha rogato, non della struttura.
+  { chi: "notaio", regola: /[@.]notariato\.it/i },
+  // Parrocchie e diocesi.
+  { chi: "parrocchia", regola: /parrocchi|[@.]diocesi/i },
+  // Regioni e loro portali: ente pubblico, non la struttura privata.
+  { chi: "regione", regola: /[@.]regione\.[a-z]+\.it|portalesalute/i },
+  // Ricettivo: quasi sempre un'omonimia fra la struttura e un albergo.
+  { chi: "struttura ricettiva", regola: /[@.](hotel|albergo|agriturismo|bnb)[a-z0-9.-]*\./i },
+];
+
+/**
+ * Vero se il contatto appartiene a un ente estraneo alla struttura sanitaria.
+ * Restituisce anche a chi, perche' un rifiuto muto non si puo' controllare.
+ */
+export function contattoDiTerzi(contatto: string | null | undefined): string | null {
+  if (!contatto) return null;
+  const c = contatto.trim().toLowerCase();
+  if (!c) return null;
+  for (const { chi, regola } of DOMINI_DI_TERZI) {
+    if (regola.test(c)) return chi;
+  }
+  return null;
+}
+
 export function mergeContacts(
   existing: { phone?: string | null; email?: string | null; pec?: string | null; website?: string | null },
   found: ParsedContacts,
   region?: string | null
 ) {
-  const nonPec = found.emails.filter((e) => e !== found.pec);
+  // Si filtrano SOLO i contatti appena trovati, mai quelli gia' in archivio:
+  // quelli sono stati curati e toglierli sarebbe una regressione. Se un
+  // contatto trovato appartiene a terzi si lascia il campo VUOTO invece di
+  // riempirlo con quello sbagliato — un buco dichiarato si vede, un contatto
+  // sbagliato no.
+  const emailPulite = found.emails.filter((e) => !contattoDiTerzi(e));
+  const pecPulita = contattoDiTerzi(found.pec) ? null : found.pec;
+  const nonPec = emailPulite.filter((e) => e !== pecPulita);
+
   return {
     phone: pickBestPhone([...found.phones, existing.phone], region),
-    email: existing.email || nonPec[0] || found.pec || null,
-    pec: existing.pec || found.pec || null,
+    email: existing.email || nonPec[0] || pecPulita || null,
+    pec: existing.pec || pecPulita || null,
     website: existing.website || found.website || null,
   };
 }
