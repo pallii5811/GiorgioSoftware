@@ -47,6 +47,14 @@ Environment=REVALIDATE_REGIONS=Campania,Veneto,Lazio
 # Senza pdftoppm l'OCR non rasterizza e ogni PDF scansionato diventa un buco.
 # ExecStartPre sotto rifiuta l'avvio se manca: meglio fermi che ciechi.
 Environment=PDFTOPPM_PATH=/usr/bin/pdftoppm
+# Il motore NON usa il Chromium interno di Playwright: playwright-launch.ts
+# cerca un binario di sistema e, se non lo trova, lancia PLAYWRIGHT_NO_CHROMIUM.
+# Il crawler resta cieco, non apre nessun sito, e ogni lead torna in coda.
+# Sul server Scaleway del 12/9/2026 e' successo esattamente questo, per un
+# giorno intero, mentre la verifica di installazione diceva verde.
+# Il percorso e' quello del Chromium installato da "npx playwright install";
+# se Playwright cambia versione cambia la cartella, e 03-verifica.sh lo deve dire.
+Environment=PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/root/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome
 Environment=TESSDATA_PREFIX=/opt/leadsniper-revalidate/app/.tesseract-cache
 
 # Senza questo il crawler non apre nessun sito: playwright-launch.ts cerca un
